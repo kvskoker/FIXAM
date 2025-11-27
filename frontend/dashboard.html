@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIXAM - Government Dashboard</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="header">
+                <div class="logo">
+                    <i class="fa-solid fa-map-location-dot"></i>
+                    <span>FIXAM</span>
+                </div>
+            </div>
+            
+            <nav class="nav-tabs">
+                <a href="index.html" class="nav-item">Civic Map</a>
+                <a href="#" class="nav-item active">Dashboard</a>
+            </nav>
+
+            <div class="issue-list">
+                <div style="padding: 1rem;">
+                    <h3 style="margin-bottom: 1rem; font-size: 1rem;">Priority Alerts</h3>
+                    <div id="priority-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Dashboard Content -->
+        <main class="map-container" style="background-color: var(--background-color);">
+            <div class="dashboard-grid">
+                <!-- Stat Cards -->
+                <div class="stat-card">
+                    <div class="stat-label">Total Reports (This Week)</div>
+                    <div class="stat-value">1,248</div>
+                    <div style="color: var(--success-color); font-size: 0.875rem;">
+                        <i class="fa-solid fa-arrow-trend-up"></i> +12% from last week
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-label">Resolved Issues</div>
+                    <div class="stat-value">856</div>
+                    <div style="color: var(--success-color); font-size: 0.875rem;">
+                        <i class="fa-solid fa-check"></i> 68% Resolution Rate
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-label">Critical Pending</div>
+                    <div class="stat-value" style="color: var(--danger-color);">42</div>
+                    <div style="color: var(--text-secondary); font-size: 0.875rem;">
+                        Requires immediate attention
+                    </div>
+                </div>
+
+                <!-- Charts -->
+                <div class="stat-card" style="grid-column: span 2;">
+                    <h3 class="issue-title">Reports by Category</h3>
+                    <div class="chart-container">
+                        <canvas id="categoryChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <h3 class="issue-title">Sentiment Analysis</h3>
+                    <div class="chart-container">
+                        <canvas id="sentimentChart"></canvas>
+                    </div>
+                    <p style="margin-top: 1rem; font-size: 0.875rem; color: var(--text-secondary);">
+                        "Citizens are concerned about the delay in waste collection in Central Freetown."
+                    </p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- App JS -->
+    <script src="js/dashboard.js"></script>
+</body>
+</html>

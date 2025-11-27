@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIXAM - Civic Map</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="header">
+                <div class="logo">
+                    <i class="fa-solid fa-map-location-dot"></i>
+                    <span>FIXAM</span>
+                </div>
+            </div>
+            
+            <nav class="nav-tabs">
+                <a href="#" class="nav-item active">Civic Map</a>
+                <a href="dashboard.html" class="nav-item">Dashboard</a>
+            </nav>
+
+            <div class="issue-list" id="issue-list">
+                <!-- Issues will be populated here by JS -->
+                <div style="padding: 2rem; text-align: center; color: var(--text-secondary);">
+                    <i class="fa-solid fa-spinner fa-spin"></i> Loading issues...
+                </div>
+            </div>
+        </aside>
+
+        <!-- Map -->
+        <main class="map-container" id="map">
+            <div class="map-controls">
+                <button class="control-btn" title="My Location" onclick="locateUser()">
+                    <i class="fa-solid fa-location-crosshairs"></i>
+                </button>
+                <button class="control-btn" title="Filter" onclick="toggleFilters()">
+                    <i class="fa-solid fa-filter"></i>
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- App JS -->
+    <script src="js/map.js"></script>
+</body>
+</html>
