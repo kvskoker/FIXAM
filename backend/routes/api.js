@@ -5,12 +5,25 @@ const { analyzeIssue } = require('../services/aiService');
 const { sendMessage, requestLocation } = require('../services/whatsappService');
 
 // User session store to track conversation state (still in-memory for now)
+// User session store to track conversation state (still in-memory for now)
 const userSessions = {}; 
 
-// GET /api/issues - Fetch all issues from DB with vote counts
+// Helper to generate 10-char alphanumeric ticket ID
+function generateTicketId() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < 10; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+} 
+
+// GET /api/issues - Fetch all issues from DB with vote counts, search, filter, and sort
 router.get('/issues', async (req, res) => {
     try {
-        const result = await db.query(`
+        const { search, category, status, sort } = req.query;
+
+        let query = `
             SELECT 
                 i.*,
                 u.name as reported_by_name,
@@ -29,8 +42,41 @@ router.get('/issues', async (req, res) => {
                 FROM votes
                 GROUP BY issue_id
             ) v ON i.id = v.issue_id
-            ORDER BY i.created_at DESC
-        `);
+            WHERE 1=1
+        `;
+
+        const params = [];
+        let paramCount = 1;
+
+        if (search) {
+            query += ` AND (i.title ILIKE $${paramCount} OR i.description ILIKE $${paramCount})`;
+            params.push(`%${search}%`);
+            paramCount++;
+        }
+
+        if (category) {
+            query += ` AND i.category = $${paramCount}`;
+            params.push(category);
+            paramCount++;
+        }
+
+        if (status) {
+            query += ` AND i.status = $${paramCount}`;
+            params.push(status);
+            paramCount++;
+        }
+
+        // Sorting
+        if (sort === 'oldest') {
+            query += ` ORDER BY i.created_at ASC`;
+        } else if (sort === 'most_votes') {
+            query += ` ORDER BY votes DESC, i.created_at DESC`;
+        } else {
+            // Default: newest
+            query += ` ORDER BY i.created_at DESC`;
+        }
+
+        const result = await db.query(query, params);
         res.json(result.rows);
     } catch (err) {
         console.error(err);
@@ -127,83 +173,12 @@ router.post('/webhook', async (req, res) => {
         ) {
             const message = body.entry[0].changes[0].value.messages[0];
             const from = message.from;
-            const msgBody = message.text ? message.text.body : null;
-            const type = message.type;
 
-            // Initialize session
-            if (!userSessions[from]) {
-                userSessions[from] = { step: 'START' };
-            }
-            const session = userSessions[from];
-
+            // Simple auto-reply for development
             try {
-                // Find or create user
-                let userResult = await db.query('SELECT id FROM users WHERE phone_number = $1', [from]);
-                let userId;
-
-                if (userResult.rows.length === 0) {
-                    const insertUser = await db.query(
-                        'INSERT INTO users (phone_number) VALUES ($1) RETURNING id',
-                        [from]
-                    );
-                    userId = insertUser.rows[0].id;
-                } else {
-                    userId = userResult.rows[0].id;
-                }
-
-                // Simple State Machine for "Chat-to-Map"
-                if (session.step === 'START') {
-                    await sendMessage(from, "Welcome to FIXAM! \nReport an issue by replying with a description (e.g., 'Broken street light at Lumley').");
-                    session.step = 'DESCRIBE';
-                } 
-                else if (session.step === 'DESCRIBE' && type === 'text') {
-                    // 1. Analyze with AI
-                    const analysis = await analyzeIssue(msgBody);
-                    session.data = { ...analysis, description: msgBody, userId };
-                    
-                    await sendMessage(from, `I understood: "${analysis.summary}" (Category: ${analysis.category}). \n\nPlease share the location of this issue (Attachment > Location).`);
-                    session.step = 'LOCATION';
-                } 
-                else if (session.step === 'LOCATION' && type === 'location') {
-                    const loc = message.location;
-                    session.data.lat = loc.latitude;
-                    session.data.lng = loc.longitude;
-
-                    // Save Issue to DB
-                    const insertQuery = `
-                        INSERT INTO issues (title, category, status, lat, lng, description, image_url, reported_by, reported_on)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
-                        RETURNING id
-                    `;
-                    const values = [
-                        session.data.summary,
-                        session.data.category,
-                        'critical',
-                        session.data.lat,
-                        session.data.lng,
-                        session.data.description,
-                        "https://via.placeholder.com/400", // Placeholder
-                        session.data.userId
-                    ];
-                    
-                    const result = await db.query(insertQuery, values);
-                    const newIssueId = result.rows[0].id;
-
-                    // Log in issue tracker
-                    await db.query(`
-                        INSERT INTO issue_tracker (issue_id, action, description, performed_by)
-                        VALUES ($1, $2, $3, $4)
-                    `, [newIssueId, 'reported', 'Issue reported via WhatsApp', session.data.userId]);
-
-                    await sendMessage(from, `Thank you! Your report has been logged. Ticket ID: #${newIssueId}. \nYou can view it on the map.`);
-                    session.step = 'START'; // Reset
-                } 
-                else {
-                    await sendMessage(from, "Sorry, I didn't catch that. Please follow the instructions.");
-                }
+                await sendMessage(from, "We have received your message and that Fixam is currently being developed.");
             } catch (err) {
                 console.error("Error processing message:", err);
-                await sendMessage(from, "An error occurred. Please try again later.");
             }
         }
         res.sendStatus(200);

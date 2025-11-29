@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FIXAM - Civic Map</title>
+
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-title" content="Fixam" />
+<link rel="manifest" href="/site.webmanifest" />
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -25,8 +32,7 @@
         <aside class="sidebar">
             <div class="header">
                 <div class="logo">
-                    <i class="fa-solid fa-map-location-dot"></i>
-                    <span>FIXAM</span>
+                    <img src="fixam-logo-blue.svg" alt="FIXAM Icon" height="80px">
                 </div>
             </div>
             
@@ -34,6 +40,38 @@
                 <a href="#" class="nav-item active">Civic Map</a>
                 <a href="dashboard.html" class="nav-item">Dashboard</a>
             </nav>
+
+            <div class="filter-section" style="padding: 1rem; border-bottom: 1px solid var(--border-color); background: #fff;">
+                <div class="search-box" style="position: relative; margin-bottom: 1rem;">
+                    <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8;"></i>
+                    <input type="text" id="search-input" placeholder="Search issues..." 
+                           style="width: 100%; padding: 10px 10px 10px 36px; border: 1px solid #e2e8f0; border-radius: 8px; outline: none; font-family: inherit; font-size: 0.9rem; transition: border-color 0.2s;">
+                </div>
+                <div class="filter-row" style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <select id="category-filter" style="flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #e2e8f0; font-family: inherit; font-size: 0.85rem; color: #475569; outline: none; cursor: pointer;">
+                        <option value="">All Categories</option>
+                        <option value="Water">Water</option>
+                        <option value="Road">Road</option>
+                        <option value="Waste">Waste</option>
+                        <option value="Electricity">Electricity</option>
+                        <option value="Health">Health</option>
+                        <option value="Other">Other</option>
+                    </select>
+                    <select id="status-filter" style="flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #e2e8f0; font-family: inherit; font-size: 0.85rem; color: #475569; outline: none; cursor: pointer;">
+                        <option value="">All Status</option>
+                        <option value="critical">Critical</option>
+                        <option value="progress">In Progress</option>
+                        <option value="fixed">Fixed</option>
+                    </select>
+                </div>
+                <div class="sort-row">
+                    <select id="sort-filter" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #e2e8f0; font-family: inherit; font-size: 0.85rem; color: #475569; outline: none; cursor: pointer;">
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="most_votes">Most Votes</option>
+                    </select>
+                </div>
+            </div>
 
             <div class="issue-list" id="issue-list">
                 <!-- Issues will be populated here by JS -->
@@ -48,9 +86,6 @@
             <div class="map-controls">
                 <button class="control-btn" title="My Location" onclick="locateUser()">
                     <i class="fa-solid fa-location-crosshairs"></i>
-                </button>
-                <button class="control-btn" title="Filter" onclick="toggleFilters()">
-                    <i class="fa-solid fa-filter"></i>
                 </button>
             </div>
         </main>

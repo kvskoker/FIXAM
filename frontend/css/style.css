@@ -81,6 +81,7 @@ body {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    height: 50px;
 }
 
 .logo span {

@@ -29,11 +29,36 @@ function getStatusColor(status) {
 
 const markers = {};
 const issueList = document.getElementById('issue-list');
+const searchInput = document.getElementById('search-input');
+const categoryFilter = document.getElementById('category-filter');
+const statusFilter = document.getElementById('status-filter');
+const sortFilter = document.getElementById('sort-filter');
+
+// Debounce helper
+function debounce(func, wait) {
+    let timeout;
+    return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+}
+
+// Event Listeners
+if (searchInput) searchInput.addEventListener('input', debounce(() => fetchIssues(), 500));
+if (categoryFilter) categoryFilter.addEventListener('change', () => fetchIssues());
+if (statusFilter) statusFilter.addEventListener('change', () => fetchIssues());
+if (sortFilter) sortFilter.addEventListener('change', () => fetchIssues());
 
 // Fetch Data from API
 async function fetchIssues() {
     try {
-        const response = await fetch('http://localhost:5000/api/issues');
+        const params = new URLSearchParams();
+        if (searchInput && searchInput.value) params.append('search', searchInput.value);
+        if (categoryFilter && categoryFilter.value) params.append('category', categoryFilter.value);
+        if (statusFilter && statusFilter.value) params.append('status', statusFilter.value);
+        if (sortFilter && sortFilter.value) params.append('sort', sortFilter.value);
+
+        const response = await fetch(`http://localhost:5000/api/issues?${params.toString()}`);
         if (!response.ok) throw new Error('Network response was not ok');
         const issues = await response.json();
         renderIssues(issues);
@@ -44,6 +69,10 @@ async function fetchIssues() {
 }
 
 function renderIssues(issues) {
+    // Clear existing markers
+    Object.values(markers).forEach(marker => map.removeLayer(marker));
+    for (const key in markers) delete markers[key];
+
     issueList.innerHTML = ''; // Clear loading
 
     issues.forEach(issue => {
@@ -59,6 +88,7 @@ function renderIssues(issues) {
                 <img src="${issue.image_url || 'https://via.placeholder.com/400'}" class="popup-image" alt="${issue.title}">
                 <div class="issue-category" style="display: inline-block; margin-bottom: 0.5rem;">${issue.category}</div>
                 <div class="popup-title">${issue.title}</div>
+                <div style="font-size: 0.8rem; color: #64748b; margin-bottom: 0.5rem;">Ticket ID: <strong>${issue.ticket_id}</strong></div>
                 <div class="popup-desc">${issue.description}</div>
                 ${issue.reported_by_name ? `<div style="font-size: 0.85rem; color: #64748b; margin-top: 0.5rem;">Reported by: ${issue.reported_by_name}</div>` : ''}
                 <div class="popup-actions">
@@ -88,6 +118,7 @@ function renderIssues(issues) {
                 <span class="issue-category">${issue.category}</span>
                 <div class="issue-status status-${issue.status}"></div>
             </div>
+            <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.25rem;">#${issue.ticket_id}</div>
             <div class="issue-title">${issue.title}</div>
             <div class="issue-location">
                 <i class="fa-solid fa-location-dot"></i> Freetown, SL
@@ -132,11 +163,14 @@ function locateUser() {
     }
 }
 
-function toggleFilters() {
-    alert("Filter functionality would open a modal here.");
-}
+
 
 async function vote(issueId, voteType) {
+    // Voting is temporarily disabled on the frontend
+    alert("Voting is currently disabled on the website. Please use our WhatsApp bot to vote.");
+    return;
+
+    /*
     // For demo purposes, we'll use a dummy phone number
     // In production, this would come from user authentication
     const userPhone = prompt("Enter your phone number to vote (e.g., 23276123456):");
@@ -168,6 +202,7 @@ async function vote(issueId, voteType) {
         console.error('Error voting:', error);
         alert('Failed to record vote. Please try again.');
     }
+    */
 }
 
 async function viewTracker(issueId) {

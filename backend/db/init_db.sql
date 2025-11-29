@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- Create Issues Table
 CREATE TABLE IF NOT EXISTS issues (
     id SERIAL PRIMARY KEY,
+    ticket_id VARCHAR(10) UNIQUE NOT NULL,
     title VARCHAR(255) NOT NULL,
     category VARCHAR(50) NOT NULL,
     status VARCHAR(20) DEFAULT 'critical', -- critical, progress, fixed
