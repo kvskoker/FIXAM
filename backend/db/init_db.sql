@@ -44,6 +44,24 @@ CREATE TABLE IF NOT EXISTS issue_tracker (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Create Conversation State Table
+CREATE TABLE IF NOT EXISTS conversation_state (
+    phone_number VARCHAR(20) PRIMARY KEY,
+    current_step VARCHAR(50),
+    data JSONB, -- Store temp data like draft issue details
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create Message Logs Table
+CREATE TABLE IF NOT EXISTS message_logs (
+    id SERIAL PRIMARY KEY,
+    phone_number VARCHAR(20),
+    direction VARCHAR(10), -- 'incoming', 'outgoing'
+    message_type VARCHAR(20),
+    message_body TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_issues_lat_lng ON issues (lat, lng);
 CREATE INDEX IF NOT EXISTS idx_issues_status ON issues (status);

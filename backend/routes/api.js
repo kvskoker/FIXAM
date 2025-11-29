@@ -2,7 +2,11 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { analyzeIssue } = require('../services/aiService');
-const { sendMessage, requestLocation } = require('../services/whatsappService');
+const whatsappService = require('../services/whatsappService');
+const FixamHandler = require('../services/whatsappHandler');
+
+// Initialize Handler
+const fixamHandler = new FixamHandler(whatsappService, db, null, console.log);
 
 // User session store to track conversation state (still in-memory for now)
 // User session store to track conversation state (still in-memory for now)
@@ -234,21 +238,10 @@ router.post('/webhook', async (req, res) => {
     const body = req.body;
 
     if (body.object) {
-        if (
-            body.entry &&
-            body.entry[0].changes &&
-            body.entry[0].changes[0].value.messages &&
-            body.entry[0].changes[0].value.messages[0]
-        ) {
-            const message = body.entry[0].changes[0].value.messages[0];
-            const from = message.from;
-
-            // Simple auto-reply for development
-            try {
-                await sendMessage(from, "We have received your message and that Fixam is currently being developed.");
-            } catch (err) {
-                console.error("Error processing message:", err);
-            }
+        try {
+            await fixamHandler.processIncomingMessage(body);
+        } catch (err) {
+            console.error("Error processing message:", err);
         }
         res.sendStatus(200);
     } else {

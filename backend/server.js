@@ -4,6 +4,11 @@ const bodyParser = require('body-parser');
 require('dotenv').config();
 
 const apiRoutes = require('./routes/api');
+const db = require('./db');
+const whatsappService = require('./services/whatsappService');
+const FixamHandler = require('./services/whatsappHandler');
+
+const fixamHandler = new FixamHandler(whatsappService, db, null, console.log);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -38,22 +43,10 @@ app.post('/webhook', async (req, res) => {
     const body = req.body;
 
     if (body.object) {
-        if (
-            body.entry &&
-            body.entry[0].changes &&
-            body.entry[0].changes[0].value.messages &&
-            body.entry[0].changes[0].value.messages[0]
-        ) {
-            const message = body.entry[0].changes[0].value.messages[0];
-            const from = message.from;
-
-            // Simple auto-reply for development
-            try {
-                const { sendMessage } = require('./services/whatsappService');
-                await sendMessage(from, "We have received your message and that Fixam is currently being developed.");
-            } catch (err) {
-                console.error("Error processing message:", err);
-            }
+        try {
+            await fixamHandler.processIncomingMessage(body);
+        } catch (err) {
+            console.error("Error processing message:", err);
         }
         res.sendStatus(200);
     } else {
