@@ -261,22 +261,16 @@ class FixamHandler {
             let mediaUrl = '';
 
             if (downloadResult) {
-                const extension = downloadResult.mimeType.split('/')[1];
+                const extension = downloadResult.mimeType ? downloadResult.mimeType.split('/')[1].split(';')[0] : 'bin';
                 const filename = `${crypto.randomUUID()}.${extension}`;
                 const folder = mediaType === 'image' ? 'images' : 'videos';
                 const filePath = path.join(__dirname, `../uploads/issues/${folder}`, filename);
                 
-                // Ensure directory exists (redundant if we ran mkdir, but good practice)
-                // fs.mkdirSync(path.dirname(filePath), { recursive: true });
-
                 fs.writeFileSync(filePath, downloadResult.buffer);
-                
-                // Construct URL (assuming server is running on same host)
-                // In production, this should be the full domain URL
                 mediaUrl = `/uploads/issues/${folder}/${filename}`;
             } else {
-                // Fallback to Facebook URL if download fails (or mock mode)
-                mediaUrl = `https://graph.facebook.com/v17.0/${mediaId}`;
+                await this.sendMessage(fromNumber, "⚠️ Failed to download the media. Please try sending it again.");
+                return;
             }
 
             const currentData = state.data || {};
@@ -302,12 +296,15 @@ class FixamHandler {
             let mediaUrl = '';
 
             if (downloadResult) {
-                const extension = downloadResult.mimeType.split('/')[1].split(';')[0]; // Handle audio/ogg; codecs=opus
+                const extension = downloadResult.mimeType ? downloadResult.mimeType.split('/')[1].split(';')[0] : 'ogg';
                 const filename = `${crypto.randomUUID()}.${extension}`;
                 const filePath = path.join(__dirname, `../uploads/issues/audio`, filename);
                 
                 fs.writeFileSync(filePath, downloadResult.buffer);
                 mediaUrl = `/uploads/issues/audio/${filename}`;
+            } else {
+                await this.sendMessage(fromNumber, "⚠️ Failed to download the voice note. Please try again.");
+                return;
             }
 
             const currentData = state.data || {};

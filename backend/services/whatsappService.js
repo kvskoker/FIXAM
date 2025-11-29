@@ -55,22 +55,28 @@ async function downloadMedia(mediaId) {
     }
 
     try {
+        console.log(`[WhatsApp] Getting media URL for ID: ${mediaId}`);
         // 1. Get Media URL
         const urlResponse = await axios.get(
             `https://graph.facebook.com/v17.0/${mediaId}`,
             {
-                headers: { Authorization: `Bearer ${ACCESS_TOKEN}` }
+                headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+                timeout: 10000 // 10s timeout
             }
         );
         
         const mediaUrl = urlResponse.data.url;
         const mimeType = urlResponse.data.mime_type;
+        console.log(`[WhatsApp] Found media URL: ${mediaUrl}, Mime: ${mimeType}`);
 
         // 2. Download Media Binary
+        console.log(`[WhatsApp] Downloading binary...`);
         const mediaResponse = await axios.get(mediaUrl, {
             headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
-            responseType: 'arraybuffer'
+            responseType: 'arraybuffer',
+            timeout: 30000 // 30s timeout for download
         });
+        console.log(`[WhatsApp] Download complete. Size: ${mediaResponse.data.length}`);
 
         return {
             buffer: mediaResponse.data,
