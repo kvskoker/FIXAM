@@ -43,4 +43,43 @@ async function requestLocation(to) {
     await sendMessage(to, "Please share your location using the attachment (paperclip) icon > Location.");
 }
 
-module.exports = { sendMessage, requestLocation };
+/**
+ * Download media from WhatsApp/Facebook API.
+ * @param {string} mediaId - The ID of the media to download.
+ * @returns {Promise<{buffer: Buffer, mimeType: string}>} - The media buffer and mime type.
+ */
+async function downloadMedia(mediaId) {
+    if (!PHONE_NUMBER_ID || !ACCESS_TOKEN || PHONE_NUMBER_ID === 'your_phone_number_id') {
+        console.log(`[Mock WhatsApp] Downloading media ${mediaId}`);
+        return null;
+    }
+
+    try {
+        // 1. Get Media URL
+        const urlResponse = await axios.get(
+            `https://graph.facebook.com/v17.0/${mediaId}`,
+            {
+                headers: { Authorization: `Bearer ${ACCESS_TOKEN}` }
+            }
+        );
+        
+        const mediaUrl = urlResponse.data.url;
+        const mimeType = urlResponse.data.mime_type;
+
+        // 2. Download Media Binary
+        const mediaResponse = await axios.get(mediaUrl, {
+            headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+            responseType: 'arraybuffer'
+        });
+
+        return {
+            buffer: mediaResponse.data,
+            mimeType: mimeType
+        };
+    } catch (error) {
+        console.error("WhatsApp Download Error:", error.response ? error.response.data : error.message);
+        return null;
+    }
+}
+
+module.exports = { sendMessage, requestLocation, downloadMedia };

@@ -1,5 +1,6 @@
-const FixamDatabase = require('./fixamDatabase');
-const FixamHelpers = require('./fixamHelpers');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 
 class FixamHandler {
     constructor(whatsAppService, db, io, debugLog) {
@@ -49,7 +50,7 @@ class FixamHandler {
         let user = await this.fixamDb.getUser(fromNumber);
 
         // Global Reset
-        if (lowerInput === 'reset' || lowerInput === 'cancel') {
+        if (lowerInput === 'reset' || lowerInput === 'cancel' || input === '9') {
             await this.fixamDb.resetConversationState(fromNumber);
             await this.sendMessage(fromNumber, "Conversation reset. Type 'Hi' to start again.");
             return;
@@ -101,10 +102,11 @@ class FixamHandler {
                 break;
 
             case 'awaiting_report_evidence':
-                await this.sendMessage(fromNumber, "Please send a *Photo* or *Video* (not text) to continue, or type 'skip' if you don't have one (not recommended).");
                 if (lowerInput === 'skip') {
                      await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_report_location' });
                      await this.sendMessage(fromNumber, "Okay, skipping evidence.\n\nNow, please share the *Location* of the issue.\n\n📍 Use the attachment icon > Location\n✏️ Or type the address (e.g., '5 Jabbiela Drive')");
+                } else {
+                    await this.sendMessage(fromNumber, "Please send a *Photo* or *Video* (not text) to continue, or type 'skip' if you don't have one.");
                 }
                 break;
 
@@ -126,22 +128,42 @@ class FixamHandler {
                     });
                     await this.sendMessage(fromNumber, `Location found: ${loc.display_name}\n\nPlease describe the issue (Text or Voice Note).`);
                 } else {
-                    // Multiple locations - just pick first for simplicity or ask (implementing simple pick first for now to save turns, or could implement selection)
-                    // Let's pick first for now to keep it simple as per "similar to test folder" but test folder does selection.
-                    // User asked for "similar to how the bot in the test folder behaves".
-                    // Okay, let's just take the first one for speed, or ask user to be more specific.
-                    // Actually, let's just take the first one.
-                     const loc = locations[0];
+                    // Multiple locations - Ask user to select
                     const currentData = state.data || {};
+                    currentData.pending_addresses = locations;
+                    
+                    await this.fixamDb.updateConversationState(fromNumber, { 
+                        current_step: 'awaiting_address_selection',
+                        data: currentData
+                    });
+
+                    let msg = `I found ${locations.length} locations. Please reply with the number (1-${locations.length}) to select:\n\n`;
+                    locations.forEach((loc, i) => {
+                        msg += `${i + 1}. ${loc.display_name}\n`;
+                    });
+                    await this.sendMessage(fromNumber, msg);
+                }
+                break;
+
+            case 'awaiting_address_selection':
+                const selection = parseInt(input);
+                const pendingAddresses = state.data.pending_addresses;
+                
+                if (selection >= 1 && selection <= pendingAddresses.length) {
+                    const loc = pendingAddresses[selection - 1];
+                    const currentData = state.data;
                     currentData.lat = loc.latitude;
                     currentData.lng = loc.longitude;
                     currentData.address = loc.display_name;
-                    
+                    delete currentData.pending_addresses; // Clean up
+
                     await this.fixamDb.updateConversationState(fromNumber, { 
                         current_step: 'awaiting_report_description',
                         data: currentData
                     });
-                    await this.sendMessage(fromNumber, `Location found: ${loc.display_name}\n\nPlease describe the issue (Text or Voice Note).`);
+                    await this.sendMessage(fromNumber, `Location confirmed: ${loc.display_name}\n\nPlease describe the issue (Text or Voice Note).`);
+                } else {
+                    await this.sendMessage(fromNumber, `Please reply with a valid number (1-${pendingAddresses.length}).`);
                 }
                 break;
 
@@ -160,11 +182,13 @@ class FixamHandler {
                 break;
 
             case 'awaiting_report_confirmation':
-                if (lowerInput === 'yes' || lowerInput === 'confirm') {
+                if (input === '1') {
                     await this.finalizeReport(fromNumber, state.data, user.id);
-                } else {
+                } else if (input === '9') {
                     await this.sendMessage(fromNumber, "Report cancelled. Type 'Hi' to start over.");
                     await this.fixamDb.resetConversationState(fromNumber);
+                } else {
+                    await this.sendMessage(fromNumber, "Please type *1* to confirm or *9* to cancel.");
                 }
                 break;
 
@@ -227,11 +251,34 @@ class FixamHandler {
     async handleMediaMessage(fromNumber, message) {
         let state = await this.fixamDb.getConversationState(fromNumber);
         if (state && state.current_step === 'awaiting_report_evidence') {
-            // In a real app, we would download the media using the ID and save it to S3/Cloudinary
-            // For now, we'll just store the ID or a placeholder
             const mediaId = message.image ? message.image.id : message.video.id;
+            const mediaType = message.image ? 'image' : 'video';
+            
+            // Download Media
+            const downloadResult = await this.whatsAppService.downloadMedia(mediaId);
+            let mediaUrl = '';
+
+            if (downloadResult) {
+                const extension = downloadResult.mimeType.split('/')[1];
+                const filename = `${crypto.randomUUID()}.${extension}`;
+                const folder = mediaType === 'image' ? 'images' : 'videos';
+                const filePath = path.join(__dirname, `../uploads/issues/${folder}`, filename);
+                
+                // Ensure directory exists (redundant if we ran mkdir, but good practice)
+                // fs.mkdirSync(path.dirname(filePath), { recursive: true });
+
+                fs.writeFileSync(filePath, downloadResult.buffer);
+                
+                // Construct URL (assuming server is running on same host)
+                // In production, this should be the full domain URL
+                mediaUrl = `/uploads/issues/${folder}/${filename}`;
+            } else {
+                // Fallback to Facebook URL if download fails (or mock mode)
+                mediaUrl = `https://graph.facebook.com/v17.0/${mediaId}`;
+            }
+
             const currentData = state.data || {};
-            currentData.image_url = `https://graph.facebook.com/v17.0/${mediaId}`; // Placeholder
+            currentData.image_url = mediaUrl;
             
             await this.fixamDb.updateConversationState(fromNumber, { 
                 current_step: 'awaiting_report_location',
@@ -246,9 +293,25 @@ class FixamHandler {
     async handleVoiceMessage(fromNumber, message) {
         let state = await this.fixamDb.getConversationState(fromNumber);
         if (state && state.current_step === 'awaiting_report_description') {
+            const mediaId = message.voice ? message.voice.id : message.audio.id;
+            
+            // Download Voice Note
+            const downloadResult = await this.whatsAppService.downloadMedia(mediaId);
+            let mediaUrl = '';
+
+            if (downloadResult) {
+                const extension = downloadResult.mimeType.split('/')[1].split(';')[0]; // Handle audio/ogg; codecs=opus
+                const filename = `${crypto.randomUUID()}.${extension}`;
+                const filePath = path.join(__dirname, `../uploads/issues/audio`, filename);
+                
+                fs.writeFileSync(filePath, downloadResult.buffer);
+                mediaUrl = `/uploads/issues/audio/${filename}`;
+            }
+
             const currentData = state.data || {};
-            currentData.description = "[Voice Note Received]"; // We can't transcribe easily without external API
+            currentData.description = `[Voice Note] ${mediaUrl}`; // Store URL in description or separate field
             currentData.title = "Voice Report";
+            currentData.voice_url = mediaUrl; // Store separately if schema supports it, else just description
 
             await this.fixamDb.updateConversationState(fromNumber, { 
                 current_step: 'awaiting_report_confirmation',
@@ -271,7 +334,7 @@ class FixamHandler {
             `📍 *Location*: ${data.address}\n` +
             `📝 *Description*: ${data.description}\n` +
             `📸 *Evidence*: ${data.image_url ? 'Attached' : 'None'}\n\n` +
-            `Type *Yes* to confirm or *No* to cancel.`
+            `Type *1* to confirm or *9* to cancel.`
         );
     }
 
