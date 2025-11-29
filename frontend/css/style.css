@@ -332,6 +332,15 @@ body {
         width: 100%;
         height: 50vh;
         order: 2;
+        /* Allow the entire sidebar to scroll, not just the list */
+        display: block;
+        overflow-y: auto;
+    }
+
+    .issue-list {
+        /* Remove internal scrolling on mobile */
+        overflow-y: visible;
+        flex: none;
     }
     
     .map-container {

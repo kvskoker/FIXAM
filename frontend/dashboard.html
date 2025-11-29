@@ -36,8 +36,8 @@
             </div>
             
             <nav class="nav-tabs">
-                <a href="index.html" class="nav-item">Civic Map</a>
-                <a href="#" class="nav-item active">Dashboard</a>
+                <a href="/" class="nav-item">Civic Map</a>
+                <a href="/dashboard" class="nav-item active">Dashboard</a>
             </nav>
 
             <div class="issue-list">
@@ -56,23 +56,23 @@
                 <!-- Stat Cards -->
                 <div class="stat-card">
                     <div class="stat-label">Total Reports (This Week)</div>
-                    <div class="stat-value">1,248</div>
-                    <div style="color: var(--success-color); font-size: 0.875rem;">
-                        <i class="fa-solid fa-arrow-trend-up"></i> +12% from last week
+                    <div class="stat-value" id="stat-total-week">--</div>
+                    <div style="color: var(--success-color); font-size: 0.875rem;" id="stat-total-week-change">
+                        <i class="fa-solid fa-arrow-trend-up"></i> --% from last week
                     </div>
                 </div>
 
                 <div class="stat-card">
                     <div class="stat-label">Resolved Issues</div>
-                    <div class="stat-value">856</div>
-                    <div style="color: var(--success-color); font-size: 0.875rem;">
-                        <i class="fa-solid fa-check"></i> 68% Resolution Rate
+                    <div class="stat-value" id="stat-resolved">--</div>
+                    <div style="color: var(--success-color); font-size: 0.875rem;" id="stat-resolution-rate">
+                        <i class="fa-solid fa-check"></i> --% Resolution Rate
                     </div>
                 </div>
 
                 <div class="stat-card">
                     <div class="stat-label">Critical Pending</div>
-                    <div class="stat-value" style="color: var(--danger-color);">42</div>
+                    <div class="stat-value" style="color: var(--danger-color);" id="stat-critical">--</div>
                     <div style="color: var(--text-secondary); font-size: 0.875rem;">
                         Requires immediate attention
                     </div>

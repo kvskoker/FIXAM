@@ -62,3 +62,21 @@ SELECT
 FROM issues i
 LEFT JOIN votes v ON i.id = v.issue_id
 GROUP BY i.id;
+
+-- Create Categories Table
+CREATE TABLE IF NOT EXISTS categories (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) UNIQUE NOT NULL,
+    icon VARCHAR(50), -- FontAwesome icon class
+    color VARCHAR(20), -- Hex color
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert Default Categories
+INSERT INTO categories (name, icon, color) VALUES
+('Water', 'fa-faucet-drip', '#3b82f6'),
+('Road', 'fa-road', '#64748b'),
+('Waste', 'fa-trash', '#ef4444'),
+('Electricity', 'fa-bolt', '#eab308'),
+('Health', 'fa-heart-pulse', '#22c55e')
+ON CONFLICT (name) DO NOTHING;

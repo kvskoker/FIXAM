@@ -144,6 +144,75 @@ router.get('/issues/:id/tracker', async (req, res) => {
     }
 });
 
+// GET /api/categories - Fetch all categories
+router.get('/categories', async (req, res) => {
+    try {
+        const result = await db.query('SELECT * FROM categories ORDER BY name ASC');
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// GET /api/stats - Fetch dashboard statistics
+router.get('/stats', async (req, res) => {
+    try {
+        // 1. Total Reports (This Week)
+        const totalReportsResult = await db.query(`
+            SELECT COUNT(*) as count 
+            FROM issues 
+            WHERE created_at >= date_trunc('week', CURRENT_DATE)
+        `);
+        const totalReports = parseInt(totalReportsResult.rows[0].count);
+
+        // 2. Total Reports (Last Week) - for comparison
+        const lastWeekReportsResult = await db.query(`
+            SELECT COUNT(*) as count 
+            FROM issues 
+            WHERE created_at >= date_trunc('week', CURRENT_DATE - INTERVAL '1 week')
+            AND created_at < date_trunc('week', CURRENT_DATE)
+        `);
+        const lastWeekReports = parseInt(lastWeekReportsResult.rows[0].count);
+        
+        // Calculate percentage change
+        let percentageChange = 0;
+        if (lastWeekReports > 0) {
+            percentageChange = Math.round(((totalReports - lastWeekReports) / lastWeekReports) * 100);
+        } else if (totalReports > 0) {
+            percentageChange = 100; // If last week was 0 and this week is > 0
+        }
+
+        // 3. Resolved Issues
+        const resolvedResult = await db.query(`
+            SELECT COUNT(*) as count FROM issues WHERE status = 'fixed'
+        `);
+        const resolvedCount = parseInt(resolvedResult.rows[0].count);
+
+        // 4. Total Issues (All time) for resolution rate
+        const allTimeResult = await db.query('SELECT COUNT(*) as count FROM issues');
+        const allTimeCount = parseInt(allTimeResult.rows[0].count);
+        const resolutionRate = allTimeCount > 0 ? Math.round((resolvedCount / allTimeCount) * 100) : 0;
+
+        // 5. Critical Pending
+        const criticalPendingResult = await db.query(`
+            SELECT COUNT(*) as count FROM issues WHERE status = 'critical'
+        `);
+        const criticalPendingCount = parseInt(criticalPendingResult.rows[0].count);
+
+        res.json({
+            total_reports_week: totalReports,
+            reports_change_pct: percentageChange,
+            resolved_issues: resolvedCount,
+            resolution_rate: resolutionRate,
+            critical_pending: criticalPendingCount
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // POST /api/webhook - WhatsApp Webhook Verification
 router.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
