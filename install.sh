@@ -126,10 +126,13 @@ echo -e "${GREEN}Creating PM2 Services...${NC}"
 pm2 delete fixam-backend 2>/dev/null || true
 pm2 start backend/server.js --name "fixam-backend"
 
+# Install serve globally
+sudo npm install -g serve
+
 # Frontend Service
 pm2 delete fixam-frontend 2>/dev/null || true
-# Serve frontend on port 3000
-pm2 serve frontend 3000 --name "fixam-frontend" --spa
+# Start serve using PM2
+pm2 start serve --name "fixam-frontend" -- frontend -p 3000
 
 # Save PM2 list
 pm2 save
