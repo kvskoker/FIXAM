@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const FixamDatabase = require('./fixamDatabase');
+const FixamHelpers = require('./fixamHelpers');
 
 class FixamHandler {
     constructor(whatsAppService, db, io, debugLog) {
