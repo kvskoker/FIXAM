@@ -1,6 +1,8 @@
 // Priority List
 const priorityList = document.getElementById('priority-list');
-const API_BASE_URL = `http://${window.location.hostname}:5000/api`;
+const API_BASE_URL = window.location.port === '3000' 
+    ? `http://${window.location.hostname}:5000/api`
+    : '/api';
 
 async function fetchDashboardData() {
     try {

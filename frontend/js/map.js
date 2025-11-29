@@ -1,6 +1,8 @@
 // Initialize Map
 const map = L.map('map').setView([8.484, -13.23], 14);
-const API_BASE_URL = `http://${window.location.hostname}:5000/api`;
+const API_BASE_URL = window.location.port === '3000' 
+    ? `http://${window.location.hostname}:5000/api`
+    : '/api';
 
 // Add OpenStreetMap Tiles
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
