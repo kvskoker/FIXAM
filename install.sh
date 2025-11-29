@@ -129,10 +129,13 @@ pm2 start backend/server.js --name "fixam-backend"
 # Install serve globally
 sudo npm install -g serve
 
+# Make frontend start script executable
+chmod +x start-frontend.sh
+
 # Frontend Service
 pm2 delete fixam-frontend 2>/dev/null || true
-# Start serve using PM2
-pm2 start serve --name "fixam-frontend" -- frontend -p 3000
+# Start serve using PM2 with the startup script
+pm2 start ./start-frontend.sh --name "fixam-frontend"
 
 # Save PM2 list
 pm2 save
