@@ -1,9 +1,10 @@
 // Priority List
 const priorityList = document.getElementById('priority-list');
+const API_BASE_URL = `http://${window.location.hostname}:5000/api`;
 
 async function fetchDashboardData() {
     try {
-        const response = await fetch('http://localhost:5000/api/issues');
+        const response = await fetch(`${API_BASE_URL}/issues`);
         if (!response.ok) throw new Error('Network response was not ok');
         const issues = await response.json();
         

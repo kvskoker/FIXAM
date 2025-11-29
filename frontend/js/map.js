@@ -1,5 +1,6 @@
 // Initialize Map
 const map = L.map('map').setView([8.484, -13.23], 14);
+const API_BASE_URL = `http://${window.location.hostname}:5000/api`;
 
 // Add OpenStreetMap Tiles
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -58,7 +59,7 @@ async function fetchIssues() {
         if (statusFilter && statusFilter.value) params.append('status', statusFilter.value);
         if (sortFilter && sortFilter.value) params.append('sort', sortFilter.value);
 
-        const response = await fetch(`http://localhost:5000/api/issues?${params.toString()}`);
+        const response = await fetch(`${API_BASE_URL}/issues?${params.toString()}`);
         if (!response.ok) throw new Error('Network response was not ok');
         const issues = await response.json();
         renderIssues(issues);
@@ -207,7 +208,7 @@ async function vote(issueId, voteType) {
 
 async function viewTracker(issueId) {
     try {
-        const response = await fetch(`http://localhost:5000/api/issues/${issueId}/tracker`);
+        const response = await fetch(`${API_BASE_URL}/issues/${issueId}/tracker`);
         const trackerLogs = await response.json();
 
         if (!response.ok) {
