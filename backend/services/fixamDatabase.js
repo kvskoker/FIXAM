@@ -173,6 +173,18 @@ class FixamDatabase {
         }
     }
 
+    // Check if user has voted on issue
+    async checkUserVote(issueId, userId) {
+        const sql = "SELECT * FROM votes WHERE issue_id = $1 AND user_id = $2";
+        try {
+            const result = await this.db.query(sql, [issueId, userId]);
+            return result.rows.length > 0 ? result.rows[0] : null;
+        } catch (error) {
+            this.debugLog('Error checking user vote', { error: error.message });
+            return null;
+        }
+    }
+
     // Log Message
     async logMessage(data) {
         const sql = `

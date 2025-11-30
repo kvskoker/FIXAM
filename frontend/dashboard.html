@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FIXAM - Government Dashboard</title>
+    <title>FIXAM - Citizen's Dashboard</title>
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -41,6 +41,13 @@
             </nav>
 
             <div class="issue-list">
+                <div style="padding: 1rem; border-bottom: 1px solid var(--border-color);">
+                    <h3 style="margin-bottom: 0.5rem; font-size: 1rem;">Filters</h3>
+                    <select id="dashboard-category-filter" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #e2e8f0; font-family: inherit; font-size: 0.85rem; color: #475569; outline: none; cursor: pointer;">
+                        <option value="">All Categories</option>
+                        <!-- Populated by JS -->
+                    </select>
+                </div>
                 <div style="padding: 1rem;">
                     <h3 style="margin-bottom: 1rem; font-size: 1rem;">Priority Alerts</h3>
                     <div id="priority-list">
@@ -79,21 +86,11 @@
                 </div>
 
                 <!-- Charts -->
-                <div class="stat-card" style="grid-column: span 2;">
+                <div class="stat-card" style="grid-column: span 3;">
                     <h3 class="issue-title">Reports by Category</h3>
                     <div class="chart-container">
                         <canvas id="categoryChart"></canvas>
                     </div>
-                </div>
-
-                <div class="stat-card">
-                    <h3 class="issue-title">Sentiment Analysis</h3>
-                    <div class="chart-container">
-                        <canvas id="sentimentChart"></canvas>
-                    </div>
-                    <p style="margin-top: 1rem; font-size: 0.875rem; color: var(--text-secondary);">
-                        "Citizens are concerned about the delay in waste collection in Central Freetown."
-                    </p>
                 </div>
             </div>
         </main>

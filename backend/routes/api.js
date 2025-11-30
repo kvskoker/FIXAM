@@ -25,13 +25,13 @@ function generateTicketId() {
 // GET /api/issues - Fetch all issues from DB with vote counts, search, filter, and sort
 router.get('/issues', async (req, res) => {
     try {
-        const { search, category, status, sort } = req.query;
+        const { search, category, status, sort, ticket } = req.query;
 
         let query = `
             SELECT 
                 i.*,
+                i.*,
                 u.name as reported_by_name,
-                u.phone_number as reported_by_phone,
                 COALESCE(v.upvotes, 0) as upvotes,
                 COALESCE(v.downvotes, 0) as downvotes,
                 COALESCE(v.net_votes, 0) as votes
@@ -67,6 +67,12 @@ router.get('/issues', async (req, res) => {
         if (status) {
             query += ` AND i.status = $${paramCount}`;
             params.push(status);
+            paramCount++;
+        }
+
+        if (ticket) {
+            query += ` AND i.ticket_id = $${paramCount}`;
+            params.push(ticket);
             paramCount++;
         }
 

@@ -61,6 +61,11 @@ async function fetchIssues() {
         if (statusFilter && statusFilter.value) params.append('status', statusFilter.value);
         if (sortFilter && sortFilter.value) params.append('sort', sortFilter.value);
 
+        // Check for ticket param in URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const ticketId = urlParams.get('ticket');
+        if (ticketId) params.append('ticket', ticketId);
+
         const response = await fetch(`${API_BASE_URL}/issues?${params.toString()}`);
         if (!response.ok) throw new Error('Network response was not ok');
         const issues = await response.json();
@@ -94,13 +99,13 @@ function renderIssues(issues) {
                 <div style="font-size: 0.8rem; color: #64748b; margin-bottom: 0.5rem;">Ticket ID: <strong>${issue.ticket_id}</strong></div>
                 <div class="popup-desc">${issue.description}</div>
                 ${issue.reported_by_name ? `<div style="font-size: 0.85rem; color: #64748b; margin-top: 0.5rem;">Reported by: ${issue.reported_by_name}</div>` : ''}
-                <div class="popup-actions">
-                    <button class="btn btn-primary" onclick="vote(${issue.id}, 'upvote')">
-                        <i class="fa-solid fa-arrow-up"></i> Upvote (${issue.upvotes || 0})
-                    </button>
-                    <button class="btn btn-outline" onclick="vote(${issue.id}, 'downvote')">
-                        <i class="fa-solid fa-arrow-down"></i> Downvote (${issue.downvotes || 0})
-                    </button>
+                <div class="popup-actions" style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                    <span class="badge badge-success" style="background-color: #22c55e; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">
+                        <i class="fa-solid fa-arrow-up"></i> ${issue.upvotes || 0}
+                    </span>
+                    <span class="badge badge-danger" style="background-color: #ef4444; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">
+                        <i class="fa-solid fa-arrow-down"></i> ${issue.downvotes || 0}
+                    </span>
                 </div>
                 <div style="margin-top: 0.5rem;">
                     <button class="btn btn-outline" onclick="viewTracker(${issue.id})" style="width: 100%;">
@@ -146,6 +151,18 @@ function renderIssues(issues) {
 
         issueList.appendChild(card);
     });
+
+    // Auto-open popup if ticket param exists
+    const urlParams = new URLSearchParams(window.location.search);
+    const ticketId = urlParams.get('ticket');
+    if (ticketId && issues.length > 0) {
+        // Find the marker for this ticket
+        const issue = issues.find(i => i.ticket_id === ticketId);
+        if (issue && markers[issue.id]) {
+            map.flyTo([issue.lat, issue.lng], 16);
+            markers[issue.id].openPopup();
+        }
+    }
 }
 
 // User Location (Dummy)

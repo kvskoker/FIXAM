@@ -1,5 +1,9 @@
 // Priority List
 const priorityList = document.getElementById('priority-list');
+const categoryFilter = document.getElementById('dashboard-category-filter');
+let allIssues = [];
+let allCategories = [];
+let categoryChart = null;
 const API_BASE_URL = window.location.port === '3000' 
     ? `http://${window.location.hostname}:5000/api`
     : '/api';
@@ -14,13 +18,13 @@ async function fetchDashboardData() {
 
         if (!issuesRes.ok || !statsRes.ok || !categoriesRes.ok) throw new Error('Network response was not ok');
 
-        const issues = await issuesRes.json();
+        allIssues = await issuesRes.json();
         const stats = await statsRes.json();
-        const categories = await categoriesRes.json();
+        allCategories = await categoriesRes.json();
         
+        populateCategoryFilter(allCategories);
         renderStats(stats);
-        renderPriorityList(issues);
-        renderCharts(issues, categories);
+        renderDashboardContent();
     } catch (error) {
         console.error('Error fetching dashboard data:', error);
         priorityList.innerHTML = '<div style="color: var(--danger-color);">Failed to load data.</div>';
@@ -64,6 +68,32 @@ function renderPriorityList(issues) {
     });
 }
 
+function populateCategoryFilter(categories) {
+    if (!categoryFilter) return;
+    categories.forEach(cat => {
+        const option = document.createElement('option');
+        option.value = cat.name;
+        option.textContent = cat.name;
+        categoryFilter.appendChild(option);
+    });
+
+    categoryFilter.addEventListener('change', () => {
+        renderDashboardContent();
+    });
+}
+
+function renderDashboardContent() {
+    const selectedCategory = categoryFilter ? categoryFilter.value : '';
+    
+    // Filter issues
+    const filteredIssues = selectedCategory 
+        ? allIssues.filter(i => i.category === selectedCategory)
+        : allIssues;
+
+    renderPriorityList(filteredIssues);
+    renderCharts(filteredIssues, allCategories);
+}
+
 function renderCharts(issues, categoriesList) {
     // Map categories to colors
     const categoryColors = {};
@@ -86,7 +116,12 @@ function renderCharts(issues, categoriesList) {
     });
 
     const ctxCategory = document.getElementById('categoryChart').getContext('2d');
-    new Chart(ctxCategory, {
+    
+    if (categoryChart) {
+        categoryChart.destroy();
+    }
+
+    categoryChart = new Chart(ctxCategory, {
         type: 'doughnut',
         data: {
             labels: Object.keys(categoryCounts),
@@ -102,49 +137,6 @@ function renderCharts(issues, categoriesList) {
             plugins: {
                 legend: {
                     position: 'right'
-                }
-            }
-        }
-    });
-
-    // Sentiment Chart (Dummy Data for now as backend doesn't provide sentiment yet)
-    const ctxSentiment = document.getElementById('sentimentChart').getContext('2d');
-    new Chart(ctxSentiment, {
-        type: 'bar',
-        data: {
-            labels: ['Angry', 'Frustrated', 'Neutral', 'Hopeful', 'Happy'],
-            datasets: [{
-                label: 'Sentiment Score',
-                data: [65, 45, 30, 20, 10],
-                backgroundColor: [
-                    '#ef4444',
-                    '#f97316',
-                    '#64748b',
-                    '#3b82f6',
-                    '#22c55e'
-                ],
-                borderRadius: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    grid: {
-                        display: false
-                    }
-                },
-                x: {
-                    grid: {
-                        display: false
-                    }
-                }
-            },
-            plugins: {
-                legend: {
-                    display: false
                 }
             }
         }

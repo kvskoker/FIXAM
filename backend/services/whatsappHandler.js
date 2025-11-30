@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const FixamDatabase = require('./fixamDatabase');
 const FixamHelpers = require('./fixamHelpers');
 const logger = require('./logger');
+const { analyzeIssue } = require('./aiService');
 
 class FixamHandler {
     constructor(whatsAppService, db, io, debugLog) {
@@ -224,6 +225,15 @@ class FixamHandler {
 
             case 'awaiting_vote_confirmation':
                 const voteData = state.data || {};
+                
+                // Check if already voted
+                const existingVote = await this.fixamDb.checkUserVote(voteData.issue_id, user.id);
+                if (existingVote) {
+                    await this.sendMessage(fromNumber, `⚠️ You have already voted (${existingVote.vote_type}) on this issue.`);
+                    await this.fixamDb.resetConversationState(fromNumber);
+                    return;
+                }
+
                 if (input === '1') {
                     await this.fixamDb.voteIssue(voteData.issue_id, user.id, 'upvote');
                     await this.sendMessage(fromNumber, "Vote recorded! 👍\n\nType 'Hi' for main menu.");
@@ -406,10 +416,22 @@ class FixamHandler {
 
     async finalizeReport(fromNumber, data, userId) {
         const ticketId = this.helpers.generateTicketId();
+        
+        // Analyze with Gemini
+        let category = 'General';
+        try {
+            const analysis = await analyzeIssue(data.description);
+            if (analysis && analysis.category) {
+                category = analysis.category;
+            }
+        } catch (err) {
+            console.error('Error analyzing issue:', err);
+        }
+
         const issueData = {
             ticket_id: ticketId,
             title: data.title || 'Report',
-            category: 'General', // Default for now, or could ask user
+            category: category,
             lat: data.lat,
             lng: data.lng,
             description: data.description,
@@ -419,7 +441,7 @@ class FixamHandler {
 
         const issue = await this.fixamDb.createIssue(issueData);
         if (issue) {
-            await this.sendMessage(fromNumber, `✅ Report Submitted!\n\nTicket ID: *${ticketId}*\n\nYou can view it on the live map: https://fixam.sl/map?ticket=${ticketId}`);
+            await this.sendMessage(fromNumber, `✅ Report Submitted!\n\nTicket ID: *${ticketId}*\n\nYou can view it on the live map: https://fixam.maxcit.com/?ticket=${ticketId}`);
             await this.fixamDb.resetConversationState(fromNumber);
         } else {
             await this.sendMessage(fromNumber, "❌ Error submitting report. Please try again later.");
