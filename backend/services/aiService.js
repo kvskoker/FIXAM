@@ -10,6 +10,8 @@ const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemi
  * @returns {Promise<Object>} - { category, summary, urgency }
  */
 async function analyzeIssue(text) {
+    console.log("Analyzing issue with Gemini...", { textLength: text.length, keySet: !!GEMINI_API_KEY, keyStart: GEMINI_API_KEY ? GEMINI_API_KEY.substring(0, 4) : 'none' });
+
     if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_gemini_api_key') {
         console.warn("Gemini API Key not set. Returning dummy analysis.");
         return {

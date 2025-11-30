@@ -193,9 +193,10 @@ class FixamHandler {
                 
                 // Analyze with Gemini
                 await this.sendMessage(fromNumber, "Analyzing your report with AI... 🤖");
-                let category = 'General';
+                let category = 'Uncategorized';
                 try {
                     const analysis = await analyzeIssue(input);
+                    console.log("Gemini Analysis Result:", analysis);
                     if (analysis && analysis.category) {
                         category = analysis.category;
                     }
