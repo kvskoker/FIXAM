@@ -1,6 +1,7 @@
 const axios = require('axios');
 const logger = require('./logger');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 // Using gemini-2.0-flash as per user's working Postman example
