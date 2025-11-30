@@ -16,9 +16,14 @@ class FixamHandler {
     }
 
     async processIncomingMessage(data) {
+        console.log('[FixamHandler] Received webhook data:', JSON.stringify(data, null, 2));
+        
         if (data.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
             const message = data.entry[0].changes[0].value.messages[0];
-            const fromNumber = message.from; // Keep raw format for now, or format if needed
+            const fromNumber = message.from;
+
+            console.log(`[FixamHandler] Message from ${fromNumber}, Type: ${message.type}`);
+            console.log('[FixamHandler] Full message object:', JSON.stringify(message, null, 2));
 
             // Log message
             const messageBody = message.text?.body || message.type;
@@ -35,12 +40,17 @@ class FixamHandler {
             } else if (message.type === 'location') {
                 await this.handleLocationMessage(fromNumber, message.location);
             } else if (message.type === 'image' || message.type === 'video') {
+                console.log('[FixamHandler] Handling media message...');
                 await this.handleMediaMessage(fromNumber, message);
-            } else if (message.type === 'audio' || message.type === 'voice') { // Voice notes
+            } else if (message.type === 'audio' || message.type === 'voice') {
+                console.log('[FixamHandler] Handling voice message...');
                 await this.handleVoiceMessage(fromNumber, message);
             } else {
+                console.log(`[FixamHandler] Unknown message type: ${message.type}`);
                 await this.sendMessage(fromNumber, "Sorry, I don't understand this message type yet.");
             }
+        } else {
+            console.log('[FixamHandler] No message found in webhook data');
         }
     }
 
@@ -251,13 +261,21 @@ class FixamHandler {
     }
 
     async handleMediaMessage(fromNumber, message) {
+        console.log('[handleMediaMessage] Called for user:', fromNumber);
         let state = await this.fixamDb.getConversationState(fromNumber);
+        console.log('[handleMediaMessage] User state:', state?.current_step);
+        
         if (state && state.current_step === 'awaiting_report_evidence') {
             const mediaId = message.image ? message.image.id : message.video.id;
             const mediaType = message.image ? 'image' : 'video';
             
+            console.log(`[handleMediaMessage] Media ID: ${mediaId}, Type: ${mediaType}`);
+            
             // Download Media
+            console.log('[handleMediaMessage] Starting download...');
             const downloadResult = await this.whatsAppService.downloadMedia(mediaId);
+            console.log('[handleMediaMessage] Download result:', downloadResult ? 'Success' : 'Failed');
+            
             let mediaUrl = '';
 
             if (downloadResult) {
@@ -266,9 +284,12 @@ class FixamHandler {
                 const folder = mediaType === 'image' ? 'images' : 'videos';
                 const filePath = path.join(__dirname, `../uploads/issues/${folder}`, filename);
                 
+                console.log(`[handleMediaMessage] Saving to: ${filePath}`);
                 fs.writeFileSync(filePath, downloadResult.buffer);
                 mediaUrl = `/uploads/issues/${folder}/${filename}`;
+                console.log(`[handleMediaMessage] Saved successfully: ${mediaUrl}`);
             } else {
+                console.log('[handleMediaMessage] Download failed, notifying user');
                 await this.sendMessage(fromNumber, "⚠️ Failed to download the media. Please try sending it again.");
                 return;
             }
@@ -282,6 +303,7 @@ class FixamHandler {
             });
             await this.sendMessage(fromNumber, "Evidence received! 📸\n\nNow, please share the *Location* of the issue.\n\n📍 Use the attachment icon > Location\n✏️ Or type the address");
         } else {
+            console.log('[handleMediaMessage] User not in correct state or state is null');
             await this.sendMessage(fromNumber, "I'm not expecting media right now.");
         }
     }
