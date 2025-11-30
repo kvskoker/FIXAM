@@ -3,9 +3,9 @@ const logger = require('./logger');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-// Using gemini-2.0-flash as per user's working Postman example
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent`;
+const AI_API_KEY = process.env.AI_API_KEY;
+// Using gemini-2.0-flash-lite
+const AI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent`;
 
 /**
  * Analyze text using Gemini to categorize and summarize.
@@ -13,10 +13,10 @@ const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemi
  * @returns {Promise<Object>} - { category, summary, urgency }
  */
 async function analyzeIssue(text) {
-    logger.log('ai_debug', `Analyzing issue. Text length: ${text.length}`);
+   // logger.log('ai_debug', `Analyzing issue. Text length: ${text.length}`);
 
-    if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_gemini_api_key') {
-        logger.log('ai_debug', "Gemini API Key not set. Returning dummy analysis.");
+    if (!AI_API_KEY || AI_API_KEY === 'your_AI_API_KEY') {
+        // logger.log('ai_debug', "Gemini API Key not set. Returning dummy analysis.");
         return {
             category: "General",
             summary: text.substring(0, 50) + "...",
@@ -40,16 +40,16 @@ async function analyzeIssue(text) {
             contents: [{ parts: [{ text: prompt }] }]
         };
 
-        logger.logObject('ai_debug', 'Request Body', requestBody);
+        // logger.logObject('ai_debug', 'Request Body', requestBody);
 
-        const response = await axios.post(GEMINI_URL, requestBody, {
+        const response = await axios.post(AI_URL, requestBody, {
             headers: {
                 'Content-Type': 'application/json',
-                'X-goog-api-key': GEMINI_API_KEY
+                'X-goog-api-key': AI_API_KEY
             }
         });
 
-        logger.logObject('ai_debug', 'Gemini Response', response.data);
+        // logger.logObject('ai_debug', 'Gemini Response', response.data);
 
         const content = response.data.candidates[0].content.parts[0].text;
         // Clean up markdown code blocks if present
