@@ -288,12 +288,41 @@ class FixamHandler {
                 const extension = downloadResult.mimeType ? downloadResult.mimeType.split('/')[1].split(';')[0] : 'bin';
                 const filename = `${crypto.randomUUID()}.${extension}`;
                 const folder = mediaType === 'image' ? 'images' : 'videos';
-                const filePath = path.join(__dirname, `../uploads/issues/${folder}`, filename);
                 
-                logger.log('media_handler', `Saving to: ${filePath}`);
-                fs.writeFileSync(filePath, downloadResult.buffer);
-                mediaUrl = `/uploads/issues/${folder}/${filename}`;
-                logger.log('media_handler', `Saved successfully: ${mediaUrl}`);
+                // Log current working directory for debugging
+                logger.log('media_handler', `Current working directory: ${process.cwd()}`);
+                
+                // Use process.cwd() to get the correct base directory
+                const uploadsDir = path.join(process.cwd(), 'backend', 'uploads', 'issues', folder);
+                const filePath = path.join(uploadsDir, filename);
+                
+                logger.log('media_handler', `Constructed uploads dir: ${uploadsDir}`);
+                logger.log('media_handler', `Full file path: ${filePath}`);
+                logger.log('media_handler', `Directory exists: ${fs.existsSync(uploadsDir)}`);
+                
+                // Ensure directory exists
+                if (!fs.existsSync(uploadsDir)) {
+                    logger.log('media_handler', `Creating directory: ${uploadsDir}`);
+                    try {
+                        fs.mkdirSync(uploadsDir, { recursive: true });
+                        logger.log('media_handler', 'Directory created successfully');
+                    } catch (mkdirError) {
+                        logger.logError('media_handler', 'Failed to create directory', mkdirError);
+                        await this.sendMessage(fromNumber, "⚠️ Server error. Please contact support.");
+                        return;
+                    }
+                }
+                
+                logger.log('media_handler', `Attempting to save file...`);
+                try {
+                    fs.writeFileSync(filePath, downloadResult.buffer);
+                    mediaUrl = `/uploads/issues/${folder}/${filename}`;
+                    logger.log('media_handler', `File saved successfully: ${mediaUrl}`);
+                } catch (writeError) {
+                    logger.logError('media_handler', 'Failed to write file', writeError);
+                    await this.sendMessage(fromNumber, "⚠️ Failed to save the media. Please try again.");
+                    return;
+                }
             } else {
                 logger.log('media_handler', 'Download failed, notifying user');
                 await this.sendMessage(fromNumber, "⚠️ Failed to download the media. Please try sending it again.");
@@ -328,7 +357,15 @@ class FixamHandler {
             if (downloadResult) {
                 const extension = downloadResult.mimeType ? downloadResult.mimeType.split('/')[1].split(';')[0] : 'ogg';
                 const filename = `${crypto.randomUUID()}.${extension}`;
-                const filePath = path.join(__dirname, `../uploads/issues/audio`, filename);
+                
+                // Use process.cwd() to get the correct base directory
+                const uploadsDir = path.join(process.cwd(), 'backend', 'uploads', 'issues', 'audio');
+                const filePath = path.join(uploadsDir, filename);
+                
+                // Ensure directory exists
+                if (!fs.existsSync(uploadsDir)) {
+                    fs.mkdirSync(uploadsDir, { recursive: true });
+                }
                 
                 fs.writeFileSync(filePath, downloadResult.buffer);
                 mediaUrl = `/uploads/issues/audio/${filename}`;
