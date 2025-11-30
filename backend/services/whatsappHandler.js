@@ -196,12 +196,12 @@ class FixamHandler {
                 let category = 'Uncategorized';
                 try {
                     const analysis = await analyzeIssue(input);
-                    console.log("Gemini Analysis Result:", analysis);
+                    logger.logObject('ai_debug', 'Gemini Analysis Result (Handler)', analysis);
                     if (analysis && analysis.category) {
                         category = analysis.category;
                     }
                 } catch (err) {
-                    console.error('Error analyzing issue:', err);
+                    logger.logError('ai_debug', 'Error analyzing issue (Handler)', err);
                 }
                 currentData.category = category;
 
