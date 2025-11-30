@@ -5,24 +5,16 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const AI_API_KEY = process.env.AI_API_KEY;
 // Using gemini-2.0-flash-lite
-const AI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent`;
+// Local AI Engine URL
+const AI_URL = 'http://localhost:9000/analyze';
 
 /**
- * Analyze text using Gemini to categorize and summarize.
+ * Analyze text using local AI Engine to categorize and summarize.
  * @param {string} text - The user's description of the issue.
  * @returns {Promise<Object>} - { category, summary, urgency }
  */
 async function analyzeIssue(text) {
-   // logger.log('ai_debug', `Analyzing issue. Text length: ${text.length}`);
-
-    if (!AI_API_KEY || AI_API_KEY === 'your_AI_API_KEY') {
-        // logger.log('ai_debug', "Gemini API Key not set. Returning dummy analysis.");
-        return {
-            category: "General",
-            summary: text.substring(0, 50) + "...",
-            urgency: "medium"
-        };
-    }
+    // logger.log('ai_debug', `Analyzing issue. Text length: ${text.length}`);
 
     const prompt = `
     Analyze the following report about a civic issue in Sierra Leone.
@@ -37,26 +29,25 @@ async function analyzeIssue(text) {
 
     try {
         const requestBody = {
-            contents: [{ parts: [{ text: prompt }] }]
+            input_text: prompt
         };
 
         // logger.logObject('ai_debug', 'Request Body', requestBody);
 
         const response = await axios.post(AI_URL, requestBody, {
             headers: {
-                'Content-Type': 'application/json',
-                'X-goog-api-key': AI_API_KEY
+                'Content-Type': 'application/json'
             }
         });
 
-        // logger.logObject('ai_debug', 'Gemini Response', response.data);
+        // logger.logObject('ai_debug', 'Local AI Response', response.data);
 
-        const content = response.data.candidates[0].content.parts[0].text;
+        const content = response.data.response;
         // Clean up markdown code blocks if present
         const jsonString = content.replace(/```json/g, '').replace(/```/g, '').trim();
         return JSON.parse(jsonString);
     } catch (error) {
-        logger.logError('ai_debug', 'Gemini AI Error', error);
+        logger.logError('ai_debug', 'AI Engine Error', error);
         return {
             category: "Uncategorized",
             summary: "Could not analyze text.",

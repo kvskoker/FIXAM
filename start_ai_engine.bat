@@ -1,0 +1,6 @@
+@echo off
+echo Installing dependencies...
+pip install -r aiengine/requirements.txt
+echo Starting AI Engine...
+python aiengine/main.py
+pause
