@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const FixamDatabase = require('./fixamDatabase');
 const FixamHelpers = require('./fixamHelpers');
+const logger = require('./logger');
 
 class FixamHandler {
     constructor(whatsAppService, db, io, debugLog) {
@@ -16,14 +17,15 @@ class FixamHandler {
     }
 
     async processIncomingMessage(data) {
-        console.log('[FixamHandler] Received webhook data:', JSON.stringify(data, null, 2));
+        logger.log('webhook', '========== Received webhook ==========');
+        logger.logObject('webhook', 'Full webhook data', data);
         
         if (data.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
             const message = data.entry[0].changes[0].value.messages[0];
             const fromNumber = message.from;
 
-            console.log(`[FixamHandler] Message from ${fromNumber}, Type: ${message.type}`);
-            console.log('[FixamHandler] Full message object:', JSON.stringify(message, null, 2));
+            logger.log('webhook', `Message from: ${fromNumber}, Type: ${message.type}`);
+            logger.logObject('webhook', 'Message object', message);
 
             // Log message
             const messageBody = message.text?.body || message.type;
@@ -36,22 +38,25 @@ class FixamHandler {
 
             // Handle different message types
             if (message.type === 'text') {
+                logger.log('webhook', 'Handling text message');
                 await this.handleTextMessage(fromNumber, messageBody);
             } else if (message.type === 'location') {
+                logger.log('webhook', 'Handling location message');
                 await this.handleLocationMessage(fromNumber, message.location);
             } else if (message.type === 'image' || message.type === 'video') {
-                console.log('[FixamHandler] Handling media message...');
+                logger.log('webhook', 'Handling media message (image/video)');
                 await this.handleMediaMessage(fromNumber, message);
             } else if (message.type === 'audio' || message.type === 'voice') {
-                console.log('[FixamHandler] Handling voice message...');
+                logger.log('webhook', 'Handling voice message');
                 await this.handleVoiceMessage(fromNumber, message);
             } else {
-                console.log(`[FixamHandler] Unknown message type: ${message.type}`);
+                logger.log('webhook', `Unknown message type: ${message.type}`);
                 await this.sendMessage(fromNumber, "Sorry, I don't understand this message type yet.");
             }
         } else {
-            console.log('[FixamHandler] No message found in webhook data');
+            logger.log('webhook', 'No message found in webhook data');
         }
+        logger.log('webhook', '========== Webhook processing complete ==========');
     }
 
     async handleTextMessage(fromNumber, text) {
@@ -261,20 +266,21 @@ class FixamHandler {
     }
 
     async handleMediaMessage(fromNumber, message) {
-        console.log('[handleMediaMessage] Called for user:', fromNumber);
+        logger.log('media_handler', `========== handleMediaMessage called for ${fromNumber} ==========`);
         let state = await this.fixamDb.getConversationState(fromNumber);
-        console.log('[handleMediaMessage] User state:', state?.current_step);
+        logger.log('media_handler', `User state: ${state?.current_step || 'null'}`);
         
         if (state && state.current_step === 'awaiting_report_evidence') {
             const mediaId = message.image ? message.image.id : message.video.id;
             const mediaType = message.image ? 'image' : 'video';
             
-            console.log(`[handleMediaMessage] Media ID: ${mediaId}, Type: ${mediaType}`);
+            logger.log('media_handler', `Media ID: ${mediaId}, Type: ${mediaType}`);
+            logger.logObject('media_handler', 'Full message object', message);
             
             // Download Media
-            console.log('[handleMediaMessage] Starting download...');
+            logger.log('media_handler', 'Calling downloadMedia...');
             const downloadResult = await this.whatsAppService.downloadMedia(mediaId);
-            console.log('[handleMediaMessage] Download result:', downloadResult ? 'Success' : 'Failed');
+            logger.log('media_handler', `Download result: ${downloadResult ? 'Success' : 'Failed'}`);
             
             let mediaUrl = '';
 
@@ -284,12 +290,12 @@ class FixamHandler {
                 const folder = mediaType === 'image' ? 'images' : 'videos';
                 const filePath = path.join(__dirname, `../uploads/issues/${folder}`, filename);
                 
-                console.log(`[handleMediaMessage] Saving to: ${filePath}`);
+                logger.log('media_handler', `Saving to: ${filePath}`);
                 fs.writeFileSync(filePath, downloadResult.buffer);
                 mediaUrl = `/uploads/issues/${folder}/${filename}`;
-                console.log(`[handleMediaMessage] Saved successfully: ${mediaUrl}`);
+                logger.log('media_handler', `Saved successfully: ${mediaUrl}`);
             } else {
-                console.log('[handleMediaMessage] Download failed, notifying user');
+                logger.log('media_handler', 'Download failed, notifying user');
                 await this.sendMessage(fromNumber, "⚠️ Failed to download the media. Please try sending it again.");
                 return;
             }
@@ -301,11 +307,13 @@ class FixamHandler {
                 current_step: 'awaiting_report_location',
                 data: currentData
             });
+            logger.log('media_handler', 'Updated state to awaiting_report_location');
             await this.sendMessage(fromNumber, "Evidence received! 📸\n\nNow, please share the *Location* of the issue.\n\n📍 Use the attachment icon > Location\n✏️ Or type the address");
         } else {
-            console.log('[handleMediaMessage] User not in correct state or state is null');
+            logger.log('media_handler', `User not in correct state. Current: ${state?.current_step || 'null'}, Expected: awaiting_report_evidence`);
             await this.sendMessage(fromNumber, "I'm not expecting media right now.");
         }
+        logger.log('media_handler', '========== handleMediaMessage complete ==========');
     }
 
     async handleVoiceMessage(fromNumber, message) {
