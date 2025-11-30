@@ -122,7 +122,7 @@ function renderCharts(issues, categoriesList) {
     }
 
     categoryChart = new Chart(ctxCategory, {
-        type: 'doughnut',
+        type: 'bar',
         data: {
             labels: Object.keys(categoryCounts),
             datasets: [{
@@ -136,7 +136,7 @@ function renderCharts(issues, categoriesList) {
             maintainAspectRatio: false,
             plugins: {
                 legend: {
-                    position: 'right'
+                    display: false
                 }
             }
         }

@@ -76,6 +76,42 @@ async function fetchIssues() {
     }
 }
 
+// Helper to check if url is video
+function isVideo(url) {
+    if (!url) return false;
+    const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov'];
+    return videoExtensions.some(ext => url.toLowerCase().endsWith(ext));
+}
+
+// Global function to play video
+window.playVideo = function(container) {
+    const video = container.querySelector('video');
+    const playBtn = container.querySelector('.play-button');
+    
+    if (video.paused) {
+        video.play();
+        video.controls = true;
+        playBtn.style.display = 'none';
+    } else {
+        video.pause();
+        // We leave controls enabled so user can use them
+        playBtn.style.display = 'flex';
+    }
+};
+
+// Global function to expand video
+window.expandVideo = function(container, event) {
+    if (event) event.stopPropagation();
+    const video = container.querySelector('video');
+    if (video.requestFullscreen) {
+        video.requestFullscreen();
+    } else if (video.webkitRequestFullscreen) { /* Safari */
+        video.webkitRequestFullscreen();
+    } else if (video.msRequestFullscreen) { /* IE11 */
+        video.msRequestFullscreen();
+    }
+};
+
 function renderIssues(issues) {
     // Clear existing markers
     Object.values(markers).forEach(marker => map.removeLayer(marker));
@@ -91,9 +127,27 @@ function renderIssues(issues) {
         }).addTo(map);
 
         // Popup Content
+        // Popup Content
+        let mediaContent = '';
+        if (isVideo(issue.image_url)) {
+            mediaContent = `
+                <div class="video-container" style="position: relative; width: 100%; height: 150px; margin-bottom: 0.5rem; border-radius: 0.5rem; overflow: hidden; background: #000;">
+                    <video src="${issue.image_url}" style="width: 100%; height: 100%; object-fit: cover;" preload="metadata" onclick="playVideo(this.parentElement)"></video>
+                    <div class="play-button" onclick="playVideo(this.parentElement)" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; background: rgba(0,0,0,0.6); border-radius: 50%; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px); cursor: pointer; z-index: 10;">
+                        <i class="fa-solid fa-play" style="color: white; font-size: 16px; margin-left: 2px;"></i>
+                    </div>
+                    <div class="expand-button" onclick="expandVideo(this.parentElement, event)" style="position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; background: rgba(0,0,0,0.6); border-radius: 4px; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px); cursor: pointer; z-index: 11;" title="Full Screen">
+                        <i class="fa-solid fa-expand" style="color: white; font-size: 14px;"></i>
+                    </div>
+                </div>
+            `;
+        } else {
+            mediaContent = `<img src="${issue.image_url || 'https://via.placeholder.com/400'}" class="popup-image" alt="${issue.title}">`;
+        }
+
         const popupContent = `
             <div class="popup-content">
-                <img src="${issue.image_url || 'https://via.placeholder.com/400'}" class="popup-image" alt="${issue.title}">
+                ${mediaContent}
                 <div class="issue-category" style="display: inline-block; margin-bottom: 0.5rem;">${issue.category}</div>
                 <div class="popup-title">${issue.title}</div>
                 <div style="font-size: 0.8rem; color: #64748b; margin-bottom: 0.5rem;">Ticket ID: <strong>${issue.ticket_id}</strong></div>
