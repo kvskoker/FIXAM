@@ -292,8 +292,8 @@ class FixamHandler {
                 // Log current working directory for debugging
                 logger.log('media_handler', `Current working directory: ${process.cwd()}`);
                 
-                // Use process.cwd() to get the correct base directory
-                const uploadsDir = path.join(process.cwd(), 'backend', 'uploads', 'issues', folder);
+                // Use public/uploads for web accessibility
+                const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'issues', folder);
                 const filePath = path.join(uploadsDir, filename);
                 
                 logger.log('media_handler', `Constructed uploads dir: ${uploadsDir}`);
@@ -358,8 +358,8 @@ class FixamHandler {
                 const extension = downloadResult.mimeType ? downloadResult.mimeType.split('/')[1].split(';')[0] : 'ogg';
                 const filename = `${crypto.randomUUID()}.${extension}`;
                 
-                // Use process.cwd() to get the correct base directory
-                const uploadsDir = path.join(process.cwd(), 'backend', 'uploads', 'issues', 'audio');
+                // Use public/uploads for web accessibility
+                const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'issues', 'audio');
                 const filePath = path.join(uploadsDir, filename);
                 
                 // Ensure directory exists
