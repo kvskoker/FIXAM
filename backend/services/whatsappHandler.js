@@ -191,6 +191,19 @@ class FixamHandler {
                 // Default title
                 currentData.title = input.substring(0, 30) + (input.length > 30 ? '...' : '');
                 
+                // Analyze with Gemini
+                await this.sendMessage(fromNumber, "Analyzing your report with AI... 🤖");
+                let category = 'General';
+                try {
+                    const analysis = await analyzeIssue(input);
+                    if (analysis && analysis.category) {
+                        category = analysis.category;
+                    }
+                } catch (err) {
+                    console.error('Error analyzing issue:', err);
+                }
+                currentData.category = category;
+
                 await this.fixamDb.updateConversationState(fromNumber, { 
                     current_step: 'awaiting_report_confirmation',
                     data: currentData
@@ -408,6 +421,7 @@ class FixamHandler {
         await this.sendMessage(fromNumber, 
             `Please review your report:\n\n` +
             `📍 *Location*: ${data.address}\n` +
+            `📂 *Category*: ${data.category || 'General'}\n` +
             `📝 *Description*: ${data.description}\n` +
             `📸 *Evidence*: ${data.image_url ? 'Attached' : 'None'}\n\n` +
             `Type *1* to confirm or *9* to cancel.`
@@ -417,21 +431,10 @@ class FixamHandler {
     async finalizeReport(fromNumber, data, userId) {
         const ticketId = this.helpers.generateTicketId();
         
-        // Analyze with Gemini
-        let category = 'General';
-        try {
-            const analysis = await analyzeIssue(data.description);
-            if (analysis && analysis.category) {
-                category = analysis.category;
-            }
-        } catch (err) {
-            console.error('Error analyzing issue:', err);
-        }
-
         const issueData = {
             ticket_id: ticketId,
             title: data.title || 'Report',
-            category: category,
+            category: data.category || 'General',
             lat: data.lat,
             lng: data.lng,
             description: data.description,
