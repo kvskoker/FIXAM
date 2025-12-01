@@ -1,6 +1,6 @@
 # Lightweight AI Service
 
-This is a Python-based AI service that uses the `google/gemma-3-270m-it` model to analyze text input and generate responses.
+This is a Python-based AI service that uses the `google/embeddinggemma-300m` model to analyze text input and generate responses.
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ This is a Python-based AI service that uses the `google/gemma-3-270m-it` model t
 
 1.  Navigate to the project directory:
     ```bash
-    cd c:\Users\kenne\Documents\KVSK\MaxCIT\Projects\FIXAM\Codebase\aiengine
+    cd FIXAM/Codebase/aiengine
     ```
 
 2.  Install the required dependencies:
@@ -33,12 +33,22 @@ This is a Python-based AI service that uses the `google/gemma-3-270m-it` model t
 
     **Example using curl:**
     ```bash
-    curl -X POST "http://localhost:9000/analyze" \
+    curl -X POST "http://localhost:9000/classify" \
          -H "Content-Type: application/json" \
-         -d "{\"input_text\": \"Who are you?\"}"
+         -d '{
+      "text": "There is a leaking water pipe causing serious traffic",
+      "candidate_labels": [
+        "Water",
+        "Electricity",
+        "Waste",
+        "Road",
+        "Safety",
+        "others"
+      ]
+    }'
     ```
 
 ## Configuration
 
 The service is configured to run on the CPU and listen on port 9000.
-The model used is `google/gemma-3-270m-it`.
+The model used is `google/embeddinggemma-300m`.

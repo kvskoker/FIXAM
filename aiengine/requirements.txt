@@ -2,4 +2,3 @@ fastapi
 uvicorn
 transformers
 torch
-jinja2>=3.1.0

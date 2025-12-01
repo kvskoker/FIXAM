@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModel
 import torch
 import uvicorn
 import os
@@ -9,10 +9,16 @@ from contextlib import asynccontextmanager
 # Global variables
 model = None
 tokenizer = None
-MODEL_ID = "google/gemma-3-270m-it"
+MODEL_ID = "google/embeddinggemma-300m"
+
+from typing import List
 
 class AnalysisRequest(BaseModel):
     input_text: str
+
+class ClassifyRequest(BaseModel):
+    text: str
+    candidate_labels: List[str]
 
 
 @asynccontextmanager
@@ -21,7 +27,7 @@ async def lifespan(app: FastAPI):
     print(f"Loading model: {MODEL_ID}...")
     try:
         tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-        model = AutoModelForCausalLM.from_pretrained(MODEL_ID)
+        model = AutoModel.from_pretrained(MODEL_ID)
         # Explicitly move to CPU (though usually default)
         model.to("cpu")
         print("Model loaded successfully on CPU.")
@@ -42,27 +48,75 @@ def analyze_text(request: AnalysisRequest):
         raise HTTPException(status_code=503, detail="Model is not loaded. Check server logs.")
 
     try:
-        messages = [
-            {"role": "user", "content": request.input_text},
-        ]
-        
-        inputs = tokenizer.apply_chat_template(
-            messages,
-            add_generation_prompt=True,
-            tokenize=True,
-            return_dict=True,
-            return_tensors="pt",
-        ).to(model.device)
+        # Tokenize input
+        inputs = tokenizer(request.input_text, return_tensors="pt", padding=True, truncation=True)
+        inputs = inputs.to(model.device)
 
-        # Generate response
-        # Using no_grad for inference to save memory and computation
+        # Generate embeddings
         with torch.no_grad():
-            outputs = model.generate(**inputs, max_new_tokens=200)
+            outputs = model(**inputs)
+            # Mean pooling
+            last_hidden_state = outputs.last_hidden_state
+            attention_mask = inputs['attention_mask']
+            input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
+            sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
+            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+            embeddings = sum_embeddings / sum_mask
+            
+            # Normalize embeddings
+            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
 
-        # Decode the output, skipping the input prompt
-        response = tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
+        return {"embedding": embeddings[0].tolist()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/classify")
+def classify_text(request: ClassifyRequest):
+    global model, tokenizer
+    if model is None or tokenizer is None:
+        raise HTTPException(status_code=503, detail="Model is not loaded. Check server logs.")
+
+    try:
+        # Prepare texts: first is the query, rest are candidates
+        all_texts = [request.text] + request.candidate_labels
         
-        return {"response": response}
+        # Tokenize batch
+        inputs = tokenizer(all_texts, return_tensors="pt", padding=True, truncation=True)
+        inputs = inputs.to(model.device)
+        
+        with torch.no_grad():
+            outputs = model(**inputs)
+            # Mean pooling
+            last_hidden_state = outputs.last_hidden_state
+            attention_mask = inputs['attention_mask']
+            input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
+            sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
+            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+            embeddings = sum_embeddings / sum_mask
+            
+            # Normalize embeddings
+            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+            
+        # The first embedding is the query
+        query_emb = embeddings[0]
+        # The rest are candidates
+        candidate_embs = embeddings[1:]
+        
+        # Calculate cosine similarities (dot product since normalized)
+        scores = torch.matmul(candidate_embs, query_emb)
+        
+        # Find best match
+        best_score_idx = torch.argmax(scores).item()
+        best_label = request.candidate_labels[best_score_idx]
+        best_score = scores[best_score_idx].item()
+        
+        return {
+            "best_label": best_label,
+            "score": best_score,
+            "scores": {label: score.item() for label, score in zip(request.candidate_labels, scores)}
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

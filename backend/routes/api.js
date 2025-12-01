@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { analyzeIssue } = require('../services/aiService');
+
 const whatsappService = require('../services/whatsappService');
 const FixamHandler = require('../services/whatsappHandler');
 
