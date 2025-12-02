@@ -1,0 +1,28 @@
+[Unit]
+Description=Fixam AI Engine Service
+After=network.target
+
+[Service]
+# Change this to the user who owns the project
+User=ubuntu
+# Change this to the group who owns the project
+Group=ubuntu
+
+# Set the working directory to where main.py is located
+# Example: /home/ubuntu/fixam/aiengine
+WorkingDirectory=/path/to/your/project/aiengine
+
+# Command to start the service
+# Ensure you are using the python from your virtual environment if applicable
+# Example: /home/ubuntu/fixam/aiengine/venv/bin/python main.py
+ExecStart=/usr/bin/python3 main.py
+
+# Restart the service if it crashes
+Restart=always
+RestartSec=5
+
+# Environment variables if needed
+# Environment=PORT=9000
+
+[Install]
+WantedBy=multi-user.target

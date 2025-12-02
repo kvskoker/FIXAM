@@ -7,9 +7,45 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const LOCAL_AI_URL = 'http://localhost:9000/classify';
 
-const CANDIDATE_LABELS = [
-    "Water", "Electricity", "Roads", "Transportation", "Drainage", "Waste", "Housing & Urban Development", "Telecommunications", "Internet", "Health Services", "Education Services", "Public Safety", "Security", "Fire Services", "Social Welfare", "Environmental Pollution", "Deforestation", "Animal Control", "Public Space Maintenance", "Disaster Management", "Corruption", "Accountability", "Local Taxation", "Streetlights", "Bridges or Culverts", "Public Buildings", "Sewage or Toilet Facilities", "Traffic Management", "Road Safety", "Youth Engagement", "Gender-Based Violence", "Child Protection", "Disability Access", "Market Operations", "Service Access"
-];
+const CATEGORY_MAPPING = {
+    "Water supply, pipe leak, no water, shortage, dirty water": "Water",
+    "Electricity issues, power outage, blackout, voltage, no light": "Electricity",
+    "Road damage, potholes, bad road, construction, traffic jam": "Roads",
+    "Transportation, bus, taxi, vehicle issues": "Transportation",
+    "Drainage, clogged drains, flooding, gutters": "Drainage",
+    "Waste management, garbage, trash, rubbish, dumping": "Waste",
+    "Housing issues, urban development, building code": "Housing & Urban Development",
+    "Telecommunications, phone signal, network issues": "Telecommunications",
+    "Internet connectivity, slow internet, no wifi": "Internet",
+    "Health services, hospital, clinic, doctor, medicine": "Health Services",
+    "Education, school, teachers, students, books": "Education Services",
+    "Public safety, crime, theft, police, danger": "Public Safety",
+    "Security issues, guards, protection": "Security",
+    "Fire hazard, fire outbreak, firefighters": "Fire Services",
+    "Social welfare, support, community aid": "Social Welfare",
+    "Environmental pollution, smoke, noise, air quality": "Environmental Pollution",
+    "Deforestation, cutting trees, land degradation": "Deforestation",
+    "Animal control, stray dogs, wild animals": "Animal Control",
+    "Public space maintenance, parks, cleaning": "Public Space Maintenance",
+    "Disaster management, emergency response": "Disaster Management",
+    "Corruption, bribery, fraud, misconduct": "Corruption",
+    "Accountability, transparency, government": "Accountability",
+    "Local taxation, taxes, fees, rates": "Local Taxation",
+    "Streetlights, dark streets, broken lights": "Streetlights",
+    "Bridges, culverts, broken bridge": "Bridges or Culverts",
+    "Public buildings, government offices, maintenance": "Public Buildings",
+    "Sewage, toilet facilities, sanitation": "Sewage or Toilet Facilities",
+    "Traffic management, signals, signs, rules": "Traffic Management",
+    "Road safety, accidents, speeding": "Road Safety",
+    "Youth engagement, activities, programs": "Youth Engagement",
+    "Gender-based violence, abuse, harassment": "Gender-Based Violence",
+    "Child protection, abuse, welfare": "Child Protection",
+    "Disability access, ramps, inclusion": "Disability Access",
+    "Market operations, stalls, vendors, prices": "Market Operations",
+    "Service access, government services": "Service Access"
+};
+
+const CANDIDATE_LABELS = Object.keys(CATEGORY_MAPPING);
 
 /**
  * Analyze text using Local AI to categorize.
@@ -38,13 +74,16 @@ async function analyzeIssue(text) {
         let bestLabel = response.data.best_label;
         const bestScore = response.data.score;
 
+        let category = "others";
+
         // Threshold check
-        if (bestScore < 0.80) {
-            bestLabel = "others";
+        if (bestScore >= 0.80) {
+            // Map back to simple category name
+            category = CATEGORY_MAPPING[bestLabel] || "others";
         }
 
         return {
-            category: bestLabel,
+            category: category,
             summary: text.substring(0, 100) + (text.length > 100 ? "..." : ""),
             urgency: "medium" // Default urgency as local model only classifies
         };
