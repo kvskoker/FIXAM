@@ -8,12 +8,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const LOCAL_AI_URL = 'http://localhost:9000/classify';
 
 const CANDIDATE_LABELS = [
-    "Water",
-    "Electricity",
-    "Waste",
-    "Road",
-    "Safety",
-    "others"
+    "Water", "Electricity", "Roads", "Transportation", "Drainage", "Waste", "Housing & Urban Development", "Telecommunications", "Internet", "Health Services", "Education Services", "Public Safety", "Security", "Fire Services", "Social Welfare", "Environmental Pollution", "Deforestation", "Animal Control", "Public Space Maintenance", "Disaster Management", "Corruption", "Accountability", "Local Taxation", "Streetlights", "Bridges or Culverts", "Public Buildings", "Sewage or Toilet Facilities", "Traffic Management", "Road Safety", "Youth Engagement", "Gender-Based Violence", "Child Protection", "Disability Access", "Market Operations", "Service Access"
 ];
 
 /**
@@ -40,7 +35,13 @@ async function analyzeIssue(text) {
 
         // logger.logObject('ai_debug', 'Local AI Response', response.data);
 
-        const bestLabel = response.data.best_label;
+        let bestLabel = response.data.best_label;
+        const bestScore = response.data.score;
+
+        // Threshold check
+        if (bestScore < 0.80) {
+            bestLabel = "others";
+        }
 
         return {
             category: bestLabel,
