@@ -59,8 +59,40 @@ Codebase/
 ### Prerequisites
 - Node.js (v16 or higher)
 - PostgreSQL (v12 or higher)
+- Python 3.8+ (for local AI service)
+- FFmpeg (for audio processing in AI service)
 - WhatsApp Business API access (optional for testing)
-- Gemini API key (optional for testing)
+- Gemini API key (for issue categorization)
+
+### Local AI Service Setup
+
+FIXAM includes a local AI service that provides:
+- **Image Safety Classification** (NudeNet): Filters inappropriate images
+- **Audio Transcription** (Whisper): Converts voice notes to text
+- **Text Classification** (EmbeddingGemma): Categorizes issues
+
+The AI service runs independently on port 8000 and is called by the backend for processing media and text.
+
+```bash
+# Navigate to AI service directory
+cd backend/ai_service
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Start the service
+python main.py
+```
+
+The service will be available at `http://localhost:8000`
+
+**Endpoints:**
+- `POST /classify-image`: Image safety check (returns `safe` or `nude`)
+- `POST /transcribe`: Audio transcription (returns `{"text": "transcribed text", "filename": "..."}`)
+- `POST /classify`: Text classification with custom labels
+- `POST /analyze`: Generate text embeddings
+
+For production deployment on Linux servers, see `backend/ai_service/README.md` for systemd setup instructions.
 
 ### 1. Database Setup
 
@@ -229,12 +261,17 @@ This allows you to test the core functionality without external API dependencies
 - **Database**: PostgreSQL with PostGIS (for future geospatial queries)
 - **Maps**: OpenStreetMap, Nominatim API
 - **Messaging**: WhatsApp Business API (Meta Graph API)
-- **AI**: Google Gemini API
+- **AI**: 
+  - Google Gemini API (issue categorization)
+  - Local AI Service (FastAPI):
+    - NudeNet (image safety classification)
+    - Whisper (audio transcription)
+    - EmbeddingGemma (text classification)
 
 ## Future Enhancements
 
-- [ ] Image upload support via WhatsApp
-- [ ] Voice note transcription (Whisper AI)
+- [x] Image upload support via WhatsApp ✅
+- [x] Voice note transcription (Whisper AI) ✅
 - [ ] Duplicate detection (50m radius check)
 - [ ] Phone verification for voting (OTP)
 - [ ] Real-time updates (WebSockets)

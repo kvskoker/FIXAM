@@ -445,9 +445,9 @@ class FixamHandler {
             }
 
             const currentData = state.data || {};
-            // Use transcribed text if available, otherwise fallback
-            currentData.description = transcribedText ? transcribedText : `[Voice Note] ${mediaUrl}`;
-            currentData.title = transcribedText ? (transcribedText.substring(0, 30) + '...') : "Voice Report";
+            // Use transcribed text if available, otherwise fallback to a user-friendly message
+            currentData.description = transcribedText ? transcribedText : "[Voice Note - Transcription unavailable]";
+            currentData.title = transcribedText ? (transcribedText.substring(0, 30) + (transcribedText.length > 30 ? '...' : '')) : "Voice Report";
             currentData.voice_url = mediaUrl;
 
             // Analyze with Gemini using the transcribed text if available
