@@ -65,6 +65,35 @@ if [ -f "$SERVICE_FILE" ]; then
     sed -i "s|User=ubuntu|User=$ACTUAL_USER|g" "${SERVICE_FILE}.tmp"
     sed -i "s|Group=ubuntu|Group=$ACTUAL_GROUP|g" "${SERVICE_FILE}.tmp"
     sed -i "s|WorkingDirectory=/path/to/your/project/aiengine|WorkingDirectory=$SCRIPT_DIR|g" "${SERVICE_FILE}.tmp"
+    # Try to get token from environment variable or backend .env
+    HF_TOKEN="$HUGGINGFACE_API_KEY"
+    
+    if [ -z "$HF_TOKEN" ]; then
+        BACKEND_ENV="$SCRIPT_DIR/../backend/.env"
+        if [ -f "$BACKEND_ENV" ]; then
+            echo "Looking for HUGGINGFACE_API_KEY in $BACKEND_ENV..."
+            # Extract HUGGINGFACE_API_KEY from .env (handle potential carriage returns)
+            HF_TOKEN=$(grep "^HUGGINGFACE_API_KEY=" "$BACKEND_ENV" | cut -d '=' -f2 | tr -d '"' | tr -d "'" | tr -d '\r')
+        fi
+    fi
+
+    if [ -z "$HF_TOKEN" ]; then
+        read -p "Enter your Hugging Face API Token (leave blank if not needed): " HF_TOKEN
+    else
+        echo "Found Hugging Face Token."
+    fi
+    
+    if [ ! -z "$HF_TOKEN" ]; then
+        echo "Configuring Hugging Face Token..."
+        # Add Environment variable to service file
+        # Check if Environment line already exists, if so replace it, else append after ExecStart
+        if grep -q "Environment=HUGGINGFACE_API_KEY=" "${SERVICE_FILE}.tmp"; then
+            sed -i "s|Environment=HUGGINGFACE_API_KEY=.*|Environment=HUGGINGFACE_API_KEY=$HF_TOKEN|g" "${SERVICE_FILE}.tmp"
+        else
+            sed -i "/ExecStart=/a Environment=HUGGINGFACE_API_KEY=$HF_TOKEN" "${SERVICE_FILE}.tmp"
+        fi
+    fi
+
     sed -i "s|ExecStart=/usr/bin/python3 main.py|ExecStart=$VENV_DIR/bin/python main.py|g" "${SERVICE_FILE}.tmp"
     
     # Move to systemd directory

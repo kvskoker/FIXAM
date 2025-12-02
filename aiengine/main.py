@@ -25,9 +25,13 @@ class ClassifyRequest(BaseModel):
 async def lifespan(app: FastAPI):
     global model, tokenizer
     print(f"Loading model: {MODEL_ID}...")
+    
+    # Get token from environment
+    token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_API_KEY")
+    
     try:
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-        model = AutoModel.from_pretrained(MODEL_ID)
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, token=token)
+        model = AutoModel.from_pretrained(MODEL_ID, token=token)
         # Explicitly move to CPU (though usually default)
         model.to("cpu")
         print("Model loaded successfully on CPU.")

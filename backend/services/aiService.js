@@ -77,7 +77,7 @@ async function analyzeIssue(text) {
         let category = "others";
 
         // Threshold check
-        if (bestScore >= 0.80) {
+        if (bestScore >= 0.60) {
             // Map back to simple category name
             category = CATEGORY_MAPPING[bestLabel] || "others";
         }
