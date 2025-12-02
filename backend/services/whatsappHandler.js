@@ -112,10 +112,10 @@ class FixamHandler {
             case 'awaiting_category':
                 if (input === '1' || lowerInput.includes('report')) {
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_report_evidence', data: {} });
-                    await this.sendMessage(fromNumber, "Great! Let's report an issue.\n\nPlease send a *Photo* or *Video* of the issue as evidence.");
+                    await this.sendMessage(fromNumber, "Great! Let's report an issue.\n\nPlease send a *Photo* or *Video* of the issue as evidence, or type *9* to cancel.");
                 } else if (input === '2' || lowerInput.includes('vote')) {
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_vote_ticket_id', data: {} });
-                    await this.sendMessage(fromNumber, "Okay! Please enter the *Ticket ID* of the issue you want to vote on.");
+                    await this.sendMessage(fromNumber, "Okay! Please enter the *Ticket ID* of the issue you want to vote on, or type *9* to cancel.");
                 } else {
                     await this.sendMainMenu(fromNumber, user.name);
                 }
@@ -124,9 +124,9 @@ class FixamHandler {
             case 'awaiting_report_evidence':
                 if (lowerInput === 'skip') {
                      await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_report_location' });
-                     await this.sendMessage(fromNumber, "Okay, skipping evidence.\n\nNow, please share the *Location* of the issue.\n\n📍 Use the attachment icon > Location\n✏️ Or type the address (e.g., '5 Jabbiela Drive')");
+                     await this.sendMessage(fromNumber, "Okay, skipping evidence.\n\nNow, please share the *Location* of the issue.\n\n📍 Use the attachment icon > Location\n✏️ Or type the address (e.g., '5 Jabbiela Drive')\n\nType *9* to cancel.");
                 } else {
-                    await this.sendMessage(fromNumber, "Please send a *Photo* or *Video* (not text) to continue, or type 'skip' if you don't have one.");
+                    await this.sendMessage(fromNumber, "Please send a *Photo* or *Video* (not text) to continue, or type 'skip' if you don't have one. Type *9* to cancel.");
                 }
                 break;
 
@@ -134,7 +134,7 @@ class FixamHandler {
                 // Handle text address
                 const locations = await this.helpers.geocodeAddress(input);
                 if (locations.length === 0) {
-                    await this.sendMessage(fromNumber, "I couldn't find that address. Please try again or share your GPS location.");
+                    await this.sendMessage(fromNumber, "I couldn't find that address. Please try again or share your GPS location, or type *9* to cancel.");
                 } else if (locations.length === 1) {
                     const loc = locations[0];
                     const currentData = state.data || {};
@@ -146,7 +146,7 @@ class FixamHandler {
                         current_step: 'awaiting_report_description',
                         data: currentData
                     });
-                    await this.sendMessage(fromNumber, `Location found: ${loc.display_name}\n\nPlease describe the issue (Text or Voice Note).`);
+                    await this.sendMessage(fromNumber, `Location found: ${loc.display_name}\n\nPlease describe the issue (Text or Voice Note), or type *9* to cancel.`);
                 } else {
                     // Multiple locations - Ask user to select
                     const currentData = state.data || {};
@@ -157,7 +157,7 @@ class FixamHandler {
                         data: currentData
                     });
 
-                    let msg = `I found ${locations.length} locations. Please reply with the number (1-${locations.length}) to select:\n\n`;
+                    let msg = `I found ${locations.length} locations. Please reply with the number (1-${locations.length}) to select, or type *9* to cancel:\n\n`;
                     locations.forEach((loc, i) => {
                         msg += `${i + 1}. ${loc.display_name}\n`;
                     });
@@ -181,9 +181,9 @@ class FixamHandler {
                         current_step: 'awaiting_report_description',
                         data: currentData
                     });
-                    await this.sendMessage(fromNumber, `Location confirmed: ${loc.display_name}\n\nPlease describe the issue (Text or Voice Note).`);
+                    await this.sendMessage(fromNumber, `Location confirmed: ${loc.display_name}\n\nPlease describe the issue (Text or Voice Note), or type *9* to cancel.`);
                 } else {
-                    await this.sendMessage(fromNumber, `Please reply with a valid number (1-${pendingAddresses.length}).`);
+                    await this.sendMessage(fromNumber, `Please reply with a valid number (1-${pendingAddresses.length}), or type *9* to cancel.`);
                 }
                 break;
 
@@ -219,6 +219,7 @@ class FixamHandler {
                 if (input === '1') {
                     await this.finalizeReport(fromNumber, state.data, user.id);
                 } else if (input === '9') {
+                    // This block is technically unreachable due to global handler, but keeping for clarity/safety
                     await this.sendMessage(fromNumber, "Report cancelled. Type 'Hi' to start over.");
                     await this.fixamDb.resetConversationState(fromNumber);
                 } else {
@@ -233,9 +234,9 @@ class FixamHandler {
                         current_step: 'awaiting_vote_confirmation',
                         data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
                     });
-                    await this.sendMessage(fromNumber, `Found Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎`);
+                    await this.sendMessage(fromNumber, `Found Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
                 } else {
-                    await this.sendMessage(fromNumber, "Issue not found. Please check the Ticket ID and try again.");
+                    await this.sendMessage(fromNumber, "Issue not found. Please check the Ticket ID and try again, or type *9* to cancel.");
                 }
                 break;
 

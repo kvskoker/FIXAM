@@ -61,8 +61,7 @@ Codebase/
 - PostgreSQL (v12 or higher)
 - Python 3.8+ (for local AI service)
 - FFmpeg (for audio processing in AI service)
-- WhatsApp Business API access (optional for testing)
-- Gemini API key (for issue categorization)
+- WhatsApp Business API access
 
 ### Local AI Service Setup
 
@@ -272,13 +271,11 @@ This allows you to test the core functionality without external API dependencies
 
 - [x] Image upload support via WhatsApp ✅
 - [x] Voice note transcription (Whisper AI) ✅
+- [x] Real-time updates (WebSockets)
 - [ ] Duplicate detection (50m radius check)
-- [ ] Phone verification for voting (OTP)
-- [ ] Real-time updates (WebSockets)
 - [ ] PostGIS integration for advanced geospatial queries
 - [ ] Sentiment analysis on comments
 - [ ] Heatmap visualization
-- [ ] Mobile PWA support
 
 ## Contributing
 
