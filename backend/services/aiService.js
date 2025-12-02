@@ -5,7 +5,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 
 
-const LOCAL_AI_URL = 'http://localhost:9000/classify';
+const LOCAL_AI_URL = 'http://localhost:8000/classify';
 
 const CATEGORY_MAPPING = {
     "Water supply, pipe leak, no water, shortage, dirty water": "Water",

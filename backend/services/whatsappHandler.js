@@ -5,6 +5,8 @@ const FixamDatabase = require('./fixamDatabase');
 const FixamHelpers = require('./fixamHelpers');
 const logger = require('./logger');
 const { analyzeIssue } = require('./aiService');
+const axios = require('axios');
+const FormData = require('form-data');
 
 class FixamHandler {
     constructor(whatsAppService, db, io, debugLog) {
@@ -305,6 +307,30 @@ class FixamHandler {
             logger.log('media_handler', 'Calling downloadMedia...');
             const downloadResult = await this.whatsAppService.downloadMedia(mediaId);
             logger.log('media_handler', `Download result: ${downloadResult ? 'Success' : 'Failed'}`);
+
+            if (downloadResult && mediaType === 'image') {
+                try {
+                    logger.log('media_handler', 'Checking for sensitive content...');
+                    const formData = new FormData();
+                    formData.append('image', downloadResult.buffer, { filename: 'image.jpg', contentType: downloadResult.mimeType || 'image/jpeg' });
+                    
+                    const aiResponse = await axios.post('http://localhost:8000/classify-image', formData, {
+                        headers: { ...formData.getHeaders() },
+                        maxContentLength: Infinity,
+                        maxBodyLength: Infinity
+                    });
+
+                    if (aiResponse.data.status === 'nude') {
+                        logger.log('media_handler', 'Image rejected: Nudity detected');
+                        await this.sendMessage(fromNumber, "⚠️ This image contains sensitive content and has been rejected.");
+                        return;
+                    }
+                    logger.log('media_handler', 'Image passed safety check');
+                } catch (error) {
+                    logger.logError('media_handler', 'AI Safety Check failed', error.message);
+                    // Proceeding despite error to avoid blocking user flow if AI service is down
+                }
+            }
             
             let mediaUrl = '';
 
@@ -377,6 +403,7 @@ class FixamHandler {
             // Download Voice Note
             const downloadResult = await this.whatsAppService.downloadMedia(mediaId);
             let mediaUrl = '';
+            let transcribedText = '';
 
             if (downloadResult) {
                 const extension = downloadResult.mimeType ? downloadResult.mimeType.split('/')[1].split(';')[0] : 'ogg';
@@ -393,15 +420,50 @@ class FixamHandler {
                 
                 fs.writeFileSync(filePath, downloadResult.buffer);
                 mediaUrl = `/uploads/issues/audio/${filename}`;
+
+                // Transcribe with Whisper
+                try {
+                    await this.sendMessage(fromNumber, "Transcribing your voice note... 🎙️");
+                    const formData = new FormData();
+                    formData.append('file', downloadResult.buffer, { filename: `audio.${extension}`, contentType: downloadResult.mimeType || 'audio/ogg' });
+                    
+                    const aiResponse = await axios.post('http://localhost:8000/transcribe', formData, {
+                        headers: { ...formData.getHeaders() },
+                        maxContentLength: Infinity,
+                        maxBodyLength: Infinity
+                    });
+                    
+                    transcribedText = aiResponse.data.text;
+                    logger.log('media_handler', `Transcription: ${transcribedText}`);
+                } catch (error) {
+                    logger.logError('media_handler', 'Transcription failed', error.message);
+                }
+
             } else {
                 await this.sendMessage(fromNumber, "⚠️ Failed to download the voice note. Please try again.");
                 return;
             }
 
             const currentData = state.data || {};
-            currentData.description = `[Voice Note] ${mediaUrl}`; // Store URL in description or separate field
-            currentData.title = "Voice Report";
-            currentData.voice_url = mediaUrl; // Store separately if schema supports it, else just description
+            // Use transcribed text if available, otherwise fallback
+            currentData.description = transcribedText ? transcribedText : `[Voice Note] ${mediaUrl}`;
+            currentData.title = transcribedText ? (transcribedText.substring(0, 30) + '...') : "Voice Report";
+            currentData.voice_url = mediaUrl;
+
+            // Analyze with Gemini using the transcribed text if available
+            let category = 'Uncategorized';
+            if (transcribedText) {
+                await this.sendMessage(fromNumber, "Analyzing your report with AI... 🤖");
+                try {
+                    const analysis = await analyzeIssue(transcribedText);
+                    if (analysis && analysis.category) {
+                        category = analysis.category;
+                    }
+                } catch (err) {
+                    logger.logError('ai_debug', 'Error analyzing issue (Handler)', err);
+                }
+            }
+            currentData.category = category;
 
             await this.fixamDb.updateConversationState(fromNumber, { 
                 current_step: 'awaiting_report_confirmation',
