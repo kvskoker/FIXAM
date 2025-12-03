@@ -255,4 +255,205 @@ router.post('/webhook', async (req, res) => {
     }
 });
 
+
+// ==========================================
+// ADMIN ROUTES
+// ==========================================
+
+// POST /api/admin/login - Admin Login
+router.post('/admin/login', async (req, res) => {
+    try {
+        const { phone, password } = req.body;
+
+        if (!phone || !password) {
+            return res.status(400).json({ success: false, message: 'Phone and password required' });
+        }
+
+        // Check if user exists
+        const userResult = await db.query('SELECT * FROM users WHERE phone_number = $1', [phone]);
+        
+        if (userResult.rows.length === 0) {
+            return res.status(401).json({ success: false, message: 'Invalid credentials' });
+        }
+
+        const user = userResult.rows[0];
+
+        // Verify password (using phone number as password as requested)
+        if (password !== phone) {
+            return res.status(401).json({ success: false, message: 'Invalid credentials' });
+        }
+
+        // Return success
+        res.json({
+            success: true,
+            user: {
+                id: user.id,
+                name: user.name,
+                phone: user.phone_number
+            }
+        });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
+});
+
+// GET /api/admin/stats - Enhanced Admin Stats
+router.get('/admin/stats', async (req, res) => {
+    try {
+        // Reuse basic stats logic or call internal function if refactored
+        // 1. Total Reports (This Week)
+        const totalReportsResult = await db.query(`
+            SELECT COUNT(*) as count 
+            FROM issues 
+            WHERE created_at >= date_trunc('week', CURRENT_DATE)
+        `);
+        const totalReports = parseInt(totalReportsResult.rows[0].count);
+
+        // 2. Last Week
+        const lastWeekReportsResult = await db.query(`
+            SELECT COUNT(*) as count 
+            FROM issues 
+            WHERE created_at >= date_trunc('week', CURRENT_DATE - INTERVAL '1 week')
+            AND created_at < date_trunc('week', CURRENT_DATE)
+        `);
+        const lastWeekReports = parseInt(lastWeekReportsResult.rows[0].count);
+        
+        let percentageChange = 0;
+        if (lastWeekReports > 0) {
+            percentageChange = Math.round(((totalReports - lastWeekReports) / lastWeekReports) * 100);
+        } else if (totalReports > 0) {
+            percentageChange = 100;
+        }
+
+        // 3. Resolved
+        const resolvedResult = await db.query("SELECT COUNT(*) as count FROM issues WHERE status = 'fixed'");
+        const resolvedCount = parseInt(resolvedResult.rows[0].count);
+
+        // 4. Resolution Rate
+        const allTimeResult = await db.query('SELECT COUNT(*) as count FROM issues');
+        const allTimeCount = parseInt(allTimeResult.rows[0].count);
+        const resolutionRate = allTimeCount > 0 ? Math.round((resolvedCount / allTimeCount) * 100) : 0;
+
+        // 5. Critical Pending
+        const criticalPendingResult = await db.query("SELECT COUNT(*) as count FROM issues WHERE status = 'critical'");
+        const criticalPendingCount = parseInt(criticalPendingResult.rows[0].count);
+
+        // 6. Sentiment (Mocked for now)
+        // In a real scenario, this would aggregate sentiment scores from an AI analysis table
+        const sentimentScore = "Neutral"; // Placeholder
+
+        res.json({
+            total_reports_week: totalReports,
+            reports_change_pct: percentageChange,
+            resolved_issues: resolvedCount,
+            resolution_rate: resolutionRate,
+            critical_pending: criticalPendingCount,
+            sentiment_score: sentimentScore
+        });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// GET /api/admin/insights - AI Insights & Alerts
+router.get('/admin/insights', async (req, res) => {
+    try {
+        const insights = [];
+
+        // 1. Hotspots (High Upvotes)
+        const hotspotsResult = await db.query(`
+            SELECT i.category, i.title, v.upvotes 
+            FROM issues_with_votes i 
+            JOIN (
+                SELECT issue_id, upvotes FROM issues_with_votes WHERE upvotes > 10
+            ) v ON i.id = v.issue_id
+            ORDER BY v.upvotes DESC
+            LIMIT 3
+        `);
+
+        hotspotsResult.rows.forEach(row => {
+            insights.push({
+                type: 'critical',
+                title: 'High Priority Hotspot',
+                description: `${row.title} (${row.category}) has received ${row.upvotes} upvotes. Immediate attention recommended.`
+            });
+        });
+
+        // 2. Emerging Issues (Spike in specific category today)
+        // This is a bit complex for a single query without more data, so we'll do a simple check
+        const emergingResult = await db.query(`
+            SELECT category, COUNT(*) as count 
+            FROM issues 
+            WHERE created_at >= CURRENT_DATE 
+            GROUP BY category 
+            HAVING COUNT(*) > 5
+            ORDER BY count DESC
+            LIMIT 1
+        `);
+
+        if (emergingResult.rows.length > 0) {
+            const row = emergingResult.rows[0];
+            insights.push({
+                type: 'warning',
+                title: 'Emerging Issue',
+                description: `Spike in "${row.category}" reports. ${row.count} new reports today.`
+            });
+        }
+
+        // 3. Sentiment (Mocked)
+        insights.push({
+            type: 'info',
+            title: 'Sentiment Analysis',
+            description: 'Citizens are expressing frustration regarding "Water Supply" in the East End. Negative sentiment score: 78%.'
+        });
+
+
+        res.json(insights);
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// PUT /api/admin/issues/:id/status - Update Issue Status & Log History
+router.put('/admin/issues/:id/status', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status, admin_id, note } = req.body;
+
+        if (!status) {
+            return res.status(400).json({ success: false, message: 'Status is required' });
+        }
+
+        // 1. Update Issue Status
+        await db.query('UPDATE issues SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
+
+        // 2. Log to Tracker
+        // Map status to a readable action
+        let action = 'status_change';
+        if (status === 'acknowledged') action = 'acknowledged';
+        if (status === 'progress') action = 'in_progress';
+        if (status === 'fixed') action = 'resolved';
+
+        const description = note || `Status updated to ${status}`;
+
+        await db.query(`
+            INSERT INTO issue_tracker (issue_id, action, description, performed_by)
+            VALUES ($1, $2, $3, $4)
+        `, [id, action, description, admin_id || null]);
+
+        res.json({ success: true, message: 'Status updated successfully' });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
+});
+
 module.exports = router;
+

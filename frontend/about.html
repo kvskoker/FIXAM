@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIXAM - About The Project</title>
+
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="Fixam" />
+    <link rel="manifest" href="/site.webmanifest" />
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS (Reusing your main styles) -->
+    <link rel="stylesheet" href="css/style.css">
+
+    <style>
+        /* Specific Styles for About Page */
+        .main-content {
+            flex: 1;
+            overflow-y: auto;
+            background-color: var(--background-color, #f8f9fa); /* Fallback if var not defined */
+            padding: 2rem;
+            color: var(--text-primary, #333);
+        }
+
+        .content-container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .hero-section {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            color: white;
+            padding: 2.5rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .hero-section h1 {
+            margin: 0 0 0.5rem 0;
+            font-size: 2rem;
+        }
+
+        .hero-section .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            font-weight: 300;
+        }
+
+        .hero-meta {
+            margin-top: 1.5rem;
+            font-size: 0.9rem;
+            background: rgba(255,255,255,0.1);
+            padding: 1rem;
+            border-radius: 8px;
+        }
+
+        .hero-meta a {
+            color: white;
+            text-decoration: underline;
+        }
+
+        section {
+            background: var(--surface-color, #ffffff);
+            padding: 2rem;
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border-color, #e5e7eb);
+        }
+
+        h2 {
+            color: var(--text-primary, #111);
+            margin-top: 0;
+            border-bottom: 2px solid #2563eb;
+            display: inline-block;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        h3 {
+            color: var(--text-primary, #333);
+            margin-top: 1.5rem;
+        }
+
+        p, li {
+            line-height: 1.6;
+            color: var(--text-secondary, #4b5563);
+        }
+
+        ul {
+            padding-left: 1.2rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1rem;
+        }
+
+        .feature-card {
+            background: var(--background-color, #f8f9fa);
+            padding: 1.5rem;
+            border-radius: 8px;
+            border: 1px solid var(--border-color, #eee);
+        }
+
+        .feature-card i {
+            font-size: 1.5rem;
+            color: #2563eb;
+            margin-bottom: 1rem;
+        }
+
+        .toc-link {
+            display: block;
+            padding: 0.8rem 1rem;
+            color: var(--text-secondary, #666);
+            text-decoration: none;
+            border-left: 3px solid transparent;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .toc-link:hover {
+            background: var(--background-color, #f3f4f6);
+            color: #2563eb;
+        }
+
+        /* Status Colors helpers */
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .bg-red { background-color: #ef4444; }
+        .bg-yellow { background-color: #eab308; }
+        .bg-green { background-color: #22c55e; }
+
+        /* Dark mode overrides (assuming base classes handle vars, but adding insurance) */
+        body.dark-mode .hero-section {
+            background: linear-gradient(135deg, #1e40af, #1e3a8a);
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="header">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <div class="logo">
+                        <img src="fixam-logo.svg" alt="FIXAM Icon" height="50px">
+                    </div>
+                    <button id="theme-toggle" style="background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.3); color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
+                        <i class="fa-solid fa-moon"></i>
+                    </button>
+                </div>
+                <hr style="margin: 1rem 0; border-color: rgba(255, 255, 255, 0.3);">
+                <div style="font-weight: 600; margin-bottom: 0.5rem;">Use our WhatsApp bot to report issues</div>
+                <div class="d-flex">
+                    <div style="font-size: 0.9rem; margin-bottom: 0.5rem;">Send <strong>Hi</strong> on WhatsApp to: <br>+232 33 788736</div>
+                <a href="https://wa.me/23233788736" target="_blank" style="display: inline-block; background: rgba(255, 255, 255, 0.9); color: #2563eb; padding: 4px 12px; border-radius: 16px; text-decoration: none; font-weight: 600; font-size: 0.85rem;">
+                    <i class="fa-brands fa-whatsapp"></i> Chat Now
+                </a>
+                </div>
+            </div>
+            
+            <nav class="nav-tabs">
+                <a href="/" class="nav-item">Civic Map</a>
+                <a href="/dashboard" class="nav-item">Dashboard</a>
+                <a href="/about" class="nav-item active">About</a>
+            </nav>
+
+            <!-- Table of Contents for the About Page -->
+            <div class="filter-section" style="padding: 1rem; border-bottom: 1px solid var(--border-color); background: var(--surface-color);">
+                <div style="font-weight: 600; margin-bottom: 0.5rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary);">Table of Contents</div>
+            </div>
+
+            <div class="issue-list" style="padding: 0.5rem 0;">
+                <a href="#executive-summary" class="toc-link">1. Summary</a>
+                <a href="#problem" class="toc-link">2. The Problem</a>
+                <a href="#solution" class="toc-link">3. The Solution</a>
+                <a href="#workflow" class="toc-link">&nbsp;&nbsp;&nbsp;A. Citizen Experience</a>
+                <a href="#engine" class="toc-link">&nbsp;&nbsp;&nbsp;B. The Engine (AI)</a>
+                <a href="#interface" class="toc-link">&nbsp;&nbsp;&nbsp;C. Civic Map</a>
+                <a href="#tech-stack" class="toc-link">4. Tech Stack</a>
+                <a href="#impact" class="toc-link">5. Impact</a>
+            </div>
+        </aside>
+
+        <!-- Main Scrollable Content Area -->
+        <main class="main-content">
+            <div class="content-container">
+                
+                <!-- Hero Header -->
+                <div class="hero-section">
+                    <h1>FIXAM</h1>
+                    <div class="subtitle">Facilitating Issue eXchange for Accountable Municipalities</div>
+                    
+                    <div class="hero-meta">
+                        <div><i class="fa-solid fa-trophy"></i> <strong>Event:</strong> Big 5 Game Changers Hackathon (MoCTI, Sierra Leone)</div>
+                        <div style="margin-top: 5px;"><i class="fa-solid fa-layer-group"></i> <strong>Theme:</strong> Public Service Architecture Revamp</div>
+                        <div style="margin-top: 5px;"><i class="fa-brands fa-github"></i> <strong>Repository:</strong> <a href="https://github.com/kvskoker/FIXAM" target="_blank">github.com/kvskoker/FIXAM</a></div>
+                        <div style="margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 10px;">
+                            <strong>Team:</strong> Kenneth V.S. Koker (Lead Developer) & Ibrahim Jalloh (Researcher)
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 1. Summary -->
+                <section id="executive-summary">
+                    <h2>1. Summary</h2>
+                    <p>
+                        FIXAM is a crowdsourced civic problem-reporting platform designed to bridge the communication gap between citizens and local government in Sierra Leone. By utilizing a "Hybrid Bridge" architecture, the system combines the accessibility of conversational interfaces (WhatsApp) with the analytical power of geospatial technology (GIS/Maps).
+                    </p>
+                    <p>
+                        The platform solves the issue of community grievances being "lost in the void" of social media by converting unstructured citizen complaints into structured, actionable geospatial data for municipal authorities.
+                    </p>
+                </section>
+
+                <!-- 2. The Problem -->
+                <section id="problem">
+                    <h2>2. The Problem Statement</h2>
+                    <p>Currently, citizens in Sierra Leone lack a formal, effective channel to report infrastructure failures.</p>
+                    
+                    <div class="feature-grid">
+                        <div class="feature-card">
+                            <i class="fa-solid fa-bullhorn"></i>
+                            <h3>The Void</h3>
+                            <p>Problems like broken water pipes or potholes are often shouted into the void of social media or radio call-in shows, where they disappear without logging.</p>
+                        </div>
+                        <div class="feature-card">
+                            <i class="fa-solid fa-scale-unbalanced"></i>
+                            <h3>Lack of Prioritization</h3>
+                            <p>Local councils lack a data-driven way to distinguish between minor inconveniences and critical infrastructure failures (e.g., affecting 5 people vs 5,000).</p>
+                        </div>
+                        <div class="feature-card">
+                            <i class="fa-solid fa-link-slash"></i>
+                            <h3>The Disconnect</h3>
+                            <p>There is no shared "source of truth" between the government and the governed regarding the status of repairs.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 3. The Solution -->
+                <section id="solution">
+                    <h2>3. The Solution: "Chat-to-Map"</h2>
+                    <p>FIXAM introduces a workflow where the input is conversational (low barrier to entry) but the output is geospatial (high utility for planning).</p>
+
+                    <h3 id="workflow" style="color: #2563eb;">Step A: The Citizen Experience (Reporting)</h3>
+                    <p>The user interface is built entirely within <strong>WhatsApp</strong>, the most widely used communication tool in the region, ensuring high accessibility.</p>
+                    <ol>
+                        <li><strong>Trigger:</strong> User sends "Hi" or "Report" to the official WhatsApp Business API number.</li>
+                        <li><strong>Categorization:</strong> An automated bot asks the user to report an issue.</li>
+                        <li><strong>Evidence:</strong> The user is prompted to upload a Photo or Video.</li>
+                        <li><strong>Precise Location:</strong> The bot asks the user to "Share Location" using WhatsApp’s native attachment feature, capturing precise Latitude/Longitude coordinates or type an address like "8 Jones Street".</li>
+                        <li><strong>Description (Inclusive Design):</strong> The user can type a text description <strong>OR</strong> send a voice note. This is critical for accessibility.</li>
+                        <li><strong>Confirmation:</strong> The user receives a unique "Ticket ID" and a link to track their issue on the live map.</li>
+                        <li><strong>Voting:</strong> Users can upvote/downvote issues using Ticket IDs to signal urgency.</li>
+                    </ol>
+
+                    <h3 id="engine" style="color: #2563eb;">Step B: The Engine (AI & GIS Backend)</h3>
+                    <p>This is the "Sanitizer" layer that converts raw user data into structured government intelligence.</p>
+                    <ul>
+                        <li><strong>Geocoding:</strong> Uses Nominatim OSM API to convert pins into readable addresses.</li>
+                        <li><strong>Transcription:</strong> Voice notes are transcribed into text using AI.</li>
+                        <li><strong>Summarization:</strong> Gemini AI converts long rants into "One-line Summaries".</li>
+                        <li><strong>Deduplication:</strong> Checks a 100-meter radius to flag duplicate reports automatically.</li>
+                    </ul>
+
+                    <h3 id="interface" style="color: #2563eb;">Step C: The Public Interface ("The Civic Map")</h3>
+                    <p>A mobile-responsive Web Application serves as the transparency layer.</p>
+                    <ul>
+                        <li><strong>Visuals:</strong> A map interface (Leaflet.js) using OpenStreetMap tiles.</li>
+                        <li><strong>Status Indicators:</strong>
+                            <ul style="list-style: none; padding-left: 0; margin-top: 10px;">
+                                <li><span class="status-dot bg-red"></span> <strong>Red:</strong> Critical/Unresolved</li>
+                                <li><span class="status-dot bg-yellow"></span> <strong>Yellow:</strong> In Progress</li>
+                                <li><span class="status-dot bg-green"></span> <strong>Green:</strong> Fixed</li>
+                            </ul>
+                        </li>
+                        <li><strong>Democratic Prioritization:</strong> Users can click pins to see upvote counts ("It affects me too").</li>
+                    </ul>
+
+                    <h3 style="color: #2563eb;">Step D: The Government Dashboard</h3>
+                    <p>A Command Center for high-level data patterns.</p>
+                    <ul>
+                        <li><strong>Heatmaps:</strong> Aggregates upvotes to show "Hotspots" for budget allocation.</li>
+                        <li><strong>Insight Cards:</strong> Auto-generated alerts (e.g., "Top Priority: Waste Management in Central Freetown").</li>
+                        <li><strong>Sentiment Analysis:</strong> Gauges the "mood of the people" regarding specific issues.</li>
+                    </ul>
+                </section>
+
+                <!-- 4. Technical Stack -->
+                <section id="tech-stack">
+                    <h2>4. Technical Stack</h2>
+                    <p>The project prioritizes open-source technologies to ensure sustainability.</p>
+                    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Frontend: Bootstrap, Leaflet</span>
+                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Backend: Node.js, Python</span>
+                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Database: PostgreSQL + PostGIS</span>
+                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Mapping: OSM & Nominatim</span>
+                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Messaging: WhatsApp Business API</span>
+                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">AI: google/embeddinggemma, Whisper, NudeNet</span>
+                    </div>
+                </section>
+
+                <!-- 5. Impact -->
+                <section id="impact">
+                    <h2>5. Impact Potential</h2>
+                    <ol>
+                        <li><strong>Democratizing Infrastructure Data:</strong> Giving every citizen with a phone the power to act as a city inspector.</li>
+                        <li><strong>Enabling Data-Driven Governance:</strong> Moving from reactive, anecdote-based planning to proactive, heatmap-based resource allocation.</li>
+                        <li><strong>Increasing Trust:</strong> The transparent status tracking (Red to Green pins) rebuilds trust between the government and the public.</li>
+                    </ol>
+                </section>
+
+                <footer style="text-align: center; margin-top: 3rem; opacity: 0.6; font-size: 0.8rem;">
+                    &copy; 2023 FIXAM Project. Open Source.
+                </footer>
+            </div>
+        </main>
+    </div>
+    
+    <!-- App JS (Only Theme JS required for this page) -->
+    <script src="js/theme.js"></script>
+    <script>
+        // Smooth scrolling for TOC links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelector(this.getAttribute('href')).scrollIntoView({
+                    behavior: 'smooth'
+                });
+            });
+        });
+    </script>
+</body>
+</html>

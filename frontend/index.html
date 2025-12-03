@@ -30,15 +30,20 @@
     <div class="app-container">
         <!-- Sidebar -->
         <aside class="sidebar">
-            <div class="header" style="background: #002d8f; color: white; padding: 1rem; text-align: left;">
-               <div class="logo">
-                    <img src="fixam-logo.svg" alt="FIXAM Icon" height="50px">
+            <div class="header">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <div class="logo">
+                        <img src="fixam-logo.svg" alt="FIXAM Icon" height="50px">
+                    </div>
+                    <button id="theme-toggle" style="background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.3); color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
+                        <i class="fa-solid fa-moon"></i>
+                    </button>
                 </div>
-                <hr style="margin: 1rem 0;">
-                <div style="font-weight: 600; margin-bottom: 0.5rem;">Please use our WhatsApp bot to vote</div>
+                <hr style="margin: 1rem 0; border-color: rgba(255, 255, 255, 0.3);">
+                <div style="font-weight: 600; margin-bottom: 0.5rem;">Use our WhatsApp bot to report issues</div>
                 <div class="d-flex">
                     <div style="font-size: 0.9rem; margin-bottom: 0.5rem;">Send <strong>Hi</strong> on WhatsApp to: <br>+232 33 788736</div>
-                <a href="https://wa.me/23233788736" target="_blank" style="display: inline-block; background: white; color: #2196F3; padding: 4px 12px; border-radius: 16px; text-decoration: none; font-weight: 600; font-size: 0.85rem;">
+                <a href="https://wa.me/23233788736" target="_blank" style="display: inline-block; background: rgba(255, 255, 255, 0.9); color: #2563eb; padding: 4px 12px; border-radius: 16px; text-decoration: none; font-weight: 600; font-size: 0.85rem;">
                     <i class="fa-brands fa-whatsapp"></i> Chat Now
                 </a>
                 </div>
@@ -48,16 +53,17 @@
             <nav class="nav-tabs">
                 <a href="/" class="nav-item active">Civic Map</a>
                 <a href="/dashboard" class="nav-item">Dashboard</a>
+                  <a href="/about" class="nav-item">About</a>
             </nav>
 
-            <div class="filter-section" style="padding: 1rem; border-bottom: 1px solid var(--border-color); background: #fff;">
+            <div class="filter-section" style="padding: 1rem; border-bottom: 1px solid var(--border-color); background: var(--surface-color);">
                 <div class="search-box" style="position: relative; margin-bottom: 1rem;">
-                    <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8;"></i>
+                    <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-secondary);"></i>
                     <input type="text" id="search-input" placeholder="Search issues..." 
-                           style="width: 100%; padding: 10px 10px 10px 36px; border: 1px solid #e2e8f0; border-radius: 8px; outline: none; font-family: inherit; font-size: 0.9rem; transition: border-color 0.2s;">
+                           style="width: 100%; padding: 10px 10px 10px 36px; background: var(--background-color); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 8px; outline: none; font-family: inherit; font-size: 0.9rem; transition: border-color 0.2s;">
                 </div>
                 <div class="filter-row" style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
-                    <select id="category-filter" style="flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #e2e8f0; font-family: inherit; font-size: 0.85rem; color: #475569; outline: none; cursor: pointer;">
+                    <select id="category-filter" style="flex: 1; padding: 8px; border-radius: 6px; background: var(--background-color); color: var(--text-primary); border: 1px solid var(--border-color); font-family: inherit; font-size: 0.85rem; outline: none; cursor: pointer;">
                         <option value="">All Categories</option>
                         <option value="Water">Water</option>
                         <option value="Road">Road</option>
@@ -66,7 +72,7 @@
                         <option value="Health">Health</option>
                         <option value="Other">Other</option>
                     </select>
-                    <select id="status-filter" style="flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #e2e8f0; font-family: inherit; font-size: 0.85rem; color: #475569; outline: none; cursor: pointer;">
+                    <select id="status-filter" style="flex: 1; padding: 8px; border-radius: 6px; background: var(--background-color); color: var(--text-primary); border: 1px solid var(--border-color); font-family: inherit; font-size: 0.85rem; outline: none; cursor: pointer;">
                         <option value="">All Status</option>
                         <option value="critical">Critical</option>
                         <option value="progress">In Progress</option>
@@ -74,7 +80,7 @@
                     </select>
                 </div>
                 <div class="sort-row">
-                    <select id="sort-filter" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #e2e8f0; font-family: inherit; font-size: 0.85rem; color: #475569; outline: none; cursor: pointer;">
+                    <select id="sort-filter" style="width: 100%; padding: 8px; border-radius: 6px; background: var(--background-color); color: var(--text-primary); border: 1px solid var(--border-color); font-family: inherit; font-size: 0.85rem; outline: none; cursor: pointer;">
                         <option value="newest">Newest First</option>
                         <option value="oldest">Oldest First</option>
                         <option value="most_votes">Most Votes</option>
@@ -104,6 +110,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     
     <!-- App JS -->
+    <script src="js/theme.js"></script>
     <script src="js/map.js"></script>
 </body>
 </html>
