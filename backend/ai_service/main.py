@@ -53,15 +53,21 @@ async def lifespan(app: FastAPI):
     device = "cuda:0" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     
-    print(f"Loading Whisper Turbo model on {device} ({torch_dtype})...")
-    model_id = "openai/whisper-large-v3-turbo"
+    # Allow model selection via environment variable for resource-constrained servers
+    # Options: "openai/whisper-large-v3-turbo" (better quality, more memory)
+    #          "openai/whisper-base" (faster, less memory)
+    #          "openai/whisper-small" (balanced)
+    model_id = os.environ.get("WHISPER_MODEL", "openai/whisper-base")
+    
+    print(f"Loading Whisper model '{model_id}' on {device} ({torch_dtype})...")
 
     try:
         model = AutoModelForSpeechSeq2Seq.from_pretrained(
             model_id, 
             torch_dtype=torch_dtype, 
             low_cpu_mem_usage=True, 
-            use_safetensors=True
+            use_safetensors=True,
+            use_flash_attention_2=False  # Disable for compatibility
         )
         model.to(device)
         
@@ -74,10 +80,14 @@ async def lifespan(app: FastAPI):
             feature_extractor=processor.feature_extractor,
             max_new_tokens=128,
             chunk_length_s=30,
-            batch_size=16,
+            batch_size=1,  # Reduced from 16 to minimize memory usage
             return_timestamps=True,
             torch_dtype=torch_dtype,
             device=device,
+            generate_kwargs={
+                "language": "en",  # Explicitly set to English to avoid deprecation warning
+                "task": "transcribe"  # Explicitly set task
+            }
         )
         print("Whisper model loaded successfully!")
     except Exception as e:

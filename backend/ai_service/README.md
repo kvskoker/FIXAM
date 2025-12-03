@@ -26,6 +26,20 @@ This service combines NudeNet (image safety classification) and Whisper (audio t
    pip install -r requirements.txt
    ```
 
+4. Configure environment variables (optional):
+   Create a `.env` file in the `backend` directory with the following variables:
+   ```
+   # Hugging Face token (required for gated models)
+   HF_TOKEN=your_huggingface_token_here
+   
+   # Whisper model selection (optional, defaults to whisper-base)
+   # Options:
+   #   - openai/whisper-base (smallest, fastest, ~140MB, good for low-memory servers)
+   #   - openai/whisper-small (balanced, ~460MB)
+   #   - openai/whisper-large-v3-turbo (best quality, ~1.5GB, requires more RAM)
+   WHISPER_MODEL=openai/whisper-base
+   ```
+
 ## Running the Service
 
 Run the server using the provided batch script or manually:
@@ -67,3 +81,55 @@ To run this service in the background on a Linux server:
     ```bash
     sudo systemctl status fixam-ai-service
     ```
+
+## Troubleshooting
+
+### "Killed" Error on Linux Server
+
+If you see a "Killed" message when the service starts, this indicates the process was terminated due to **out of memory (OOM)**. This commonly happens with the larger Whisper models.
+
+**Solutions:**
+
+1. **Use a smaller Whisper model** (recommended):
+   Add to your `.env` file:
+   ```
+   WHISPER_MODEL=openai/whisper-base
+   ```
+   Or for slightly better quality:
+   ```
+   WHISPER_MODEL=openai/whisper-small
+   ```
+
+2. **Check available memory**:
+   ```bash
+   free -h
+   ```
+   The service requires at least:
+   - `whisper-base`: ~500MB RAM
+   - `whisper-small`: ~1GB RAM
+   - `whisper-large-v3-turbo`: ~2.5GB RAM
+
+3. **Monitor memory usage**:
+   ```bash
+   sudo journalctl -u fixam-ai-service -f
+   ```
+
+### Deprecation Warnings
+
+If you see warnings about `forced_decoder_ids` or language detection, these have been fixed in the latest version. The service now explicitly sets:
+- `language='en'` for English transcription
+- `task='transcribe'` to avoid translation
+
+### Service Won't Start
+
+1. Check the service logs:
+   ```bash
+   sudo journalctl -u fixam-ai-service -n 50
+   ```
+
+2. Verify the HF_TOKEN is set correctly in your `.env` file
+
+3. Ensure FFmpeg is installed:
+   ```bash
+   ffmpeg -version
+   ```
