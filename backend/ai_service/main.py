@@ -66,8 +66,7 @@ async def lifespan(app: FastAPI):
             model_id, 
             torch_dtype=torch_dtype, 
             low_cpu_mem_usage=True, 
-            use_safetensors=True,
-            use_flash_attention_2=False  # Disable for compatibility
+            use_safetensors=True
         )
         model.to(device)
         

@@ -14,7 +14,7 @@ The audio transcription service was failing on the Linux server with a "Killed" 
 2. **Fixed Deprecation Warnings**:
    - Added explicit `language='en'` parameter for English transcription
    - Added explicit `task='transcribe'` parameter
-   - Disabled flash attention for better compatibility
+   - Removed unsupported `use_flash_attention_2` parameter that was causing initialization errors
 
 3. **Improved Configuration**:
    - Made Whisper model selection configurable via `WHISPER_MODEL` environment variable
