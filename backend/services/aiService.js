@@ -3,98 +3,51 @@ const logger = require('./logger');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
+const LOCAL_AI_URL = 'http://localhost:8000/analyze-issue';
 
-
-const LOCAL_AI_URL = 'http://localhost:8000/classify';
-
-const CATEGORY_MAPPING = {
-    "Water supply, pipe leak, no water, shortage, dirty water": "Water",
-    "Electricity issues, power outage, blackout, voltage, no light": "Electricity",
-    "Road damage, potholes, bad road, construction, traffic jam": "Roads",
-    "Transportation, bus, taxi, vehicle issues": "Transportation",
-    "Drainage, clogged drains, flooding, gutters": "Drainage",
-    "Waste management, garbage, trash, rubbish, dumping": "Waste",
-    "Housing issues, urban development, building code": "Housing & Urban Development",
-    "Telecommunications, phone signal, network issues": "Telecommunications",
-    "Internet connectivity, slow internet, no wifi": "Internet",
-    "Health services, hospital, clinic, doctor, medicine": "Health Services",
-    "Education, school, teachers, students, books": "Education Services",
-    "Public safety, crime, theft, police, danger": "Public Safety",
-    "Security issues, guards, protection": "Security",
-    "Fire hazard, fire outbreak, firefighters": "Fire Services",
-    "Social welfare, support, community aid": "Social Welfare",
-    "Environmental pollution, smoke, noise, air quality": "Environmental Pollution",
-    "Deforestation, cutting trees, land degradation": "Deforestation",
-    "Animal control, stray dogs, wild animals": "Animal Control",
-    "Public space maintenance, parks, cleaning": "Public Space Maintenance",
-    "Disaster management, emergency response": "Disaster Management",
-    "Corruption, bribery, fraud, misconduct": "Corruption",
-    "Accountability, transparency, government": "Accountability",
-    "Local taxation, taxes, fees, rates": "Local Taxation",
-    "Streetlights, dark streets, broken lights": "Streetlights",
-    "Bridges, culverts, broken bridge": "Bridges or Culverts",
-    "Public buildings, government offices, maintenance": "Public Buildings",
-    "Sewage, toilet facilities, sanitation": "Sewage or Toilet Facilities",
-    "Traffic management, signals, signs, rules": "Traffic Management",
-    "Road safety, accidents, speeding": "Road Safety",
-    "Youth engagement, activities, programs": "Youth Engagement",
-    "Gender-based violence, abuse, harassment": "Gender-Based Violence",
-    "Child protection, abuse, welfare": "Child Protection",
-    "Disability access, ramps, inclusion": "Disability Access",
-    "Market operations, stalls, vendors, prices": "Market Operations",
-    "Service access, government services": "Service Access"
-};
-
-const CANDIDATE_LABELS = Object.keys(CATEGORY_MAPPING);
+const CATEGORIES = "Electricity, Water, Road, Transportation, Drainage, Waste, Housing & Urban Development, Telecommunications, Internet, Health Services, Education Services, Public Safety, Security, Fire Services, Social Welfare, Environmental Pollution, Deforestation, Animal Control, Public Space Maintenance, Disaster Management, Corruption, Accountability, Local Taxation, Streetlights, Bridges or Culverts, Public Buildings, Sewage or Toilet Facilities, Traffic Management, Road Safety, Youth Engagement, Gender-Based Violence, Child Protection, Disability Access, Market Operations, Service Access";
 
 /**
- * Analyze text using Local AI to categorize.
+ * Analyze text using Qwen AI to categorize, summarize, and determine urgency.
  * @param {string} text - The user's description of the issue.
  * @returns {Promise<Object>} - { category, summary, urgency }
  */
 async function analyzeIssue(text) {
-    // logger.log('ai_debug', `Analyzing issue with Local AI. Text length: ${text.length}`);
+    logger.log('ai_debug', `Analyzing issue with Qwen AI. Text length: ${text.length}`);
 
     try {
         const requestBody = {
-            text: text,
-            candidate_labels: CANDIDATE_LABELS
+            description: text,
+            categories: CATEGORIES
         };
 
-        // logger.logObject('ai_debug', 'Request Body', requestBody);
+        logger.logObject('ai_debug', 'Request Body', requestBody);
 
         const response = await axios.post(LOCAL_AI_URL, requestBody, {
             headers: {
                 'Content-Type': 'application/json'
-            }
+            },
+            timeout: 30000 // 30 second timeout for AI processing
         });
 
-        // logger.logObject('ai_debug', 'Local AI Response', response.data);
+        logger.logObject('ai_debug', 'Qwen AI Response', response.data);
 
-        let bestLabel = response.data.best_label;
-        const bestScore = response.data.score;
-
-        let category = "others";
-
-        // Threshold check
-        if (bestScore >= 0.60) {
-            // Map back to simple category name
-            category = CATEGORY_MAPPING[bestLabel] || "others";
-        }
+        const { summary, category, urgency } = response.data;
 
         return {
-            category: category,
-            summary: text.substring(0, 100) + (text.length > 100 ? "..." : ""),
-            urgency: "medium" // Default urgency as local model only classifies
+            category: category || "Uncategorized",
+            summary: summary || text.substring(0, 100) + (text.length > 100 ? "..." : ""),
+            urgency: urgency || "medium"
         };
     } catch (error) {
-        logger.logError('ai_debug', 'Local AI Error', error);
+        logger.logError('ai_debug', 'Qwen AI Error', error);
         return {
             category: "Uncategorized",
-            summary: "Could not analyze text.",
+            summary: text.substring(0, 100) + (text.length > 100 ? "..." : ""),
             urgency: "medium"
         };
     }
 }
 
 module.exports = { analyzeIssue };
+

@@ -1,8 +1,8 @@
 import torch
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline, AutoTokenizer, AutoModel
+from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline, AutoTokenizer, AutoModelForCausalLM
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from nudenet import NudeDetector
 import uvicorn
 import os
@@ -10,6 +10,8 @@ import shutil
 from contextlib import asynccontextmanager
 import tempfile
 from dotenv import load_dotenv
+import json
+import re
 
 # Load environment variables from backend/.env
 # Get the directory of the current script
@@ -21,17 +23,17 @@ load_dotenv(env_path)
 # Global variables
 transcription_pipe = None
 nude_detector = None
-embedding_model = None
-embedding_tokenizer = None
+qwen_model = None
+qwen_tokenizer = None
 
-EMBEDDING_MODEL_ID = "google/embeddinggemma-300m"
+QWEN_MODEL_ID = "Qwen/Qwen3-0.6B"
 
 class AnalysisRequest(BaseModel):
     input_text: str
 
-class ClassifyRequest(BaseModel):
-    text: str
-    candidate_labels: List[str]
+class AnalyzeIssueRequest(BaseModel):
+    description: str
+    categories: Optional[str] = "Electricity, Water, Road, Transportation, Drainage, Waste, Housing & Urban Development, Telecommunications, Internet, Health Services, Education Services, Public Safety, Security, Fire Services, Social Welfare, Environmental Pollution, Deforestation, Animal Control, Public Space Maintenance, Disaster Management, Corruption, Accountability, Local Taxation, Streetlights, Bridges or Culverts, Public Buildings, Sewage or Toilet Facilities, Traffic Management, Road Safety, Youth Engagement, Gender-Based Violence, Child Protection, Disability Access, Market Operations, Service Access"
 
 UNSAFE_LABELS = [
     "BUTTOCKS_EXPOSED",
@@ -47,7 +49,7 @@ async def lifespan(app: FastAPI):
     """
     Load models when the server starts.
     """
-    global transcription_pipe, nude_detector, embedding_model, embedding_tokenizer
+    global transcription_pipe, nude_detector, qwen_model, qwen_tokenizer
     
     # --- Load Whisper ---
     device = "cuda:0" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
@@ -102,17 +104,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Failed to load NudeNet detector: {e}")
 
-    # --- Load Embedding Model ---
-    print(f"Loading Embedding Model: {EMBEDDING_MODEL_ID}...")
+    # --- Load Qwen Model ---
+    print(f"Loading Qwen Model: {QWEN_MODEL_ID}...")
     try:
-        # Debug .env loading
-        print(f"Attempting to load .env from: {env_path}")
-        if os.path.exists(env_path):
-            print(".env file exists.")
-        else:
-            print(".env file does NOT exist at the specified path.")
-
-        # Get token from environment if needed, though this model might be public or cached
+        # Get token from environment if needed
         token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_API_KEY")
         
         if not token:
@@ -120,14 +115,16 @@ async def lifespan(app: FastAPI):
         else:
             print("HF_TOKEN found in environment.")
 
-        embedding_tokenizer = AutoTokenizer.from_pretrained(EMBEDDING_MODEL_ID, token=token)
-        embedding_model = AutoModel.from_pretrained(EMBEDDING_MODEL_ID, token=token)
-        
-        # Force CPU for embedding model to avoid VRAM issues with Whisper
-        embedding_model.to("cpu") 
-        print("Embedding model loaded successfully on CPU!")
+        qwen_tokenizer = AutoTokenizer.from_pretrained(QWEN_MODEL_ID, token=token)
+        qwen_model = AutoModelForCausalLM.from_pretrained(
+            QWEN_MODEL_ID,
+            torch_dtype="auto",
+            device_map="cpu",  # Force CPU to avoid VRAM issues with Whisper
+            token=token
+        )
+        print("Qwen model loaded successfully on CPU!")
     except Exception as e:
-        print(f"Failed to load Embedding model: {e}")
+        print(f"Failed to load Qwen model: {e}")
         import traceback
         traceback.print_exc()
 
@@ -136,8 +133,8 @@ async def lifespan(app: FastAPI):
     # Cleanup
     del transcription_pipe
     del nude_detector
-    del embedding_model
-    del embedding_tokenizer
+    del qwen_model
+    del qwen_tokenizer
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
@@ -196,81 +193,95 @@ def transcribe_audio(file: UploadFile = File(...)):
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-@app.post("/analyze")
-def analyze_text(request: AnalysisRequest):
-    global embedding_model, embedding_tokenizer
-    if embedding_model is None or embedding_tokenizer is None:
-        raise HTTPException(status_code=503, detail="Embedding model is not loaded.")
+@app.post("/analyze-issue")
+def analyze_issue(request: AnalyzeIssueRequest):
+    """
+    Analyze an issue description using Qwen model.
+    Returns: {
+        "summary": "5 word max summary",
+        "category": "detected category",
+        "urgency": "low|medium|high|critical"
+    }
+    """
+    global qwen_model, qwen_tokenizer
+    if qwen_model is None or qwen_tokenizer is None:
+        raise HTTPException(status_code=503, detail="Qwen model is not loaded.")
 
     try:
-        # Tokenize input
-        inputs = embedding_tokenizer(request.input_text, return_tensors="pt", padding=True, truncation=True)
-        inputs = inputs.to(embedding_model.device)
-
-        # Generate embeddings
-        with torch.no_grad():
-            outputs = embedding_model(**inputs)
-            # Mean pooling
-            last_hidden_state = outputs.last_hidden_state
-            attention_mask = inputs['attention_mask']
-            input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
-            sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
-            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
-            embeddings = sum_embeddings / sum_mask
+        # Prepare the prompt
+        user_description = request.description
+        categories = request.categories
+        
+        prompt = f'''Summarize the following description in 5 words max and determine which category the description belongs. 
+Description: {user_description}
+Categories: {categories}. 
+Output should be a json format with the following keys: summary, category, urgency. 
+Urgency should be one of: low, medium, high, critical.
+No extra comments.'''
+        
+        messages = [
+            {"role": "user", "content": prompt}
+        ]
+        
+        text = qwen_tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False  # Switches between thinking and non-thinking modes
+        )
+        
+        model_inputs = qwen_tokenizer([text], return_tensors="pt").to(qwen_model.device)
+        
+        # Generate response
+        generated_ids = qwen_model.generate(
+            **model_inputs,
+            max_new_tokens=512,  # Reduced from 32768 for faster response
+            temperature=0.7,
+            do_sample=True
+        )
+        
+        output_ids = generated_ids[0][len(model_inputs.input_ids[0]):].tolist()
+        
+        # Parse thinking content (if any)
+        try:
+            # rindex finding 151668 (</think>)
+            index = len(output_ids) - output_ids[::-1].index(151668)
+        except ValueError:
+            index = 0
+        
+        content = qwen_tokenizer.decode(output_ids[index:], skip_special_tokens=True).strip("\n")
+        
+        # Try to extract JSON from the response
+        try:
+            # Look for JSON pattern in the response
+            json_match = re.search(r'\{[^}]+\}', content)
+            if json_match:
+                result = json.loads(json_match.group())
+            else:
+                # If no JSON found, try to parse the entire content
+                result = json.loads(content)
             
-            # Normalize embeddings
-            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
-
-        return {"embedding": embeddings[0].tolist()}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/classify")
-def classify_text(request: ClassifyRequest):
-    global embedding_model, embedding_tokenizer
-    if embedding_model is None or embedding_tokenizer is None:
-        raise HTTPException(status_code=503, detail="Embedding model is not loaded.")
-
-    try:
-        # Prepare texts: first is the query, rest are candidates
-        all_texts = [request.text] + request.candidate_labels
-        
-        # Tokenize batch
-        inputs = embedding_tokenizer(all_texts, return_tensors="pt", padding=True, truncation=True)
-        inputs = inputs.to(embedding_model.device)
-        
-        with torch.no_grad():
-            outputs = embedding_model(**inputs)
-            # Mean pooling
-            last_hidden_state = outputs.last_hidden_state
-            attention_mask = inputs['attention_mask']
-            input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
-            sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
-            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
-            embeddings = sum_embeddings / sum_mask
+            # Validate and normalize the response
+            summary = result.get("summary", user_description[:30])
+            category = result.get("category", "Uncategorized")
+            urgency = result.get("urgency", "medium").lower()
             
-            # Normalize embeddings
-            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+            # Ensure urgency is valid
+            if urgency not in ["low", "medium", "high", "critical"]:
+                urgency = "medium"
             
-        # The first embedding is the query
-        query_emb = embeddings[0]
-        # The rest are candidates
-        candidate_embs = embeddings[1:]
-        
-        # Calculate cosine similarities (dot product since normalized)
-        scores = torch.matmul(candidate_embs, query_emb)
-        
-        # Find best match
-        best_score_idx = torch.argmax(scores).item()
-        best_label = request.candidate_labels[best_score_idx]
-        best_score = scores[best_score_idx].item()
-        
-        return {
-            "best_label": best_label,
-            "score": best_score,
-            "scores": {label: score.item() for label, score in zip(request.candidate_labels, scores)}
-        }
-
+            return {
+                "summary": summary,
+                "category": category,
+                "urgency": urgency
+            }
+        except json.JSONDecodeError:
+            # Fallback if JSON parsing fails
+            return {
+                "summary": user_description[:30] + ("..." if len(user_description) > 30 else ""),
+                "category": "Uncategorized",
+                "urgency": "medium"
+            }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

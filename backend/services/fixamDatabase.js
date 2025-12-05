@@ -121,7 +121,7 @@ class FixamDatabase {
     async createIssue(issueData) {
         const sql = `
             INSERT INTO issues (ticket_id, title, category, lat, lng, description, image_url, reported_by, status)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'critical')
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *
         `;
         const values = [
@@ -132,7 +132,8 @@ class FixamDatabase {
             issueData.lng,
             issueData.description,
             issueData.image_url,
-            issueData.reported_by
+            issueData.reported_by,
+            issueData.urgency || 'medium' // Use AI-determined urgency
         ];
 
         try {

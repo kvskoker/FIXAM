@@ -190,22 +190,28 @@ class FixamHandler {
             case 'awaiting_report_description':
                 const currentData = state.data || {};
                 currentData.description = input;
-                // Default title
-                currentData.title = input.substring(0, 30) + (input.length > 30 ? '...' : '');
                 
-                // Analyze with Gemini
+                // Analyze with AI
                 await this.sendMessage(fromNumber, "Analyzing your report with AI... 🤖");
                 let category = 'Uncategorized';
+                let title = input.substring(0, 30) + (input.length > 30 ? '...' : '');
+                let urgency = 'medium';
+                
                 try {
                     const analysis = await analyzeIssue(input);
-                    logger.logObject('ai_debug', 'Gemini Analysis Result (Handler)', analysis);
-                    if (analysis && analysis.category) {
-                        category = analysis.category;
+                    logger.logObject('ai_debug', 'AI Analysis Result (Handler)', analysis);
+                    if (analysis) {
+                        category = analysis.category || 'Uncategorized';
+                        title = analysis.summary || title;
+                        urgency = analysis.urgency || 'medium';
                     }
                 } catch (err) {
                     logger.logError('ai_debug', 'Error analyzing issue (Handler)', err);
                 }
+                
                 currentData.category = category;
+                currentData.title = title;
+                currentData.urgency = urgency;
 
                 await this.fixamDb.updateConversationState(fromNumber, { 
                     current_step: 'awaiting_report_confirmation',
@@ -448,23 +454,30 @@ class FixamHandler {
             const currentData = state.data || {};
             // Use transcribed text if available, otherwise fallback to a user-friendly message
             currentData.description = transcribedText ? transcribedText : "[Voice Note - Transcription unavailable]";
-            currentData.title = transcribedText ? (transcribedText.substring(0, 30) + (transcribedText.length > 30 ? '...' : '')) : "Voice Report";
             currentData.voice_url = mediaUrl;
 
-            // Analyze with Gemini using the transcribed text if available
+            // Analyze with AI using the transcribed text if available
             let category = 'Uncategorized';
+            let title = transcribedText ? (transcribedText.substring(0, 30) + (transcribedText.length > 30 ? '...' : '')) : "Voice Report";
+            let urgency = 'medium';
+            
             if (transcribedText) {
                 await this.sendMessage(fromNumber, "Analyzing your report with AI... 🤖");
                 try {
                     const analysis = await analyzeIssue(transcribedText);
-                    if (analysis && analysis.category) {
-                        category = analysis.category;
+                    if (analysis) {
+                        category = analysis.category || 'Uncategorized';
+                        title = analysis.summary || title;
+                        urgency = analysis.urgency || 'medium';
                     }
                 } catch (err) {
                     logger.logError('ai_debug', 'Error analyzing issue (Handler)', err);
                 }
             }
+            
             currentData.category = category;
+            currentData.title = title;
+            currentData.urgency = urgency;
 
             await this.fixamDb.updateConversationState(fromNumber, { 
                 current_step: 'awaiting_report_confirmation',
@@ -482,10 +495,19 @@ class FixamHandler {
     }
 
     async sendReportSummary(fromNumber, data) {
+        const urgencyEmoji = {
+            'low': '🟢',
+            'medium': '🟡',
+            'high': '🟠',
+            'critical': '🔴'
+        };
+        
         await this.sendMessage(fromNumber, 
             `Please review your report:\n\n` +
+            `📋 *Title*: ${data.title || 'Untitled'}\n` +
             `📍 *Location*: ${data.address}\n` +
             `📂 *Category*: ${data.category || 'General'}\n` +
+            `${urgencyEmoji[data.urgency] || '🟡'} *Urgency*: ${(data.urgency || 'medium').toUpperCase()}\n` +
             `📝 *Description*: ${data.description}\n` +
             `📸 *Evidence*: ${data.image_url ? 'Attached' : 'None'}\n\n` +
             `Type *1* to confirm or *9* to cancel.`
@@ -503,7 +525,8 @@ class FixamHandler {
             lng: data.lng,
             description: data.description,
             image_url: data.image_url,
-            reported_by: userId
+            reported_by: userId,
+            urgency: data.urgency || 'medium'
         };
 
         const issue = await this.fixamDb.createIssue(issueData);
