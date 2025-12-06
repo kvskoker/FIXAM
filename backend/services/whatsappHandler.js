@@ -27,6 +27,13 @@ class FixamHandler {
             const message = data.entry[0].changes[0].value.messages[0];
             const fromNumber = message.from;
 
+            // Restrict to Sierra Leone numbers (232)
+            if (!fromNumber.startsWith('232')) {
+                logger.log('webhook', `Rejected message from unsupported region: ${fromNumber}`);
+                await this.sendMessage(fromNumber, "Fixam is not yet supported in your country. Use a Sierra Leone phone number.");
+                return;
+            }
+
             logger.log('webhook', `Message from: ${fromNumber}, Type: ${message.type}`);
             logger.logObject('webhook', 'Message object', message);
 
@@ -192,7 +199,7 @@ class FixamHandler {
                 currentData.description = input;
                 
                 // Analyze with AI
-                await this.sendMessage(fromNumber, "Analyzing your report with AI... 🤖");
+                await this.sendMessage(fromNumber, "Analyzing your report");
                 let category = 'Uncategorized';
                 let title = input.substring(0, 30) + (input.length > 30 ? '...' : '');
                 let urgency = 'medium';
@@ -462,7 +469,7 @@ class FixamHandler {
             let urgency = 'medium';
             
             if (transcribedText) {
-                await this.sendMessage(fromNumber, "Analyzing your report with AI... 🤖");
+                await this.sendMessage(fromNumber, "Analyzing your report");
                 try {
                     const analysis = await analyzeIssue(transcribedText);
                     if (analysis) {

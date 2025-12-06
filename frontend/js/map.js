@@ -241,7 +241,7 @@ function locateUser() {
 
 async function vote(issueId, voteType) {
     // Voting is temporarily disabled on the frontend
-    alert("Voting is currently disabled on the website. Please use our WhatsApp bot to vote.");
+    alert("Voting is currently disabled on the website. Please use our WhatsApp channel to vote.");
     return;
 
     /*
