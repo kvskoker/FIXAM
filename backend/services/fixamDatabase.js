@@ -186,6 +186,18 @@ class FixamDatabase {
         }
     }
 
+    // Get daily issue count for a user
+    async getDailyIssueCount(userId) {
+        const sql = "SELECT COUNT(*) FROM issues WHERE reported_by = $1 AND created_at >= CURRENT_DATE";
+        try {
+            const result = await this.db.query(sql, [userId]);
+            return parseInt(result.rows[0].count);
+        } catch (error) {
+            this.debugLog('Error counting daily issues', { error: error.message, userId });
+            return 0;
+        }
+    }
+
     // Log Message
     async logMessage(data) {
         const sql = `

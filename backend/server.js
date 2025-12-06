@@ -18,7 +18,18 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// Rate Limiter
+const rateLimit = require('express-rate-limit');
+const apiLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 60, // Limit each IP to 60 requests per windowMs
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests, please try again later." }
+});
+
 // Routes
+app.use('/api', apiLimiter);
 app.use('/api', apiRoutes);
 
 // Webhook routes (also available at root level for easier integration)

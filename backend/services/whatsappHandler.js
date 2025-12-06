@@ -118,6 +118,13 @@ class FixamHandler {
         switch (state.current_step) {
             case 'awaiting_category':
                 if (input === '1' || lowerInput.includes('report')) {
+                    // Check rate limit
+                    const dailyCount = await this.fixamDb.getDailyIssueCount(user.id);
+                    if (dailyCount >= 20) {
+                        await this.sendMessage(fromNumber, "🚫 Daily Limit Reached\n\nYou have reported 20 issues today. To prevent spam, we have a daily limit. Please try again tomorrow.\n\nThank you for helping improve our community! 🌟");
+                        return;
+                    }
+
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_report_evidence', data: {} });
                     await this.sendMessage(fromNumber, "Great! Let's report an issue.\n\nPlease send a *Photo* or *Video* of the issue as evidence, or type *9* to cancel.");
                 } else if (input === '2' || lowerInput.includes('vote')) {
