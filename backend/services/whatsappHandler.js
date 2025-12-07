@@ -22,8 +22,19 @@ class FixamHandler {
     async processIncomingMessage(data) {
         logger.log('webhook', '========== Received webhook ==========');
         logger.logObject('webhook', 'Full webhook data', data);
+
+        // Security Check: Verify Phone Number ID
+        const value = data.entry?.[0]?.changes?.[0]?.value;
+        const metadata = value?.metadata;
         
-        if (data.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
+        if (process.env.WHATSAPP_PHONE_NUMBER_ID && metadata?.phone_number_id) {
+            if (metadata.phone_number_id !== process.env.WHATSAPP_PHONE_NUMBER_ID) {
+                logger.log('webhook', `⚠️ Use configured Phone ID: ${process.env.WHATSAPP_PHONE_NUMBER_ID}. Received ID: ${metadata.phone_number_id}. Ignoring.`);
+                return;
+            }
+        }
+        
+        if (value?.messages?.[0]) {
             const message = data.entry[0].changes[0].value.messages[0];
             const fromNumber = message.from;
 
