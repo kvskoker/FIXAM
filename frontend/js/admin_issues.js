@@ -5,40 +5,96 @@ const issueLimit = 8;
 
 document.addEventListener('DOMContentLoaded', () => {
     checkAuth(() => {
+        // Initialize filters from URL
+        const urlParams = getURLParams();
+        if (urlParams.search) document.getElementById('issue-search').value = urlParams.search;
+        if (urlParams.category) document.getElementById('issue-filter-category').value = urlParams.category;
+        if (urlParams.status) document.getElementById('issue-filter-status').value = urlParams.status;
+        if (urlParams.start_date) document.getElementById('issue-filter-start').value = urlParams.start_date;
+        if (urlParams.end_date) document.getElementById('issue-filter-end').value = urlParams.end_date;
+        if (urlParams.sort) document.getElementById('issue-sort').value = urlParams.sort;
+        if (urlParams.page) issuePage = parseInt(urlParams.page);
+        
         loadIssues();
     });
 
     // Issue Filters
-    document.getElementById('issue-search').addEventListener('input', debounce(() => { issuePage = 1; loadIssues(); }, 500));
-    document.getElementById('issue-filter-category').addEventListener('change', () => { issuePage = 1; loadIssues(); });
-    document.getElementById('issue-filter-status').addEventListener('change', () => { issuePage = 1; loadIssues(); });
-    document.getElementById('issue-filter-start').addEventListener('change', () => { issuePage = 1; loadIssues(); });
-    document.getElementById('issue-filter-end').addEventListener('change', () => { issuePage = 1; loadIssues(); });
-    document.getElementById('issue-sort').addEventListener('change', () => { issuePage = 1; loadIssues(); });
+    document.getElementById('issue-search').addEventListener('input', debounce(() => { 
+        issuePage = 1; 
+        syncFiltersToURL();
+        loadIssues(); 
+    }, 500));
+
+    ['issue-filter-category', 'issue-filter-status', 'issue-filter-start', 'issue-filter-end', 'issue-sort'].forEach(id => {
+        document.getElementById(id).addEventListener('change', () => { 
+            issuePage = 1; 
+            syncFiltersToURL();
+            loadIssues(); 
+        });
+    });
 
     // Pagination Handlers
     document.getElementById('prev-page').addEventListener('click', () => {
         if (issuePage > 1) {
             issuePage--;
+            syncFiltersToURL();
             loadIssues();
         }
     });
 
     document.getElementById('next-page').addEventListener('click', () => {
         issuePage++;
+        syncFiltersToURL();
         loadIssues();
     });
+
+    // Reset Filters
+    const resetBtn = document.getElementById('reset-issues-filters');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            document.getElementById('issue-search').value = '';
+            document.getElementById('issue-filter-category').value = '';
+            document.getElementById('issue-filter-status').value = '';
+            document.getElementById('issue-filter-start').value = '';
+            document.getElementById('issue-filter-end').value = '';
+            document.getElementById('issue-sort').value = 'newest';
+            issuePage = 1;
+            syncFiltersToURL();
+            loadIssues();
+        });
+    }
 
     // Modal Close
     document.getElementById('close-modal').addEventListener('click', closeModal);
     
     // Check for ID in URL to auto-open modal
-    const urlParams = new URLSearchParams(window.location.search);
-    const id = urlParams.get('id');
-    if (id) {
-        setTimeout(() => openIssueDetails(parseInt(id)), 1000);
+    const urlParams = getURLParams();
+    if (urlParams.id) {
+        setTimeout(() => openIssueDetails(parseInt(urlParams.id)), 1000);
     }
 });
+
+function syncFiltersToURL() {
+    const searchEl = document.getElementById('issue-search');
+    const catEl = document.getElementById('issue-filter-category');
+    const statusEl = document.getElementById('issue-filter-status');
+    const startEl = document.getElementById('issue-filter-start');
+    const endEl = document.getElementById('issue-filter-end');
+    const sortEl = document.getElementById('issue-sort');
+
+    if (!searchEl) return; // Not on issues page or not loaded
+
+    const params = {
+        search: searchEl.value,
+        category: catEl.value,
+        status: statusEl.value,
+        start_date: startEl.value,
+        end_date: endEl.value,
+        sort: sortEl.value,
+        page: issuePage
+    };
+    updateURLParams(params);
+}
 
 async function loadIssues() {
     const search = document.getElementById('issue-search').value;
@@ -105,7 +161,7 @@ function updatePaginationControls(pagination) {
             } else {
                 btn.style.background = 'var(--admin-card-bg)'; btn.style.color = 'var(--admin-text)';
             }
-            btn.onclick = () => { issuePage = i; loadIssues(); };
+            btn.onclick = () => { issuePage = i; syncFiltersToURL(); loadIssues(); };
             numbersContainer.appendChild(btn);
         }
     }
@@ -140,6 +196,10 @@ async function openIssueDetails(id) {
     currentIssueId = id;
     const modal = document.getElementById('issue-modal');
     modal.classList.remove('hidden');
+    
+    // Update URL with ID
+    updateURLParams({ id: id });
+
     try {
         const allRes = await fetch(`${API_BASE_URL}/issues?limit=10000`);
         const responseData = await allRes.json();

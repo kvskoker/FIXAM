@@ -80,6 +80,27 @@ function debounce(func, wait) {
     };
 }
 
+function updateURLParams(params) {
+    const url = new URL(window.location);
+    Object.keys(params).forEach(key => {
+        if (params[key] && params[key] !== 'All' && params[key] !== '') {
+            url.searchParams.set(key, params[key]);
+        } else {
+            url.searchParams.delete(key);
+        }
+    });
+    window.history.replaceState({}, '', url);
+}
+
+function getURLParams() {
+    const params = new URLSearchParams(window.location.search);
+    const result = {};
+    for (const [key, value] of params.entries()) {
+        result[key] = value;
+    }
+    return result;
+}
+
 // Common Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
     // Login Form Handler

@@ -1,14 +1,27 @@
 // Include this after admin_common.js
 document.addEventListener('DOMContentLoaded', () => {
     checkAuth(() => {
+        // Initialize filters from URL
+        const urlParams = getURLParams();
+        if (urlParams.category) document.getElementById('global-category-filter').value = urlParams.category;
+        if (urlParams.start_date) document.getElementById('global-date-start').value = urlParams.start_date;
+        if (urlParams.end_date) document.getElementById('global-date-end').value = urlParams.end_date;
+        
         loadDashboardData();
     });
 
     // Global Dashboard Filters
-    const applyFiltersBtn = document.getElementById('apply-filters');
-    if (applyFiltersBtn) {
-        applyFiltersBtn.addEventListener('click', loadDashboardData);
-    }
+    const filters = ['global-category-filter', 'global-date-start', 'global-date-end'];
+    filters.forEach(id => {
+        document.getElementById(id).addEventListener('change', () => {
+            const category = document.getElementById('global-category-filter').value;
+            const start_date = document.getElementById('global-date-start').value;
+            const end_date = document.getElementById('global-date-end').value;
+            
+            updateURLParams({ category, start_date, end_date });
+            loadDashboardData();
+        });
+    });
 
     const resetFiltersBtn = document.getElementById('reset-filters');
     if (resetFiltersBtn) {
@@ -16,6 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('global-category-filter').value = 'All';
             document.getElementById('global-date-start').value = '';
             document.getElementById('global-date-end').value = '';
+            
+            updateURLParams({ category: null, start_date: null, end_date: null });
             loadDashboardData();
         });
     }
