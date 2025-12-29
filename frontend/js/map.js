@@ -1,13 +1,66 @@
 // Initialize Map
-const map = L.map('map').setView([8.484, -13.23], 14);
+const map = L.map('map').setView([8.417, -11.841], 8);
 const API_BASE_URL = window.location.port === '3000' 
     ? `http://${window.location.hostname}:5000/api`
     : '/api';
 
-// Add OpenStreetMap Tiles
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+// Add CARTO Tiles
+const isDarkMode = document.body.classList.contains('dark-mode');
+const tileUrl = isDarkMode 
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+
+L.tileLayer(tileUrl, {
+    attribution: '&copy; OpenStreetMap &copy; CARTO',
+    subdomains: 'abcd',
+    maxZoom: 20
 }).addTo(map);
+
+// Add Home Button
+L.Control.Home = L.Control.extend({
+    onAdd: function(map) {
+        const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+        const button = L.DomUtil.create('a', '', container);
+        button.innerHTML = '<i class="fa-solid fa-house" style="font-size: 14px;"></i>';
+        button.href = '#';
+        button.title = 'Back to National View';
+        button.style.backgroundColor = 'var(--surface-color, white)';
+        button.style.color = 'var(--text-primary, #333)';
+        button.style.width = '30px';
+        button.style.height = '30px';
+        button.style.display = 'flex';
+        button.style.alignItems = 'center';
+        button.style.justifyContent = 'center';
+        button.style.textDecoration = 'none';
+
+        button.onclick = function(e) {
+            e.preventDefault();
+            map.flyTo([8.417, -11.841], 8);
+        };
+        return container;
+    }
+});
+new L.Control.Home({ position: 'topleft' }).addTo(map);
+
+// Listen for theme changes to update map
+window.addEventListener('themeChanged', () => {
+    const isDark = document.body.classList.contains('dark-mode');
+    map.eachLayer(layer => {
+        if (layer instanceof L.TileLayer) {
+            map.removeLayer(layer);
+        }
+    });
+    
+    const newTileUrl = isDark 
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+        : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+    
+    L.tileLayer(newTileUrl, {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        subdomains: 'abcd',
+        maxZoom: 20
+    }).addTo(map);
+});
 
 // Icons
 const createIcon = (color) => {
@@ -30,7 +83,21 @@ function getStatusColor(status) {
     }
 }
 
+// Smart Cluster Logic
+let clusterGroup;
 const markers = {};
+
+const colors = {
+    fixed: { r: 34, g: 197, b: 94 }, // Green
+    progress: { r: 245, g: 158, b: 11 }, // Orange
+    pending: { r: 239, g: 68, b: 68 } // Red
+};
+
+const getStatusType = (status) => {
+    if (status === 'fixed') return 'fixed';
+    if (status === 'progress') return 'progress';
+    return 'pending';
+};
 const issueList = document.getElementById('issue-list');
 const searchInput = document.getElementById('search-input');
 const categoryFilter = document.getElementById('category-filter');
@@ -66,9 +133,14 @@ async function fetchIssues() {
         const ticketId = urlParams.get('ticket');
         if (ticketId) params.append('ticket', ticketId);
 
+        // Fetch all issues for the map (bypass pagination)
+        params.append('limit', '10000');
+
         const response = await fetch(`${API_BASE_URL}/issues?${params.toString()}`);
         if (!response.ok) throw new Error('Network response was not ok');
-        const issues = await response.json();
+        const responseData = await response.json();
+        // Handle both old (array) and new (object) structures
+        const issues = Array.isArray(responseData) ? responseData : (responseData.data || []);
         renderIssues(issues);
     } catch (error) {
         console.error('Error fetching issues:', error);
@@ -113,20 +185,69 @@ window.expandVideo = function(container, event) {
 };
 
 function renderIssues(issues) {
-    // Clear existing markers
-    Object.values(markers).forEach(marker => map.removeLayer(marker));
+    // Clear existing
+    if (clusterGroup) {
+        map.removeLayer(clusterGroup);
+    }
     for (const key in markers) delete markers[key];
+    
+    clusterGroup = L.markerClusterGroup({
+        maxClusterRadius: 50,
+        iconCreateFunction: function (cluster) {
+            const children = cluster.getAllChildMarkers();
+            let counts = { fixed: 0, progress: 0, pending: 0 };
+            
+            children.forEach(m => {
+                counts[getStatusType(m.options.status)]++;
+            });
+
+            const total = children.length;
+            const r = Math.round((counts.fixed * colors.fixed.r + counts.progress * colors.progress.r + counts.pending * colors.pending.r) / total);
+            const g = Math.round((counts.fixed * colors.fixed.g + counts.progress * colors.progress.g + counts.pending * colors.pending.g) / total);
+            const b = Math.round((counts.fixed * colors.fixed.b + counts.progress * colors.progress.b + counts.pending * colors.pending.b) / total);
+            
+            const color = `rgb(${r}, ${g}, ${b})`;
+            const size = Math.min(36 + (total * 1.5), 70);
+
+            return L.divIcon({
+                html: `<div style="
+                    background: ${color}; 
+                    width: ${size}px; 
+                    height: ${size}px; 
+                    border-radius: 50%; 
+                    display: flex; 
+                    align-items: center; 
+                    justify-content: center; 
+                    color: white; 
+                    font-weight: bold; 
+                    box-shadow: 0 0 10px rgba(0,0,0,0.2);
+                    border: 2px solid rgba(255,255,255,0.4);
+                ">${total}</div>`,
+                className: 'custom-cluster-icon',
+                iconSize: L.point(size, size)
+            });
+        }
+    });
 
     issueList.innerHTML = ''; // Clear loading
 
     issues.forEach(issue => {
-        // Add Marker
-        const color = getStatusColor(issue.status);
-        const marker = L.marker([issue.lat, issue.lng], {
-            icon: createIcon(color)
-        }).addTo(map);
+        if (!issue.lat || !issue.lng) return;
 
-        // Popup Content
+        const statusType = getStatusType(issue.status);
+        const color = `rgb(${colors[statusType].r}, ${colors[statusType].g}, ${colors[statusType].b})`;
+
+        // Add Marker
+        const marker = L.circleMarker([issue.lat, issue.lng], {
+            radius: 8,
+            fillColor: color,
+            color: '#fff',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.8,
+            status: issue.status
+        });
+
         // Popup Content
         let mediaContent = '';
         if (isVideo(issue.image_url)) {
@@ -136,41 +257,27 @@ function renderIssues(issues) {
                     <div class="play-button" onclick="playVideo(this.parentElement)" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; background: rgba(0,0,0,0.6); border-radius: 50%; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px); cursor: pointer; z-index: 10;">
                         <i class="fa-solid fa-play" style="color: white; font-size: 16px; margin-left: 2px;"></i>
                     </div>
-                    <div class="expand-button" onclick="expandVideo(this.parentElement, event)" style="position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; background: rgba(0,0,0,0.6); border-radius: 4px; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px); cursor: pointer; z-index: 11;" title="Full Screen">
-                        <i class="fa-solid fa-expand" style="color: white; font-size: 14px;"></i>
-                    </div>
                 </div>
             `;
         } else {
-            mediaContent = `<img src="${issue.image_url || 'https://via.placeholder.com/400'}" class="popup-image" alt="${issue.title}">`;
+            mediaContent = `<img src="${issue.image_url || 'https://via.placeholder.com/400'}" class="popup-image" alt="${issue.title}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 8px; margin-bottom: 8px;">`;
         }
 
         const popupContent = `
-            <div class="popup-content">
+            <div class="popup-content" style="min-width: 200px;">
                 ${mediaContent}
-                <div class="issue-category" style="display: inline-block; margin-bottom: 0.5rem;">${issue.category}</div>
-                <div class="popup-title">${issue.title}</div>
-                <div style="font-size: 0.8rem; color: #64748b; margin-bottom: 0.5rem;">Ticket ID: <strong>${issue.ticket_id}</strong></div>
-                <div class="popup-desc">${issue.description}</div>
-                ${issue.reported_by_name ? `<div style="font-size: 0.85rem; color: #64748b; margin-top: 0.5rem;">Reported by: ${issue.reported_by_name}</div>` : ''}
-                <div class="popup-actions" style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-                    <span class="badge badge-success" style="background-color: #22c55e; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">
-                        <i class="fa-solid fa-arrow-up"></i> ${issue.upvotes || 0}
-                    </span>
-                    <span class="badge badge-danger" style="background-color: #ef4444; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">
-                        <i class="fa-solid fa-arrow-down"></i> ${issue.downvotes || 0}
-                    </span>
-                </div>
-                <div style="margin-top: 0.5rem;">
-                    <button class="btn btn-outline" onclick="viewTracker(${issue.id})" style="width: 100%;">
-                        <i class="fa-solid fa-clock-rotate-left"></i> View Issue History
-                    </button>
-                </div>
+                <div style="font-size: 0.75rem; font-weight: 600; color: ${color}; margin-bottom: 4px;">${issue.category}</div>
+                <div class="popup-title" style="font-weight: 700; margin-bottom: 4px;">${issue.title}</div>
+                <div class="popup-desc" style="font-size: 0.85rem; color: #64748b; margin-bottom: 8px;">${issue.description}</div>
+                <button class="btn btn-outline" onclick="viewTracker(${issue.id})" style="width: 100%; font-size: 0.8rem; padding: 6px;">
+                    <i class="fa-solid fa-clock-rotate-left"></i> History
+                </button>
             </div>
         `;
 
         marker.bindPopup(popupContent);
         markers[issue.id] = marker;
+        clusterGroup.addLayer(marker);
 
         // Add to Sidebar List
         const card = document.createElement('div');
@@ -181,30 +288,32 @@ function renderIssues(issues) {
                 <div class="issue-status status-${issue.status}"></div>
             </div>
             <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.25rem;">#${issue.ticket_id}</div>
-            <div class="issue-title">${issue.title}</div>
+            <div class="issue-title" style="font-weight: 600;">${issue.title}</div>
             <div class="issue-location">
                 <i class="fa-solid fa-location-dot"></i> Freetown, SL
             </div>
-            ${issue.reported_by_name ? `<div style="font-size: 0.8rem; color: #64748b;">By: ${issue.reported_by_name}</div>` : ''}
             <div class="issue-meta">
                 <span>${new Date(issue.reported_on || issue.created_at).toLocaleDateString()}</span>
                 <div class="vote-count">
-                    <i class="fa-solid fa-arrow-up"></i> ${issue.votes || 0}
+                    <i class="fa-solid fa-arrow-up"></i> ${issue.upvotes || 0}
                 </div>
             </div>
         `;
 
         card.addEventListener('click', () => {
             map.flyTo([issue.lat, issue.lng], 16);
-            marker.openPopup();
+            setTimeout(() => {
+                marker.openPopup();
+            }, 300);
             
-            // Highlight active card
             document.querySelectorAll('.issue-card').forEach(c => c.style.borderColor = 'var(--border-color)');
             card.style.borderColor = 'var(--primary-color)';
         });
 
         issueList.appendChild(card);
     });
+
+    map.addLayer(clusterGroup);
 
     // Auto-open popup if ticket param exists
     const urlParams = new URLSearchParams(window.location.search);

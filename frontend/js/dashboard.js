@@ -11,14 +11,15 @@ const API_BASE_URL = window.location.port === '3000'
 async function fetchDashboardData() {
     try {
         const [issuesRes, statsRes, categoriesRes] = await Promise.all([
-            fetch(`${API_BASE_URL}/issues`),
+            fetch(`${API_BASE_URL}/issues?limit=10000`),
             fetch(`${API_BASE_URL}/stats`),
             fetch(`${API_BASE_URL}/categories`)
         ]);
 
         if (!issuesRes.ok || !statsRes.ok || !categoriesRes.ok) throw new Error('Network response was not ok');
 
-        allIssues = await issuesRes.json();
+        const issuesData = await issuesRes.json();
+        allIssues = Array.isArray(issuesData) ? issuesData : (issuesData.data || []);
         const stats = await statsRes.json();
         allCategories = await categoriesRes.json();
         

@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const authService = require('../services/authService');
+
 
 const whatsappService = require('../services/whatsappService');
 const FixamHandler = require('../services/whatsappHandler');
@@ -25,11 +27,13 @@ function generateTicketId() {
 // GET /api/issues - Fetch all issues from DB with vote counts, search, filter, and sort
 router.get('/issues', async (req, res) => {
     try {
-        const { search, category, status, sort, ticket } = req.query;
+        const { search, category, status, sort, ticket, page = 1, limit = 1000 } = req.query;
+        const pageNum = parseInt(page);
+        const limitNum = parseInt(limit);
+        const offset = (pageNum - 1) * limitNum;
 
         let query = `
             SELECT 
-                i.*,
                 i.*,
                 u.name as reported_by_name,
                 COALESCE(v.upvotes, 0) as upvotes,
@@ -53,7 +57,7 @@ router.get('/issues', async (req, res) => {
         let paramCount = 1;
 
         if (search) {
-            query += ` AND (i.title ILIKE $${paramCount} OR i.description ILIKE $${paramCount})`;
+            query += ` AND (i.title ILIKE $${paramCount} OR i.description ILIKE $${paramCount} OR i.ticket_id ILIKE $${paramCount})`;
             params.push(`%${search}%`);
             paramCount++;
         }
@@ -76,6 +80,20 @@ router.get('/issues', async (req, res) => {
             paramCount++;
         }
 
+        if (req.query.start_date) {
+            console.log('Applying start_date filter:', req.query.start_date);
+            query += ` AND i.created_at >= $${paramCount}`;
+            params.push(req.query.start_date);
+            paramCount++;
+        }
+
+        if (req.query.end_date) {
+            console.log('Applying end_date filter:', req.query.end_date);
+            query += ` AND i.created_at <= $${paramCount}`;
+            params.push(`${req.query.end_date} 23:59:59`);
+            paramCount++;
+        }
+
         // Sorting
         if (sort === 'oldest') {
             query += ` ORDER BY i.created_at ASC`;
@@ -86,8 +104,59 @@ router.get('/issues', async (req, res) => {
             query += ` ORDER BY i.created_at DESC`;
         }
 
+        // 1. Get filtered count
+        let countQuery = `SELECT COUNT(*) FROM issues i WHERE 1=1`;
+        const countParams = [];
+        let countParamCount = 1;
+
+        // Re-apply filters for count query (simplified for brevity, ideally share logic)
+        // ... (We need to replicate the filter logic here or structure it better)
+        // A better approach: Use CTE or window function count(*) OVER()
+        
+        // Let's rewrite the main query to include count within the same result set if possible, 
+        // OR just run two queries. For simplicity and correctness with the existing structure, let's just create a base WHERE clause builder.
+
+        // Actually, let's keep the existing query building and add pagination at the end.
+        // We will run a separate count query with the same WHERE clause components.
+
+        // ... Wait, to avoid code duplication, let's just modify the main Query to return total count using Window Function
+        // BUT `issues_with_votes` logic makes it complex.
+        
+        // Let's stick to the prompt's request for pagination.
+        
+        query += ` LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
+        params.push(limitNum, offset);
+
         const result = await db.query(query, params);
-        res.json(result.rows);
+        
+        // Get total count for pagination metadata (Approximation for simplicity: if we fetched < limit, we know we are at end. 
+        // But to generic "Page 1 of X", we need total.
+        // Let's run a separate cleaner count query for now.
+        
+        let countSql = `SELECT COUNT(*) as total FROM issues i WHERE 1=1`;
+        const countSqlParams = [];
+        let pCount = 1;
+        
+        if (search) { countSql += ` AND (i.title ILIKE $${pCount} OR i.description ILIKE $${pCount})`; countSqlParams.push(`%${search}%`); pCount++; }
+        if (category) { countSql += ` AND i.category = $${pCount}`; countSqlParams.push(category); pCount++; }
+        if (status) { countSql += ` AND i.status = $${pCount}`; countSqlParams.push(status); pCount++; }
+        if (ticket) { countSql += ` AND i.ticket_id = $${pCount}`; countSqlParams.push(ticket); pCount++; }
+        if (req.query.start_date) { countSql += ` AND i.created_at >= $${pCount}`; countSqlParams.push(req.query.start_date); pCount++; }
+        if (req.query.end_date) { countSql += ` AND i.created_at <= $${pCount}`; countSqlParams.push(`${req.query.end_date} 23:59:59`); pCount++; }
+
+        const countResult = await db.query(countSql, countSqlParams);
+        const totalItems = parseInt(countResult.rows[0].total);
+        const totalPages = Math.ceil(totalItems / limitNum);
+
+        res.json({
+            data: result.rows,
+            pagination: {
+                current_page: pageNum,
+                per_page: limitNum,
+                total_items: totalItems,
+                total_pages: totalPages
+            }
+        });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });
@@ -269,19 +338,29 @@ router.post('/admin/login', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Phone and password required' });
         }
 
-        // Check if user exists
-        const userResult = await db.query('SELECT * FROM users WHERE phone_number = $1', [phone]);
+        // Check if user exists and is an admin
+        const query = `
+            SELECT u.*, r.name as role_name 
+            FROM users u
+            JOIN roles r ON u.role_id = r.id
+            WHERE u.phone_number = $1 AND r.name = 'Admin'
+        `;
+        const userResult = await db.query(query, [phone]);
         
         if (userResult.rows.length === 0) {
-            return res.status(401).json({ success: false, message: 'Invalid credentials' });
+            return res.status(401).json({ success: false, message: 'Invalid credentials or access denied' });
         }
 
         const user = userResult.rows[0];
 
-        // Verify password (using phone number as password as requested)
-        if (password !== phone) {
+        // Verify password
+        const isValid = authService.verifyPassword(password, phone, user.password);
+        if (!isValid) {
             return res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
+
+        // Update last login
+        await db.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
 
         // Return success
         res.json({
@@ -289,7 +368,9 @@ router.post('/admin/login', async (req, res) => {
             user: {
                 id: user.id,
                 name: user.name,
-                phone: user.phone_number
+                phone: user.phone_number,
+                role: user.role_name,
+                last_login: user.last_login
             }
         });
 

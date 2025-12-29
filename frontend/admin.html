@@ -15,6 +15,8 @@
     
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
     
     <!-- Custom CSS -->
     <link rel="stylesheet" href="css/style.css">
@@ -112,6 +114,7 @@
             overflow: hidden;
         }
 
+
         .admin-sidebar {
             background: var(--admin-card-bg);
             border-right: 1px solid var(--admin-border);
@@ -196,6 +199,42 @@
             gap: 1.5rem;
             margin-bottom: 2rem;
             width: 100%;
+            padding: 0; /* Fixed: remove padding that was causing misalignment */
+        }
+
+        .filter-bar {
+            background: var(--admin-card-bg);
+            padding: 1rem;
+            border-radius: 12px;
+            border: 1px solid var(--admin-border);
+            margin-bottom: 1.5rem;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: space-between; /* Distributed across the bar */
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .filter-group label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--admin-text-muted);
+        }
+
+        .filter-input {
+            background: var(--admin-bg);
+            border: 1px solid var(--admin-border);
+            color: var(--admin-text);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            outline: none;
         }
 
         .stat-card {
@@ -299,6 +338,58 @@
         }
 
         .hidden { display: none !important; }
+
+        /* Media Queries - Placed at the bottom to ensure they override base styles */
+        @media (max-width: 1024px) {
+            .admin-container {
+                grid-template-columns: 80px 1fr;
+            }
+            .admin-sidebar span, .logo-text { display: none; }
+        }
+
+        @media (max-width: 768px) {
+            .admin-container {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto 1fr;
+                height: 100vh;
+            }
+            .admin-sidebar {
+                flex-direction: row;
+                height: auto;
+                padding: 1rem;
+                justify-content: space-between;
+                border-bottom: 1px solid var(--admin-border);
+                border-right: none;
+            }
+            .admin-nav {
+                flex-direction: row;
+                gap: 1rem;
+                align-items: center;
+                width: 100%;
+                justify-content: space-around;
+            }
+            .admin-nav-item span { display: none; }
+            .admin-header-section { margin: 0; padding: 0.5rem; background: none; border: none; }
+            .admin-header-section img { height: 35px; }
+            .admin-main { padding: 1.5rem; height: calc(100vh - 70px); }
+            .admin-header { flex-direction: column; align-items: flex-start; gap: 1rem; }
+            .dashboard-grid { grid-template-columns: 1fr 1fr !important; gap: 1rem; }
+            .charts-grid { grid-template-columns: 1fr !important; }
+            .insight-grid { grid-template-columns: 1fr !important; }
+            .filter-bar { flex-direction: column; align-items: flex-start; }
+            .filter-group { width: 100%; }
+            .filter-input { width: 100%; }
+            #apply-filters { width: 100%; }
+            #admin-info, .admin-user-display { display: none !important; } /* Hide user info on mobile/tablet */
+        }
+
+        @media (max-width: 480px) {
+            .dashboard-grid { grid-template-columns: 1fr !important; }
+            .stat-value { font-size: 1.5rem; }
+            .admin-header h1 { font-size: 1.5rem; }
+            .hide-mobile { display: none; }
+            #admin-info, .admin-user-display { display: none !important; }
+        }
     </style>
 </head>
 <body>
@@ -330,14 +421,14 @@
             </div>
             <nav class="admin-nav">
                 <a href="#" id="nav-overview" class="admin-nav-item active">
-                    <i class="fa-solid fa-chart-line"></i> Overview
+                    <i class="fa-solid fa-chart-line"></i> <span>Overview</span>
                 </a>
                 <a href="#" id="nav-issues" class="admin-nav-item">
-                    <i class="fa-solid fa-triangle-exclamation"></i> Issues
+                    <i class="fa-solid fa-triangle-exclamation"></i> <span>Issues</span>
                 </a>
                 <div style="flex-grow: 1;"></div>
                 <a href="#" id="logout-btn" class="admin-nav-item">
-                    <i class="fa-solid fa-right-from-bracket"></i> Logout
+                    <i class="fa-solid fa-right-from-bracket"></i> <span>Logout</span>
                 </a>
             </nav>
         </aside>
@@ -350,11 +441,39 @@
                         <h1>Government Dashboard</h1>
                         <p style="color: var(--admin-text-muted);">Real-time overview of citizen reports and infrastructure status</p>
                     </div>
-                    <div style="display: flex; gap: 1rem;">
-                        <button style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer;">
-                            <i class="fa-solid fa-download"></i> Export Report
-                        </button>
+                    <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                        <div id="admin-info"></div>
                     </div>
+                </div>
+
+                <!-- Global Filters -->
+                <div class="filter-bar">
+                    <div class="filter-group">
+                        <label>Category:</label>
+                        <select id="global-category-filter" class="filter-input">
+                            <option value="All">All Categories</option>
+                            <option value="Water">Water</option>
+                            <option value="Road">Road</option>
+                            <option value="Waste">Waste</option>
+                            <option value="Electricity">Electricity</option>
+                            <option value="Health">Health</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>From:</label>
+                        <input type="date" id="global-date-start" class="filter-input">
+                    </div>
+                    <div class="filter-group">
+                        <label>To:</label>
+                        <input type="date" id="global-date-end" class="filter-input">
+                    </div>
+                    <button id="apply-filters" style="background: var(--admin-primary); color: white; border: none; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.9rem;">
+                        Apply Filters
+                    </button>
+                    <button id="reset-filters" style="background: none; border: 1px solid var(--admin-border); color: var(--admin-text-muted); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.9rem;">
+                        Reset
+                    </button>
                 </div>
 
                 <!-- Stats Row -->
@@ -381,10 +500,10 @@
                         </div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-label">Citizen Sentiment</div>
-                        <div class="stat-value" id="sentiment-score">--</div>
-                        <div class="stat-trend" id="sentiment-trend">
-                            <!-- Dynamic sentiment icon/text -->
+                        <div class="stat-label">In Progress</div>
+                        <div class="stat-value" id="in-progress-issues" style="color: var(--admin-warning);">--</div>
+                        <div class="stat-trend" id="in-progress-trend">
+                             <span style="color: var(--admin-text-muted);">Currently being worked on</span>
                         </div>
                     </div>
                 </div>
@@ -393,13 +512,8 @@
                 <div class="charts-grid">
                     <div class="chart-card">
                         <div class="chart-header">
-                            <div class="chart-title">Issue Hotspots (Heatmap)</div>
-                            <select style="background: var(--admin-bg); color: var(--admin-text); border: 1px solid var(--admin-border); padding: 4px 8px; border-radius: 4px;">
-                                <option>All Categories</option>
-                                <option>Garbage</option>
-                                <option>Potholes</option>
-                                <option>Water</option>
-                            </select>
+                            <div class="chart-title">Issue Hotspots</div>
+                            <div style="font-size: 0.8rem; color: var(--admin-text-muted);">National Overview</div>
                         </div>
                         <div id="map-heatmap"></div>
                     </div>
@@ -421,26 +535,57 @@
             <!-- ISSUES VIEW -->
             <div id="view-issues" class="hidden">
                 <div class="admin-header">
-                    <div>
+                    <div style="flex-shrink: 0;">
                         <h1>Issue Management</h1>
                         <p style="color: var(--admin-text-muted);">Track, manage, and resolve citizen reports</p>
                     </div>
-                    <div style="display: flex; gap: 1rem;">
-                        <input type="text" id="issue-search" placeholder="Search issues..." style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.5rem 1rem; border-radius: 6px; width: 250px;">
-                        <select id="issue-filter-status" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.5rem 1rem; border-radius: 6px;">
-                            <option value="">All Statuses</option>
-                            <option value="critical">Critical</option>
-                            <option value="progress">In Progress</option>
-                            <option value="fixed">Resolved</option>
-                        </select>
+                    <div style="flex-shrink: 0;">
+                        <input type="checkbox" id="pagination-toggle" checked style="display: none;">
+                        <div class="admin-user-display"></div>
                     </div>
+                </div>
+
+                <!-- Issues Toolbar (Search & Filters) -->
+                <div class="issues-toolbar" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center;">
+                    <input type="text" id="issue-search" placeholder="Search..." style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.5rem; border-radius: 6px; width: 300px;">
+
+                    <select id="issue-filter-category" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.5rem; border-radius: 6px;">
+                        <option value="">All Categories</option>
+                        <option value="Water">Water</option>
+                        <option value="Road">Road</option>
+                        <option value="Waste">Waste</option>
+                        <option value="Electricity">Electricity</option>
+                        <option value="Health">Health</option>
+                        <option value="Other">Other</option>
+                    </select>
+
+                    <select id="issue-filter-status" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.5rem; border-radius: 6px;">
+                        <option value="">All Statuses</option>
+                        <option value="critical">Critical</option>
+                        <option value="progress">In Progress</option>
+                        <option value="fixed">Resolved</option>
+                    </select>
+
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="date" id="issue-filter-start" placeholder="Start" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.4rem 0.5rem; border-radius: 6px; width: 130px;">
+                        <span style="color: var(--admin-text-muted);">-</span>
+                        <input type="date" id="issue-filter-end" placeholder="End" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.4rem 0.5rem; border-radius: 6px; width: 130px;">
+                    </div>
+
+                    <div style="flex-grow: 1;"></div>
+
+                    <select id="issue-sort" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.5rem; border-radius: 6px;">
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="most_votes">Most Votes</option>
+                    </select>
                 </div>
 
                 <div class="chart-card" style="height: auto; min-height: 500px; overflow-x: auto;">
                     <table style="width: 100%; border-collapse: collapse; text-align: left;">
                         <thead>
                             <tr style="border-bottom: 1px solid var(--admin-border); color: var(--admin-text-muted);">
-                                <th style="padding: 1rem;">Ticket ID</th>
+                                <th style="padding: 1rem;">Issue ID</th>
                                 <th style="padding: 1rem;">Category</th>
                                 <th style="padding: 1rem;">Title</th>
                                 <th style="padding: 1rem;">Location</th>
@@ -454,6 +599,19 @@
                             <!-- Populated by JS -->
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination-controls" style="display: flex; justify-content: center; align-items: center; padding: 1rem; gap: 1rem; border-top: 1px solid var(--admin-border); margin-top: 1rem;">
+                    <button id="prev-page" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer;" disabled>Previous</button>
+                    
+                    <div id="pagination-numbers" style="display: flex; gap: 0.5rem;">
+                        <!-- Number Buttons Populated by JS -->
+                    </div>
+
+                    <button id="next-page" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer;" disabled>Next</button>
+                    
+                    <span id="page-info" style="color: var(--admin-text-muted); font-size: 0.9rem; position: absolute; right: 2rem;">Page 1 of 1</span>
                 </div>
             </div>
         </main>
@@ -512,8 +670,8 @@
     <!-- Scripts -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Leaflet Heatmap Plugin (We might need to download this or use a CDN if available, for now I'll try to find a CDN or implement a simple version) -->
-    <script src="https://leaflet.github.io/Leaflet.heat/dist/leaflet-heat.js"></script> 
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script> 
     <script src="js/theme.js"></script>
     <script src="js/admin.js"></script>
 </body>
