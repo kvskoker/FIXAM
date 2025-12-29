@@ -2,6 +2,9 @@
   "cleanUrls": true,
   "rewrites": [
     { "source": "/", "destination": "/index.html" },
-    { "source": "/dashboard", "destination": "/dashboard.html" }
+    { "source": "/dashboard", "destination": "/dashboard.html" },
+    { "source": "/admin/overview", "destination": "/admin/overview.html" },
+    { "source": "/admin/issues", "destination": "/admin/issues.html" },
+    { "source": "/admin", "destination": "/admin/overview.html" }
   ]
 }
