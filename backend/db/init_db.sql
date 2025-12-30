@@ -100,6 +100,7 @@ CREATE INDEX IF NOT EXISTS idx_votes_user_id ON votes (user_id);
 CREATE INDEX IF NOT EXISTS idx_issue_tracker_issue_id ON issue_tracker (issue_id);
 
 -- Create a view for issues with vote counts
+DROP VIEW IF EXISTS issues_with_votes;
 CREATE OR REPLACE VIEW issues_with_votes AS
 SELECT 
     i.*,
