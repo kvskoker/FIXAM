@@ -267,15 +267,15 @@ This allows you to test the core functionality without external API dependencies
     - Whisper (audio transcription)
     - EmbeddingGemma (text classification)
 
-## Future Enhancements
+## Enhancements
 
 - [x] Image upload support via WhatsApp ✅
 - [x] Voice note transcription (Whisper AI) ✅
-- [x] Real-time updates (WebSockets)
-- [ ] Duplicate detection (50m radius check)
-- [ ] PostGIS integration for advanced geospatial queries
-- [ ] Sentiment analysis on comments
-- [ ] Heatmap visualization
+- [x] Real-time updates (WebSockets) ✅
+- [x] Duplicate detection (100m radius check) ✅
+- [x] PostGIS integration for advanced geospatial queries ✅
+- [x] Sentiment analysis on comments ✅
+- [x] Heatmap visualization ✅
 
 ## Contributing
 
