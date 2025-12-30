@@ -1,6 +1,6 @@
 # FIXAM - Facilitating Issue eXchange for Accountable Municipalities
 
-**Live Demo:** [https://fixam.maxcit.com/](https://fixam.maxcit.com/)
+**Live Demo:** <a href="https://fixam.maxcit.com/" target="_blank">https://fixam.maxcit.com/</a>
 
 A civic engagement platform that enables citizens to report municipal issues via WhatsApp and visualize them on an interactive map.
 
