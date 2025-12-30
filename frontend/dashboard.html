@@ -56,10 +56,23 @@
             <div class="issue-list">
                 <div style="padding: 1rem; border-bottom: 1px solid var(--border-color);">
                     <h3 style="margin-bottom: 0.5rem; font-size: 1rem;">Filters</h3>
-                    <select id="dashboard-category-filter" style="width: 100%; padding: 8px; border-radius: 6px; background: var(--background-color); color: var(--text-primary); border: 1px solid var(--border-color); font-family: inherit; font-size: 0.85rem; outline: none; cursor: pointer;">
-                        <option value="">All Categories</option>
-                        <!-- Populated by JS -->
-                    </select>
+                    <div style="margin-bottom: 0.75rem;">
+                        <label style="display: block; font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.25rem;">Category</label>
+                        <select id="dashboard-category-filter" style="width: 100%; padding: 8px; border-radius: 6px; background: var(--background-color); color: var(--text-primary); border: 1px solid var(--border-color); font-family: inherit; font-size: 0.85rem; outline: none; cursor: pointer;">
+                            <option value="">All Categories</option>
+                            <!-- Populated by JS -->
+                        </select>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                        <div>
+                            <label style="display: block; font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.25rem;">From</label>
+                            <input type="date" id="dashboard-start-date" style="width: 100%; padding: 8px; border-radius: 6px; background: var(--background-color); color: var(--text-primary); border: 1px solid var(--border-color); font-family: inherit; font-size: 0.85rem; outline: none;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.25rem;">To</label>
+                            <input type="date" id="dashboard-end-date" style="width: 100%; padding: 8px; border-radius: 6px; background: var(--background-color); color: var(--text-primary); border: 1px solid var(--border-color); font-family: inherit; font-size: 0.85rem; outline: none;">
+                        </div>
+                    </div>
                 </div>
                 <div style="padding: 1rem;">
                     <h3 style="margin-bottom: 1rem; font-size: 1rem;">Priority Alerts</h3>
@@ -99,6 +112,13 @@
                 </div>
 
                 <!-- Charts -->
+                <div class="stat-card" style="grid-column: span 3;">
+                    <h3 class="issue-title">Issues Trend</h3>
+                    <div class="chart-container">
+                        <canvas id="trendsChart"></canvas>
+                    </div>
+                </div>
+
                 <div class="stat-card" style="grid-column: span 3;">
                     <h3 class="issue-title">Reports by Category</h3>
                     <div class="chart-container">

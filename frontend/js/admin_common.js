@@ -22,11 +22,25 @@ function showDashboard() {
     // Display Admin Info
     const adminUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
     if (adminUser) {
+        // Role priority: Admin > Operations > User
+        let displayRole = 'User';
+        const roles = adminUser.roles || [adminUser.role];
+        
+        if (roles.includes('Admin')) {
+            displayRole = 'Admin';
+        } else if (roles.includes('Operation')) {
+            displayRole = 'Operations';
+        } else if (roles.includes('User')) {
+            displayRole = 'User';
+        } else {
+            displayRole = roles[0] || 'Administrator';
+        }
+
         document.querySelectorAll('.admin-user-display, #admin-info').forEach(el => {
             el.innerHTML = `
                 <div style="text-align: right;">
                     <div style="font-weight: 600;">${adminUser.name || 'Admin'}</div>
-                    <div style="font-size: 0.75rem; color: var(--admin-text-muted);">Role: ${adminUser.role || 'Administrator'}</div>
+                    <div style="font-size: 0.75rem; color: var(--admin-text-muted);">Role: ${displayRole}</div>
                 </div>
             `;
         });

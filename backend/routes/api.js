@@ -234,9 +234,105 @@ router.get('/categories', async (req, res) => {
     }
 });
 
+// GET /api/stats/trends - Daily reporting and resolution trends
+router.get('/stats/trends', async (req, res) => {
+    try {
+        const { start_date, end_date } = req.query;
+        let reportsQuery = `
+            SELECT TO_CHAR(created_at, 'YYYY-MM-DD') as date, COUNT(*) as count
+            FROM issues
+            WHERE 1=1
+        `;
+        let resolutionsQuery = `
+            SELECT TO_CHAR(created_at, 'YYYY-MM-DD') as date, COUNT(*) as count
+            FROM issue_tracker
+            WHERE action = 'resolved'
+        `;
+        const params = [];
+        let pCount = 1;
+
+        if (start_date) {
+            reportsQuery += ` AND created_at >= $${pCount}`;
+            resolutionsQuery += ` AND created_at >= $${pCount}`;
+            params.push(start_date);
+            pCount++;
+        }
+        if (end_date) {
+            reportsQuery += ` AND created_at <= $${pCount}`;
+            resolutionsQuery += ` AND created_at <= $${pCount}`;
+            params.push(`${end_date} 23:59:59`);
+            pCount++;
+        }
+
+        // If no dates provided, default to last 14 days
+        if (!start_date && !end_date) {
+            reportsQuery += ` AND created_at >= CURRENT_DATE - INTERVAL '14 days'`;
+            resolutionsQuery += ` AND created_at >= CURRENT_DATE - INTERVAL '14 days'`;
+        }
+
+        reportsQuery += ` GROUP BY TO_CHAR(created_at, 'YYYY-MM-DD') ORDER BY date ASC`;
+        resolutionsQuery += ` GROUP BY TO_CHAR(created_at, 'YYYY-MM-DD') ORDER BY date ASC`;
+
+        const [reportsResult, resolutionsResult] = await Promise.all([
+            db.query(reportsQuery, params),
+            db.query(resolutionsQuery, params)
+        ]);
+
+        res.json({
+            reports: reportsResult.rows,
+            resolutions: resolutionsResult.rows
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // GET /api/stats - Fetch dashboard statistics
 router.get('/stats', async (req, res) => {
     try {
+        const { start_date, end_date } = req.query;
+
+        if (start_date || end_date) {
+            const params = [];
+            let pCount = 1;
+            let whereClause = ' WHERE 1=1';
+            
+            if (start_date) {
+                whereClause += ` AND created_at >= $${pCount}`;
+                params.push(start_date);
+                pCount++;
+            }
+            if (end_date) {
+                whereClause += ` AND created_at <= $${pCount}`;
+                params.push(`${end_date} 23:59:59`);
+                pCount++;
+            }
+
+            const [totalRes, resolvedRes, criticalRes, allTimeRes] = await Promise.all([
+                db.query(`SELECT COUNT(*) as count FROM issues ${whereClause}`, params),
+                db.query(`SELECT COUNT(*) as count FROM issue_tracker WHERE action = 'resolved' ${whereClause.replace('WHERE', 'AND')}`, params),
+                db.query(`SELECT COUNT(*) as count FROM issues ${whereClause} AND status = 'critical'`, params),
+                db.query(`SELECT COUNT(*) as count FROM issues`)
+            ]);
+
+            const total = parseInt(totalRes.rows[0].count);
+            const resolved = parseInt(resolvedRes.rows[0].count);
+            const critical = parseInt(criticalRes.rows[0].count);
+            const allTime = parseInt(allTimeRes.rows[0].count);
+            const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0;
+
+            return res.json({
+                total_reports_week: total, // We keep the key generic or UI uses it
+                reports_change_pct: 0, // No comparison logic for custom range yet
+                resolved_issues: resolved,
+                resolution_rate: resolutionRate,
+                critical_pending: critical,
+                is_custom_range: true
+            });
+        }
+
+        // Default logic: This Week vs Last Week
         // 1. Total Reports (This Week)
         const totalReportsResult = await db.query(`
             SELECT COUNT(*) as count 
@@ -259,7 +355,7 @@ router.get('/stats', async (req, res) => {
         if (lastWeekReports > 0) {
             percentageChange = Math.round(((totalReports - lastWeekReports) / lastWeekReports) * 100);
         } else if (totalReports > 0) {
-            percentageChange = 100; // If last week was 0 and this week is > 0
+            percentageChange = 100;
         }
 
         // 3. Resolved Issues
@@ -291,6 +387,7 @@ router.get('/stats', async (req, res) => {
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
+
 
 // POST /api/webhook - WhatsApp Webhook Verification
 router.get('/webhook', (req, res) => {
@@ -338,12 +435,14 @@ router.post('/admin/login', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Phone and password required' });
         }
 
-        // Check if user exists and is an admin
+        // Check if user exists and has roles
         const query = `
-            SELECT u.*, r.name as role_name 
+            SELECT u.*, ARRAY_AGG(r.name) as roles 
             FROM users u
-            JOIN roles r ON u.role_id = r.id
-            WHERE u.phone_number = $1 AND r.name = 'Admin'
+            JOIN user_roles ur ON u.id = ur.user_id
+            JOIN roles r ON ur.role_id = r.id
+            WHERE u.phone_number = $1
+            GROUP BY u.id
         `;
         const userResult = await db.query(query, [phone]);
         
@@ -352,6 +451,14 @@ router.post('/admin/login', async (req, res) => {
         }
 
         const user = userResult.rows[0];
+
+        if (!user.roles.includes('Admin') && !user.roles.includes('Operation')) {
+            return res.status(403).json({ success: false, message: 'Access denied: Admin or Operations role required' });
+        }
+
+        if (user.is_disabled) {
+            return res.status(403).json({ success: false, message: 'Account is disabled. Please contact support.' });
+        }
 
         // Verify password
         const isValid = authService.verifyPassword(password, phone, user.password);
@@ -362,6 +469,13 @@ router.post('/admin/login', async (req, res) => {
         // Update last login
         await db.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
 
+        // Determine preferred role for display
+        let preferredRole = 'User';
+        if (user.roles.includes('Admin')) preferredRole = 'Admin';
+        else if (user.roles.includes('Operation')) preferredRole = 'Operations';
+        else if (user.roles.includes('User')) preferredRole = 'User';
+        else preferredRole = user.roles[0] || 'User';
+
         // Return success
         res.json({
             success: true,
@@ -369,7 +483,8 @@ router.post('/admin/login', async (req, res) => {
                 id: user.id,
                 name: user.name,
                 phone: user.phone_number,
-                role: user.role_name,
+                role: preferredRole,
+                roles: user.roles,
                 last_login: user.last_login
             }
         });
@@ -533,6 +648,315 @@ router.put('/admin/issues/:id/status', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
+});
+
+
+// ==========================================
+// USER MANAGEMENT ROUTES
+// ==========================================
+
+// GET /api/admin/users - List users with roles and groups
+router.get('/admin/users', async (req, res) => {
+    try {
+        const { search, role, group, sort, page = 1, limit = 8 } = req.query;
+        const pageNum = parseInt(page);
+        const limitNum = parseInt(limit);
+        const offset = (pageNum - 1) * limitNum;
+
+        // Base filter clauses for both main query and count query
+        let filterClauses = ' WHERE 1=1';
+        const filterParams = [];
+        let pCount = 1;
+
+        if (search) {
+            filterClauses += ` AND (u.name ILIKE $${pCount} OR u.phone_number ILIKE $${pCount})`;
+            filterParams.push(`%${search}%`);
+            pCount++;
+        }
+
+        if (role) {
+            filterClauses += ` AND u.id IN (SELECT user_id FROM user_roles ur JOIN roles r ON ur.role_id = r.id WHERE r.name = $${pCount})`;
+            filterParams.push(role);
+            pCount++;
+        }
+
+        if (group) {
+            filterClauses += ` AND u.id IN (SELECT user_id FROM user_groups ug JOIN groups g ON ug.group_id = g.id WHERE g.name = $${pCount})`;
+            filterParams.push(group);
+            pCount++;
+        }
+
+        // 1. Get total filtered count
+        const countSql = `SELECT COUNT(*) as total FROM users u ${filterClauses}`;
+        const countResult = await db.query(countSql, filterParams);
+        const totalItems = parseInt(countResult.rows[0].total);
+
+        // 2. Main query with pagination
+        let query = `
+            SELECT 
+                u.id, u.phone_number, u.name, u.is_disabled, u.last_login, u.created_at,
+                COALESCE(roles.role_names, '[]') as roles,
+                COALESCE(groups.group_names, '[]') as groups
+            FROM users u
+            LEFT JOIN (
+                SELECT ur.user_id, JSON_AGG(r.name) as role_names
+                FROM user_roles ur
+                JOIN roles r ON ur.role_id = r.id
+                GROUP BY ur.user_id
+            ) roles ON u.id = roles.user_id
+            LEFT JOIN (
+                SELECT ug.user_id, JSON_AGG(g.name) as group_names
+                FROM user_groups ug
+                JOIN groups g ON ug.group_id = g.id
+                GROUP BY ug.user_id
+            ) groups ON u.id = groups.user_id
+            ${filterClauses}
+        `;
+
+        // Sorting
+        if (sort === 'oldest') {
+            query += ` ORDER BY u.created_at ASC`;
+        } else if (sort === 'name') {
+            query += ` ORDER BY u.name ASC`;
+        } else {
+            query += ` ORDER BY u.created_at DESC`;
+        }
+        
+        query += ` LIMIT $${pCount} OFFSET $${pCount + 1}`;
+        const mainParams = [...filterParams, limitNum, offset];
+
+        const result = await db.query(query, mainParams);
+
+        res.json({
+            data: result.rows,
+            pagination: {
+                current_page: pageNum,
+                per_page: limitNum,
+                total_items: totalItems,
+                total_pages: Math.ceil(totalItems / limitNum)
+            }
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// POST /api/admin/users - Create User
+router.post('/admin/users', async (req, res) => {
+    try {
+        const { phone_number, name, password, roles, groups } = req.body;
+        if (!phone_number) return res.status(400).json({ error: 'Phone number is required' });
+
+        // Check if phone number already exists
+        const checkUser = await db.query('SELECT id FROM users WHERE phone_number = $1', [phone_number]);
+        if (checkUser.rows.length > 0) {
+            return res.status(400).json({ error: 'A user with this phone number already exists' });
+        }
+
+        const hashedPassword = password ? authService.hashPassword(password, phone_number) : null;
+
+        const userInsert = await db.query(
+            'INSERT INTO users (phone_number, name, password) VALUES ($1, $2, $3) RETURNING id',
+            [phone_number, name, hashedPassword]
+        );
+        const userId = userInsert.rows[0].id;
+
+        // Assign Roles (default User)
+        const roleList = roles && roles.length > 0 ? roles : ['User'];
+        for (const roleName of roleList) {
+            await db.query(`
+                INSERT INTO user_roles (user_id, role_id)
+                SELECT $1, id FROM roles WHERE name = $2
+            `, [userId, roleName]);
+        }
+
+        // Assign Groups
+        if (groups && groups.length > 0) {
+            for (const groupName of groups) {
+                await db.query(`
+                    INSERT INTO user_groups (user_id, group_id)
+                    SELECT $1, id FROM groups WHERE name = $2
+                `, [userId, groupName]);
+            }
+        }
+
+        res.json({ success: true, userId });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// PUT /api/admin/users/:id - Update User
+router.put('/admin/users/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, phone_number, is_disabled, roles, groups, password, admin_id } = req.body;
+
+        // 1. Prevent self-disabling
+        if (id == admin_id && is_disabled === true) {
+            return res.status(400).json({ error: 'You cannot disable your own account' });
+        }
+
+        // 2. Check if phone number is taken by another user
+        const checkUser = await db.query('SELECT id FROM users WHERE phone_number = $1 AND id != $2', [phone_number, id]);
+        if (checkUser.rows.length > 0) {
+            return res.status(400).json({ error: 'This phone number is already assigned to another user' });
+        }
+
+        // Update basic info
+        let updateQuery = 'UPDATE users SET name = $1, phone_number = $2, is_disabled = $3, updated_at = CURRENT_TIMESTAMP';
+        const params = [name, phone_number, is_disabled, id];
+        
+        if (password) {
+            const hashedPassword = authService.hashPassword(password, phone_number);
+            updateQuery += ', password = $5 WHERE id = $4';
+            params.push(hashedPassword);
+        } else {
+            updateQuery += ' WHERE id = $4';
+        }
+
+        await db.query(updateQuery, params);
+
+        // Update Roles
+        if (roles) {
+            await db.query('DELETE FROM user_roles WHERE user_id = $1', [id]);
+            for (const roleName of roles) {
+                await db.query(`
+                    INSERT INTO user_roles (user_id, role_id)
+                    SELECT $1, id FROM roles WHERE name = $2
+                `, [id, roleName]);
+            }
+        }
+
+        // Update Groups
+        if (groups) {
+            await db.query('DELETE FROM user_groups WHERE user_id = $1', [id]);
+            for (const groupName of groups) {
+                await db.query(`
+                    INSERT INTO user_groups (user_id, group_id)
+                    SELECT $1, id FROM groups WHERE name = $2
+                `, [id, groupName]);
+            }
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// DELETE /api/admin/users/:id - Remove User
+router.delete('/admin/users/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { admin_id } = req.query;
+
+        // Prevent self-deletion
+        if (id == admin_id) {
+            return res.status(400).json({ error: 'You cannot delete your own account' });
+        }
+
+        await db.query('DELETE FROM users WHERE id = $1', [id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// GET /api/admin/roles
+router.get('/admin/roles', async (req, res) => {
+    try {
+        const result = await db.query('SELECT name FROM roles ORDER BY name ASC');
+        res.json(result.rows.map(r => r.name));
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// GET /api/admin/groups
+router.get('/admin/groups', async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT g.*, COUNT(ug.user_id) as member_count
+            FROM groups g
+            LEFT JOIN user_groups ug ON g.id = ug.group_id
+            GROUP BY g.id
+            ORDER BY g.name ASC
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// POST /api/admin/groups
+router.post('/admin/groups', async (req, res) => {
+    try {
+        const { name, description } = req.body;
+
+        // Check for duplicate group name
+        const checkGroup = await db.query('SELECT id FROM groups WHERE name = $1', [name]);
+        if (checkGroup.rows.length > 0) {
+            return res.status(400).json({ error: 'A group with this name already exists' });
+        }
+
+        const result = await db.query(
+            'INSERT INTO groups (name, description) VALUES ($1, $2) RETURNING id',
+            [name, description]
+        );
+        res.json({ success: true, groupId: result.rows[0].id });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// PUT /api/admin/groups/:id
+router.put('/admin/groups/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, description } = req.body;
+
+        // Check if phone number is taken by another group
+        const checkGroup = await db.query('SELECT id FROM groups WHERE name = $1 AND id != $2', [name, id]);
+        if (checkGroup.rows.length > 0) {
+            return res.status(400).json({ error: 'Another group with this name already exists' });
+        }
+
+        await db.query(
+            'UPDATE groups SET name = $1, description = $2 WHERE id = $3',
+            [name, description, id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// DELETE /api/admin/groups/:id
+router.delete('/admin/groups/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Check for assigned users
+        const checkUsers = await db.query('SELECT COUNT(*) as count FROM user_groups WHERE group_id = $1', [id]);
+        if (parseInt(checkUsers.rows[0].count) > 0) {
+            return res.status(400).json({ error: 'Cannot delete group with assigned users. Please unassign all users first.' });
+        }
+
+        await db.query('DELETE FROM groups WHERE id = $1', [id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 

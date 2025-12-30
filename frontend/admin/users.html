@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIXAM - User Management</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="../css/style.css">
+    <style>
+        :root {
+            --admin-bg: #f8fafc;
+            --admin-card-bg: #ffffff;
+            --admin-text: #1e293b;
+            --admin-text-muted: #64748b;
+            --admin-primary: #2563eb;
+            --admin-success: #22c55e;
+            --admin-warning: #f59e0b;
+            --admin-danger: #ef4444;
+            --admin-border: #e2e8f0;
+        }
+
+        body.dark-mode {
+            --admin-bg: #0f172a;
+            --admin-card-bg: #1e293b;
+            --admin-text: #f8fafc;
+            --admin-text-muted: #94a3b8;
+            --admin-primary: #3b82f6;
+            --admin-success: #10b981;
+            --admin-border: #334155;
+        }
+
+        body {
+            background-color: var(--admin-bg);
+            color: var(--admin-text);
+            font-family: 'Inter', sans-serif;
+        }
+
+        .admin-container {
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .admin-sidebar {
+            background: var(--admin-card-bg);
+            border-right: 1px solid var(--admin-border);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .admin-header-section {
+            background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+            padding: 1.5rem;
+            margin: -1.5rem -1.5rem 1.5rem -1.5rem;
+            border-bottom: 1px solid var(--admin-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        body.dark-mode .admin-header-section {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        }
+
+        .admin-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .admin-nav-item {
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            color: var(--admin-text-muted);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transition: all 0.2s;
+        }
+
+        .admin-nav-item:hover, .admin-nav-item.active {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--admin-primary);
+        }
+
+        .admin-main {
+            padding: 2rem;
+            overflow-y: auto;
+        }
+
+        .admin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .admin-header h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.875rem;
+            font-weight: 700;
+        }
+
+        .content-card {
+            background: var(--admin-card-bg);
+            border: 1px solid var(--admin-border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .tab-nav {
+            display: flex;
+            gap: 1.5rem;
+            border-bottom: 1px solid var(--admin-border);
+            margin-bottom: 1.5rem;
+        }
+
+        .tab-item {
+            padding: 0.75rem 0;
+            color: var(--admin-text-muted);
+            cursor: pointer;
+            font-weight: 500;
+            position: relative;
+        }
+
+        .tab-item.active {
+            color: var(--admin-primary);
+        }
+
+        .tab-item.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: var(--admin-primary);
+        }
+
+        /* Table Styles */
+        .admin-table-container {
+            overflow-x: auto;
+        }
+
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+        }
+
+        .admin-table th {
+            text-align: left;
+            padding: 1rem;
+            border-bottom: 2px solid var(--admin-border);
+            color: var(--admin-text-muted);
+            font-weight: 600;
+        }
+
+        .admin-table td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--admin-border);
+            vertical-align: middle;
+        }
+
+        .admin-table tr:hover {
+            background: rgba(0, 0, 0, 0.02);
+        }
+
+        body.dark-mode .admin-table tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .role-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-right: 4px;
+            background: var(--admin-bg);
+            border: 1px solid var(--admin-border);
+        }
+
+        .role-admin { color: var(--admin-danger); border-color: var(--admin-danger); }
+        .role-operation { color: var(--admin-warning); border-color: var(--admin-warning); }
+        .role-user { color: var(--admin-success); border-color: var(--admin-success); }
+
+        .group-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            margin-right: 4px;
+            background: var(--admin-primary);
+            color: white;
+        }
+
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .status-active { background: rgba(34, 197, 94, 0.1); color: var(--admin-success); }
+        .status-disabled { background: rgba(239, 68, 68, 0.1); color: var(--admin-danger); }
+
+        .action-btn {
+            background: none;
+            border: 1px solid var(--admin-border);
+            color: var(--admin-text-muted);
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .action-btn:hover {
+            border-color: var(--admin-primary);
+            color: var(--admin-primary);
+        }
+
+        .action-btn.delete:hover {
+            border-color: var(--admin-danger);
+            color: var(--admin-danger);
+        }
+
+        /* Modal Styles */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            visibility: hidden;
+            opacity: 0;
+            transition: all 0.3s;
+        }
+
+        .modal.active {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .modal-content {
+            background: var(--admin-card-bg);
+            padding: 2rem;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 500px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: var(--admin-text-muted);
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--admin-border);
+            border-radius: 6px;
+            background: var(--admin-bg);
+            color: var(--admin-text);
+            outline: none;
+        }
+
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary { background: var(--admin-primary); color: white; }
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-secondary { background: var(--admin-bg); border: 1px solid var(--admin-border); color: var(--admin-text); }
+
+        .hidden { display: none !important; }
+
+        .login-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--admin-bg); display: flex; justify-content: center; align-items: center; z-index: 9999;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Login Overlay (Shared logic from admin_common.js) -->
+    <div id="login-overlay" class="login-overlay">
+        <div style="background: var(--admin-card-bg); padding: 2.5rem; border-radius: 12px; width: 400px; text-align: center; border: 1px solid var(--admin-border);">
+            <img src="../fixam-logo-blue.svg" alt="FIXAM" height="80" style="margin-bottom: 1rem;">
+            <form id="login-form">
+                <input type="tel" id="admin-phone" placeholder="Phone Number" class="form-control" style="margin-bottom: 1rem;" required>
+                <input type="password" id="admin-password" placeholder="Password" class="form-control" style="margin-bottom: 1.5rem;" required>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Access Portal</button>
+            </form>
+            <p id="login-error" style="color: var(--admin-danger); margin-top: 1rem; display: none;">Invalid credentials</p>
+        </div>
+    </div>
+
+    <div id="admin-container" class="admin-container hidden">
+        <aside class="admin-sidebar">
+            <div class="admin-header-section">
+                <img src="../fixam-logo.svg" alt="FIXAM" height="50">
+                <button id="theme-toggle-admin" style="background: rgba(255, 255, 255, 0.2); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer;">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+            </div>
+            <nav class="admin-nav">
+                <a href="/admin/overview" id="nav-overview" class="admin-nav-item">
+                    <i class="fa-solid fa-chart-line"></i> <span>Overview</span>
+                </a>
+                <a href="/admin/issues" id="nav-issues" class="admin-nav-item">
+                    <i class="fa-solid fa-triangle-exclamation"></i> <span>Issues</span>
+                </a>
+                <a href="/admin/users" id="nav-users" class="admin-nav-item active">
+                    <i class="fa-solid fa-users"></i> <span>Users & Groups</span>
+                </a>
+                <div style="flex-grow: 1;"></div>
+                <a href="#" id="logout-btn" class="admin-nav-item">
+                    <i class="fa-solid fa-right-from-bracket"></i> <span>Logout</span>
+                </a>
+            </nav>
+        </aside>
+
+        <main class="admin-main">
+            <div class="admin-header">
+                <div>
+                    <h1>User Management</h1>
+                    <p style="color: var(--admin-text-muted);">Manage administrators, operators, and user groups</p>
+                </div>
+                <div class="admin-user-display"></div>
+            </div>
+
+            <div class="content-card">
+                <div class="tab-nav">
+                    <div class="tab-item active" data-tab="users">Users</div>
+                    <div class="tab-item" data-tab="groups">Groups</div>
+                </div>
+
+                <!-- USERS TAB -->
+                <div id="tab-users-content">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 1.5rem; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                        <div style="display: flex; gap: 1rem; flex-grow: 1; max-width: 600px;">
+                            <div style="position: relative; flex-grow: 1;">
+                                <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--admin-text-muted);"></i>
+                                <input type="text" id="user-search" placeholder="Search by name or phone..." class="form-control" style="padding-left: 36px;">
+                            </div>
+                            <select id="filter-role" class="form-control" style="width: auto;">
+                                <option value="All">All Roles</option>
+                                <option value="Admin">Admin</option>
+                                <option value="Operation">Operation</option>
+                                <option value="User">User</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" id="btn-add-user">
+                            <i class="fa-solid fa-user-plus"></i> Add User
+                        </button>
+                    </div>
+
+                    <div class="admin-table-container">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Phone</th>
+                                    <th>Roles</th>
+                                    <th>Groups</th>
+                                    <th>Status</th>
+                                    <th>Joined</th>
+                                    <th style="text-align: right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="user-list">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Pagination -->
+                    <div id="user-pagination" style="margin-top: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                        <span id="pagination-info" style="font-size: 0.9rem; color: var(--admin-text-muted);">Showing -- of -- users</span>
+                        <div id="pagination-numbers" style="display: flex; gap: 0.35rem; align-items: center;">
+                            <!-- Page numbers will be injected here -->
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="action-btn" id="prev-page" title="Previous"><i class="fa-solid fa-chevron-left"></i></button>
+                            <button class="action-btn" id="next-page" title="Next"><i class="fa-solid fa-chevron-right"></i></button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- GROUPS TAB -->
+                <div id="tab-groups-content" class="hidden">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 1.5rem;">
+                        <h2 style="font-size: 1.25rem;">Infrastructure Groups</h2>
+                        <button class="btn btn-primary" id="btn-add-group">
+                            <i class="fa-solid fa-plus"></i> Create Group
+                        </button>
+                    </div>
+                    
+                    <div class="admin-table-container">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Group Name</th>
+                                    <th>Description</th>
+                                    <th>Members</th>
+                                    <th>Created At</th>
+                                    <th style="text-align: right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="group-list">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- User Modal -->
+    <div id="user-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title">Add New User</h2>
+                <button class="action-btn" onclick="closeModal('user-modal')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="user-error" style="background: rgba(239, 68, 68, 0.1); color: var(--admin-danger); padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem; display: none;"></div>
+            <form id="user-form">
+                <input type="hidden" id="edit-user-id">
+                <div class="form-group">
+                    <label>Full Name</label>
+                    <input type="text" id="user-name" class="form-control" placeholder="Enter name" required>
+                </div>
+                <div class="form-group">
+                    <label>Phone Number</label>
+                    <input type="tel" id="user-phone" class="form-control" placeholder="e.g. 232..." required>
+                </div>
+                <div class="form-group">
+                    <label>Password (Leave blank to keep current or default)</label>
+                    <input type="password" id="user-password" class="form-control" placeholder="New password">
+                </div>
+                <div class="form-group">
+                    <label>Roles</label>
+                    <div class="checkbox-group" id="roles-checkboxes">
+                        <div class="checkbox-item"><input type="checkbox" value="User" checked> User</div>
+                        <div class="checkbox-item"><input type="checkbox" value="Operation"> Operation</div>
+                        <div class="checkbox-item"><input type="checkbox" value="Admin"> Admin</div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Groups (for Operations) - Use Ctrl/Cmd + click to select multiple</label>
+                    <select id="groups-select" class="form-control" multiple style="height: 100px;">
+                        <!-- Populated by JS -->
+                    </select>
+                </div>
+                <div class="form-group" id="user-disabled-group">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="user-disabled"> Disable Account
+                    </div>
+                </div>
+                <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">Save User</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('user-modal')">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Group Modal -->
+    <div id="group-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="group-modal-title">Create Group</h2>
+                <button class="action-btn" onclick="closeModal('group-modal')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="group-error" style="background: rgba(239, 68, 68, 0.1); color: var(--admin-danger); padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem; display: none;"></div>
+            <form id="group-form">
+                <input type="hidden" id="edit-group-id">
+                <div class="form-group">
+                    <label>Group Name</label>
+                    <input type="text" id="group-name" class="form-control" placeholder="e.g. EDSA" required>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="group-desc" class="form-control" rows="3" placeholder="Describe the responsibility area..."></textarea>
+                </div>
+                <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">Save Group</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('group-modal')">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="../js/theme.js"></script>
+    <script src="../js/admin_common.js"></script>
+    <script src="../js/admin_users.js"></script>
+</body>
+</html>

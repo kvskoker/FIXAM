@@ -74,6 +74,10 @@ body {
     flex: 1;
     position: relative;
     z-index: 1;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 /* Header */
@@ -310,6 +314,7 @@ body.dark-mode .header {
     gap: 1.5rem;
     padding: 1.5rem;   
     overflow-y: auto;
+    height: 100%;
 }
 
 .stat-card {
@@ -332,7 +337,7 @@ body.dark-mode .header {
 }
 
 .chart-container {
-    height: 300px;
+    height: 250px;
     margin-top: 1rem;
     position: relative;
 }

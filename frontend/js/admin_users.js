@@ -1,0 +1,438 @@
+// Pagination State
+let currentPage = 1;
+
+document.addEventListener('DOMContentLoaded', () => {
+    checkAuth(() => {
+        loadUsers();
+        loadGroups();
+        initEventListeners();
+    });
+});
+
+function initEventListeners() {
+    // Tab Switching
+    document.querySelectorAll('.tab-item').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            const target = tab.dataset.tab;
+            if (target === 'users') {
+                document.getElementById('tab-users-content').classList.remove('hidden');
+                document.getElementById('tab-groups-content').classList.add('hidden');
+                loadUsers();
+            } else {
+                document.getElementById('tab-users-content').classList.add('hidden');
+                document.getElementById('tab-groups-content').classList.remove('hidden');
+                loadGroups();
+            }
+        });
+    });
+
+    // User Search & Filter
+    document.getElementById('user-search').addEventListener('input', debounce(() => {
+        currentPage = 1;
+        loadUsers();
+    }, 500));
+
+    document.getElementById('filter-role').addEventListener('change', () => {
+        currentPage = 1;
+        loadUsers();
+    });
+
+    // Modals
+    document.getElementById('btn-add-user').addEventListener('click', () => {
+        resetUserForm();
+        document.getElementById('modal-title').textContent = 'Add New User';
+        openModal('user-modal');
+    });
+
+    document.getElementById('btn-add-group').addEventListener('click', () => {
+        resetGroupForm();
+        document.getElementById('group-modal-title').textContent = 'Create Group';
+        openModal('group-modal');
+    });
+
+    // Forms
+    document.getElementById('user-form').addEventListener('submit', handleUserSubmit);
+    document.getElementById('group-form').addEventListener('submit', handleGroupSubmit);
+
+    // Pagination
+    document.getElementById('prev-page').addEventListener('click', () => {
+        if (currentPage > 1) {
+            currentPage--;
+            loadUsers();
+        }
+    });
+
+    document.getElementById('next-page').addEventListener('click', () => {
+        currentPage++;
+        loadUsers();
+    });
+}
+
+// ==========================================
+// USER FUNCTIONS
+// ==========================================
+
+async function loadUsers() {
+    const search = document.getElementById('user-search').value;
+    const role = document.getElementById('filter-role').value;
+    
+    let url = `${API_BASE_URL}/admin/users?page=${currentPage}&limit=8`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (role !== 'All') url += `&role=${role}`;
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        renderUsers(data.data);
+        updatePagination(data.pagination);
+    } catch (err) {
+        console.error('Error loading users:', err);
+    }
+}
+
+function renderUsers(users) {
+    const list = document.getElementById('user-list');
+    list.innerHTML = '';
+
+    if (users.length === 0) {
+        list.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--admin-text-muted);">No users found</td></tr>';
+        return;
+    }
+
+    users.forEach(user => {
+        const roles = Array.isArray(user.roles) ? user.roles : JSON.parse(user.roles || '[]');
+        const groups = Array.isArray(user.groups) ? user.groups : JSON.parse(user.groups || '[]');
+        
+        const currentUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
+        const isSelf = currentUser && currentUser.id == user.id;
+
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <div style="width: 32px; height: 32px; border-radius: 50%; background: var(--admin-primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.8rem;">
+                        ${(user.name || 'U').charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                        <div style="font-weight: 500;">${user.name || 'Anonymous'} ${isSelf ? '<span style="color: var(--admin-primary); font-size: 0.75rem; margin-left: 0.5rem;">(You)</span>' : ''}</div>
+                    </div>
+                </div>
+            </td>
+            <td>${user.phone_number}</td>
+            <td>
+                ${roles.map(r => `<span class="role-badge role-${r.toLowerCase()}">${r}</span>`).join('')}
+            </td>
+            <td>
+                ${groups.map(g => `<span class="group-badge">${g}</span>`).join('') || '<span style="color: var(--admin-text-muted); font-size: 0.8rem;">None</span>'}
+            </td>
+            <td>
+                <span class="status-badge ${user.is_disabled ? 'status-disabled' : 'status-active'}">
+                    ${user.is_disabled ? 'Disabled' : 'Active'}
+                </span>
+            </td>
+            <td style="color: var(--admin-text-muted); font-size: 0.85rem;">
+                ${new Date(user.created_at).toLocaleDateString()}
+            </td>
+            <td style="text-align: right;">
+                <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                    <button class="action-btn" onclick="editUser(${JSON.stringify(user).replace(/"/g, '&quot;')})" title="Edit User">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                    ${!isSelf ? `
+                    <button class="action-btn delete" onclick="deleteUser(${user.id})" title="Delete User">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                    ` : ''}
+                </div>
+            </td>
+        `;
+        list.appendChild(row);
+    });
+}
+
+function updatePagination(pagination) {
+    const info = document.getElementById('pagination-info');
+    const startCount = (pagination.current_page - 1) * pagination.per_page + 1;
+    const endCount = Math.min(pagination.current_page * pagination.per_page, pagination.total_items);
+    
+    info.textContent = `Showing ${pagination.total_items > 0 ? startCount : 0} - ${endCount} of ${pagination.total_items} users`;
+    
+    document.getElementById('prev-page').disabled = pagination.current_page === 1;
+    document.getElementById('next-page').disabled = pagination.current_page >= pagination.total_pages;
+
+    // Numbered Pagination
+    const numbersContainer = document.getElementById('pagination-numbers');
+    numbersContainer.innerHTML = '';
+    
+    const maxVisible = 5;
+    let startPage = Math.max(1, pagination.current_page - Math.floor(maxVisible / 2));
+    let endPage = Math.min(pagination.total_pages, startPage + maxVisible - 1);
+    
+    if (endPage - startPage + 1 < maxVisible) {
+        startPage = Math.max(1, endPage - maxVisible + 1);
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        const btn = document.createElement('button');
+        btn.className = `action-btn ${i === pagination.current_page ? 'active' : ''}`;
+        btn.style.width = '32px';
+        if (i === pagination.current_page) {
+            btn.style.background = 'var(--admin-primary)';
+            btn.style.color = 'white';
+            btn.style.borderColor = 'var(--admin-primary)';
+        }
+        btn.textContent = i;
+        btn.onclick = () => {
+            currentPage = i;
+            loadUsers();
+        };
+        numbersContainer.appendChild(btn);
+    }
+}
+
+async function handleUserSubmit(e) {
+    e.preventDefault();
+    const id = document.getElementById('edit-user-id').value;
+    const name = document.getElementById('user-name').value;
+    const phone_number = document.getElementById('user-phone').value;
+    const password = document.getElementById('user-password').value;
+    const is_disabled = document.getElementById('user-disabled').checked;
+    
+    const roles = Array.from(document.querySelectorAll('#roles-checkboxes input:checked')).map(cb => cb.value);
+    const groups = Array.from(document.getElementById('groups-select').selectedOptions).map(opt => opt.value);
+
+    // Get current admin ID from localStorage
+    const adminUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
+    const admin_id = adminUser ? adminUser.id : null;
+
+    const data = { name, phone_number, password, is_disabled, roles, groups, admin_id };
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `${API_BASE_URL}/admin/users/${id}` : `${API_BASE_URL}/admin/users`;
+
+    try {
+        const response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        if (response.ok) {
+            closeModal('user-modal');
+            loadUsers();
+            loadGroups(); // Refresh groups member count implicitly
+        } else {
+            const err = await response.json();
+            const errorDiv = document.getElementById('user-error');
+            errorDiv.textContent = err.error || 'Failed to save user';
+            errorDiv.style.display = 'block';
+            document.querySelector('#user-modal .modal-content').scrollTop = 0;
+        }
+    } catch (err) {
+        console.error('Error saving user:', err);
+    }
+}
+
+function editUser(user) {
+    resetUserForm();
+    document.getElementById('modal-title').textContent = 'Edit User';
+    document.getElementById('edit-user-id').value = user.id;
+    document.getElementById('user-name').value = user.name || '';
+    document.getElementById('user-phone').value = user.phone_number;
+    document.getElementById('user-disabled').checked = user.is_disabled;
+    
+    // Hide self-disable group
+    const currentUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
+    const isSelf = currentUser && currentUser.id == user.id;
+    document.getElementById('user-disabled-group').style.display = isSelf ? 'none' : 'block';
+    
+    const roles = Array.isArray(user.roles) ? user.roles : JSON.parse(user.roles || '[]');
+    document.querySelectorAll('#roles-checkboxes input').forEach(cb => {
+        cb.checked = roles.includes(cb.value);
+        // Prevent self-demotion: disable role checkboxes if editing self
+        cb.disabled = isSelf;
+    });
+
+    const groups = Array.isArray(user.groups) ? user.groups : JSON.parse(user.groups || '[]');
+    const select = document.getElementById('groups-select');
+    Array.from(select.options).forEach(opt => {
+        opt.selected = groups.includes(opt.value);
+    });
+
+    openModal('user-modal');
+}
+
+async function deleteUser(id) {
+    if (!confirm('Are you sure you want to delete this user? This cannot be undone.')) return;
+
+    // Get current admin ID from localStorage
+    const adminUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
+    const admin_id = adminUser ? adminUser.id : null;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin/users/${id}?admin_id=${admin_id}`, { method: 'DELETE' });
+        if (response.ok) {
+            loadUsers();
+        } else {
+            const err = await response.json();
+            alert(err.error || 'Failed to delete user');
+        }
+    } catch (err) {
+        console.error('Error deleting user:', err);
+    }
+}
+
+function resetUserForm() {
+    document.getElementById('user-form').reset();
+    document.getElementById('edit-user-id').value = '';
+    document.getElementById('user-error').style.display = 'none';
+    document.getElementById('user-disabled-group').style.display = 'block';
+    document.querySelectorAll('#roles-checkboxes input').forEach(cb => {
+        cb.checked = cb.value === 'User'; // Default role
+        cb.disabled = false;
+    });
+}
+
+// ==========================================
+// GROUP FUNCTIONS
+// ==========================================
+
+async function loadGroups() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin/groups`);
+        const groups = await response.json();
+        renderGroups(groups);
+        populateGroupsCheckboxes(groups);
+    } catch (err) {
+        console.error('Error loading groups:', err);
+    }
+}
+
+function renderGroups(groups) {
+    const list = document.getElementById('group-list');
+    list.innerHTML = '';
+
+    groups.forEach(group => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td style="font-weight: 600; color: var(--admin-primary);">${group.name}</td>
+            <td>${group.description || '<span style="color: var(--admin-text-muted);">No description</span>'}</td>
+            <td>
+                <div style="font-size: 0.9rem;">
+                    <i class="fa-solid fa-users" style="margin-right: 0.5rem; color: var(--admin-text-muted);"></i>
+                    ${group.member_count} members
+                </div>
+            </td>
+            <td style="color: var(--admin-text-muted); font-size: 0.85rem;">
+                ${new Date(group.created_at).toLocaleDateString()}
+            </td>
+            <td style="text-align: right;">
+                <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                    <button class="action-btn" onclick="editGroup(${JSON.stringify(group).replace(/"/g, '&quot;')})" title="Edit Group">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                    <button class="action-btn delete" 
+                            onclick="deleteGroup(${group.id})" 
+                            title="${parseInt(group.member_count) > 0 ? 'Cannot delete group with assigned members' : 'Delete Group'}"
+                            ${parseInt(group.member_count) > 0 ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
+            </td>
+        `;
+        list.appendChild(row);
+    });
+}
+
+function populateGroupsCheckboxes(groups) {
+    const select = document.getElementById('groups-select');
+    select.innerHTML = '';
+    groups.forEach(group => {
+        const opt = document.createElement('option');
+        opt.value = group.name;
+        opt.textContent = group.name;
+        select.appendChild(opt);
+    });
+}
+
+async function handleGroupSubmit(e) {
+    e.preventDefault();
+    const id = document.getElementById('edit-group-id').value;
+    const name = document.getElementById('group-name').value;
+    const description = document.getElementById('group-desc').value;
+
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `${API_BASE_URL}/admin/groups/${id}` : `${API_BASE_URL}/admin/groups`;
+
+    try {
+        const response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, description })
+        });
+
+        if (response.ok) {
+            closeModal('group-modal');
+            loadGroups();
+        } else {
+            const err = await response.json();
+            const errorDiv = document.getElementById('group-error');
+            errorDiv.textContent = err.error || 'Failed to save group';
+            errorDiv.style.display = 'block';
+        }
+    } catch (err) {
+        console.error('Error saving group:', err);
+    }
+}
+
+function editGroup(group) {
+    resetGroupForm();
+    document.getElementById('group-modal-title').textContent = 'Edit Group';
+    document.getElementById('edit-group-id').value = group.id;
+    document.getElementById('group-name').value = group.name;
+    document.getElementById('group-desc').value = group.description || '';
+    openModal('group-modal');
+}
+
+async function deleteGroup(id) {
+    if (!confirm('Are you sure you want to delete this group?')) return;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin/groups/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+            loadGroups();
+        } else {
+            const err = await response.json();
+            alert(err.error || 'Failed to delete group');
+        }
+    } catch (err) {
+        console.error('Error deleting group:', err);
+    }
+}
+
+function resetGroupForm() {
+    document.getElementById('group-form').reset();
+    document.getElementById('edit-group-id').value = '';
+    document.getElementById('group-error').style.display = 'none';
+}
+
+// ==========================================
+// UTILITY FUNCTIONS
+// ==========================================
+
+function openModal(id) {
+    document.getElementById(id).classList.add('active');
+}
+
+function closeModal(id) {
+    document.getElementById(id).classList.remove('active');
+}
+
+// Shared closeModal for onclick
+window.closeModal = closeModal;
+window.editUser = editUser;
+window.deleteUser = deleteUser;
+window.editGroup = editGroup;
+window.deleteGroup = deleteGroup;
