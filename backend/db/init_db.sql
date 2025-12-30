@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(255),
     role_id INTEGER REFERENCES roles(id),
     password TEXT,
+    is_disabled BOOLEAN DEFAULT FALSE,
     last_login TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -31,6 +32,8 @@ CREATE TABLE IF NOT EXISTS issues (
     description TEXT,
     image_url TEXT,
     reported_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    duplicate_of INTEGER REFERENCES issues(id) ON DELETE SET NULL,
+    urgency VARCHAR(20) DEFAULT 'medium', -- low, medium, high, critical
     reported_on TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
