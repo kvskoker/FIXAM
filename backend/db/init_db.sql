@@ -11,8 +11,20 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='role_id') THEN 
         ALTER TABLE users ADD COLUMN role_id INTEGER REFERENCES roles(id); 
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='password') THEN 
+        ALTER TABLE users ADD COLUMN password TEXT; 
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='last_login') THEN 
+        ALTER TABLE users ADD COLUMN last_login TIMESTAMP; 
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_disabled') THEN 
         ALTER TABLE users ADD COLUMN is_disabled BOOLEAN DEFAULT FALSE; 
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='created_at') THEN 
+        ALTER TABLE users ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP; 
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='updated_at') THEN 
+        ALTER TABLE users ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP; 
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='issues' AND column_name='duplicate_of') THEN 
         ALTER TABLE issues ADD COLUMN duplicate_of INTEGER REFERENCES issues(id) ON DELETE SET NULL; 
