@@ -1,8 +1,8 @@
 -- Extended Mock Data Generated on 2025-12-29T16:25:51.670Z
 
 -- Insert Mock Users (50 users + 1 admin)
-INSERT INTO users (phone_number, name, role_id, password, is_disabled, created_at) VALUES
-('232700940772', 'Isatu Kargbo', (SELECT id FROM roles WHERE name = 'User'), null, false, '2025-01-06 05:33:51');,
+INSERT INTO users (phone_number, name, role_id, password, created_at) VALUES
+('000', 'System Admin', (SELECT id FROM roles WHERE name = 'Admin'), '00dc290f5213798bac46b374885e2b8a677f4c7fbdd645088737951fb2b8a677f4c7fb', '2025-01-01 00:00:00'),
 ('232726898712', 'Fatmata Mansaray', (SELECT id FROM roles WHERE name = 'User'), null, '2025-09-27 22:16:11'),
 ('232762345028', 'Mabinty Kargbo', (SELECT id FROM roles WHERE name = 'User'), null, '2025-04-28 08:46:37'),
 ('232718587719', 'Isatu Kargbo', (SELECT id FROM roles WHERE name = 'User'), null, '2025-01-13 21:25:21'),
@@ -55,8 +55,8 @@ INSERT INTO users (phone_number, name, role_id, password, is_disabled, created_a
 ('232700940772', 'Isatu Kargbo', (SELECT id FROM roles WHERE name = 'User'), null, '2025-01-06 05:33:51');
 
 -- Insert Mock Issues (200 issues)
-INSERT INTO issues (ticket_id, title, category, status, lat, lng, description, image_url, reported_by, duplicate_of, urgency, reported_on, created_at) VALUES
-('FIX0000200', 'Leaking valve on Main Highway', 'Water', 'critical', 8.322273, -13.092942, 'Automatically reported via WhatsApp. Requires investigation at Leaking valve on Main Highway.', 'https://picsum.photos/seed/FIX0000200/400/300', 49, null, 'critical', '2025-10-31 07:10:29', '2025-10-31 07:10:29');,
+INSERT INTO issues (ticket_id, title, category, status, lat, lng, description, image_url, reported_by, reported_on, created_at) VALUES
+('FIX0000001', 'Water shortage at Reservation Area', 'Water', 'fixed', 8.773200, -12.800420, 'Automatically reported via WhatsApp. Requires investigation at Water shortage at Reservation Area.', 'https://picsum.photos/seed/FIX0000001/400/300', 31, '2025-10-13 14:39:46', '2025-10-13 14:39:46'),
 ('FIX0000002', 'Transformers sparking in Mountain View', 'Electricity', 'progress', 8.809642, -12.828006, 'Automatically reported via WhatsApp. Requires investigation at Transformers sparking in Mountain View.', 'https://picsum.photos/seed/FIX0000002/400/300', 16, '2025-12-09 20:06:53', '2025-12-09 20:06:53'),
 ('FIX0000003', 'Burst pipe in Bo', 'Water', 'critical', 8.001116, -11.709993, 'Automatically reported via WhatsApp. Requires investigation at Burst pipe in Bo.', 'https://picsum.photos/seed/FIX0000003/400/300', 31, '2025-10-29 11:57:09', '2025-10-29 11:57:09'),
 ('FIX0000004', 'Erosion damage at Kenema bypass', 'Road', 'progress', 7.905242, -11.147051, 'Automatically reported via WhatsApp. Requires investigation at Erosion damage at Kenema bypass.', 'https://picsum.photos/seed/FIX0000004/400/300', 20, '2025-12-23 22:56:46', '2025-12-23 22:56:46'),

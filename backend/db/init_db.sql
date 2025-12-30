@@ -1,3 +1,17 @@
+-- Ensure columns exist for older database versions
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_disabled') THEN 
+        ALTER TABLE users ADD COLUMN is_disabled BOOLEAN DEFAULT FALSE; 
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='issues' AND column_name='duplicate_of') THEN 
+        ALTER TABLE issues ADD COLUMN duplicate_of INTEGER REFERENCES issues(id) ON DELETE SET NULL; 
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='issues' AND column_name='urgency') THEN 
+        ALTER TABLE issues ADD COLUMN urgency VARCHAR(20) DEFAULT 'medium'; 
+    END IF;
+END $$;
+
 -- Create Roles Table
 CREATE TABLE IF NOT EXISTS roles (
     id SERIAL PRIMARY KEY,
