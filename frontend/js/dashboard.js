@@ -227,12 +227,13 @@ function renderTrendsChart(trends) {
     // Fill in missing dates between min and max to have a continuous trend line
     const allDates = [];
     if (uniqueDates.length > 0) {
-        let current = new Date(uniqueDates[0]);
-        const last = new Date(uniqueDates[uniqueDates.length - 1]);
+        // Use UTC to avoid local timezone shifts during date iteration
+        let current = new Date(uniqueDates[0] + 'T00:00:00Z');
+        const last = new Date(uniqueDates[uniqueDates.length - 1] + 'T00:00:00Z');
         
         while (current <= last) {
             allDates.push(current.toISOString().split('T')[0]);
-            current.setDate(current.getDate() + 1);
+            current.setUTCDate(current.getUTCDate() + 1);
         }
     }
 
@@ -251,8 +252,13 @@ function renderTrendsChart(trends) {
         data: {
             labels: allDates.map(d => {
                 const [year, month, day] = d.split('-');
-                const date = new Date(year, month - 1, day);
-                return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                // Create UTC date to ensure labels match the YYYY-MM-DD string exactly
+                const date = new Date(Date.UTC(year, month - 1, day));
+                return date.toLocaleDateString(undefined, { 
+                    month: 'short', 
+                    day: 'numeric',
+                    timeZone: 'UTC' // Explicitly use UTC for display
+                });
             }),
             datasets: [
                 {

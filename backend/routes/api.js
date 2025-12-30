@@ -243,13 +243,16 @@ router.get('/categories', async (req, res) => {
 router.get('/stats/trends', async (req, res) => {
     try {
         const { start_date, end_date } = req.query;
+        // Explicitly set session timezone to UTC for consistent aggregation
+        await db.query("SET LOCAL timezone TO 'UTC'");
+
         let reportsQuery = `
-            SELECT TO_CHAR(created_at AT TIME ZONE 'Atlantic/Reykjavik', 'YYYY-MM-DD') as date, COUNT(*) as count
+            SELECT (created_at AT TIME ZONE 'UTC')::date::text as date, COUNT(*) as count
             FROM issues
             WHERE 1=1
         `;
         let resolutionsQuery = `
-            SELECT TO_CHAR(created_at AT TIME ZONE 'Atlantic/Reykjavik', 'YYYY-MM-DD') as date, COUNT(*) as count
+            SELECT (created_at AT TIME ZONE 'UTC')::date::text as date, COUNT(*) as count
             FROM issue_tracker
             WHERE action = 'resolved'
         `;
