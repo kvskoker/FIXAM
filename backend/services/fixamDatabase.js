@@ -120,8 +120,8 @@ class FixamDatabase {
     // Create Issue
     async createIssue(issueData) {
         const sql = `
-            INSERT INTO issues (ticket_id, title, category, lat, lng, description, image_url, reported_by, status)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO issues (ticket_id, title, category, lat, lng, description, image_url, reported_by, status, duplicate_of)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING *
         `;
         const values = [
@@ -133,7 +133,8 @@ class FixamDatabase {
             issueData.description,
             issueData.image_url,
             issueData.reported_by,
-            issueData.urgency || 'medium' // Use AI-determined urgency
+            issueData.status || 'critical',
+            issueData.duplicate_of || null
         ];
 
         try {
@@ -152,8 +153,64 @@ class FixamDatabase {
             const result = await this.db.query(sql, [ticketId]);
             return result.rows.length > 0 ? result.rows[0] : null;
         } catch (error) {
-            this.debugLog('Error fetching issue', { error: error.message, ticketId });
+            this.debugLog('Error fetching issue by ticketId', { error: error.message, ticketId });
             return null;
+        }
+    }
+
+    // Get Issue by ID
+    async getIssueById(id) {
+        const sql = "SELECT * FROM issues WHERE id = $1";
+        try {
+            const result = await this.db.query(sql, [id]);
+            return result.rows.length > 0 ? result.rows[0] : null;
+        } catch (error) {
+            this.debugLog('Error fetching issue by ID', { error: error.message, id });
+            return null;
+        }
+    }
+
+    // Find potential duplicates within radius (in meters) and timeframe (days)
+    async findPotentialDuplicates(lat, lng, radiusMeters, category = null, days = 30) {
+        // Haversine formula in SQL
+        let sql = `
+            SELECT i.*, 
+                   (6371000 * acos(cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2)) + sin(radians($1)) * sin(radians(lat)))) AS distance
+            FROM issues i
+            WHERE i.created_at >= CURRENT_TIMESTAMP - INTERVAL '${days} days'
+            AND i.status != 'fixed'
+            AND i.duplicate_of IS NULL
+        `;
+        
+        const values = [lat, lng, radiusMeters];
+        let paramCount = 4;
+
+        if (category) {
+            sql += ` AND i.category = $${paramCount++}`;
+            values.push(category);
+        }
+
+        sql += ` AND (6371000 * acos(cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2)) + sin(radians($1)) * sin(radians(lat)))) <= $3`;
+        sql += ` ORDER BY distance ASC LIMIT 3`;
+
+        try {
+            const result = await this.db.query(sql, values);
+            return result.rows;
+        } catch (error) {
+            this.debugLog('Error finding potential duplicates', { error: error.message, lat, lng });
+            return [];
+        }
+    }
+
+    // Mark issue as duplicate
+    async markIssueAsDuplicate(issueId, duplicateOfId) {
+        const sql = "UPDATE issues SET duplicate_of = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2";
+        try {
+            await this.db.query(sql, [duplicateOfId, issueId]);
+            return true;
+        } catch (error) {
+            this.debugLog('Error marking issue as duplicate', { error: error.message, issueId, duplicateOfId });
+            return false;
         }
     }
 

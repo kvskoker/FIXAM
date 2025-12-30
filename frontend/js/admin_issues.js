@@ -65,7 +65,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Modal Close
-    document.getElementById('close-modal').addEventListener('click', closeModal);
+    const closeModalBtn = document.getElementById('close-modal');
+    if (closeModalBtn) closeModalBtn.addEventListener('click', closeModal);
+
+    // Confirmation Modal Handlers
+    const confirmYes = document.getElementById('confirm-yes-btn');
+    const confirmNo = document.getElementById('confirm-no-btn');
+    
+    if (confirmYes) {
+        confirmYes.addEventListener('click', async () => {
+            const pendingStatus = confirmYes.getAttribute('data-pending-status');
+            if (pendingStatus) {
+                await executeStatusUpdate(pendingStatus);
+                document.getElementById('status-confirm-overlay').classList.add('hidden');
+            }
+        });
+    }
+
+    if (confirmNo) {
+        confirmNo.addEventListener('click', () => {
+            document.getElementById('status-confirm-overlay').classList.add('hidden');
+        });
+    }
     
     // Check for ID in URL to auto-open modal
     const urlParams = getURLParams();
@@ -212,6 +233,56 @@ async function openIssueDetails(id) {
             document.getElementById('modal-desc').textContent = issue.description;
             document.getElementById('modal-location').textContent = `${issue.lat}, ${issue.lng}`;
             document.getElementById('modal-image').src = issue.image_url || 'https://via.placeholder.com/400x200?text=No+Image';
+
+            const statusEl = document.getElementById('modal-status');
+            const statusColors = { 'critical': 'var(--admin-danger)', 'progress': 'var(--admin-warning)', 'fixed': 'var(--admin-success)', 'duplicate': 'var(--admin-warning)' };
+            statusEl.style.background = statusColors[issue.status] || 'rgba(255,255,255,0.1)';
+            statusEl.style.color = 'white';
+            
+            if (issue.duplicate_of) {
+                // Find parent ticket ID
+                const parent = allIssues.find(i => i.id === issue.duplicate_of);
+                if (parent) {
+                    document.getElementById('modal-desc').innerHTML += `<br><br><div id="duplicate-badge" style="background: rgba(245, 158, 11, 0.1); border: 1px solid var(--admin-warning); padding: 1rem; border-radius: 6px; color: var(--admin-warning); font-weight: 500;">⚠️ This issue is marked as a DUPLICATE of <a href="#" onclick="openIssueDetails(${parent.id}); return false;" style="color: var(--admin-primary); text-decoration: underline;">${parent.ticket_id}</a></div>`;
+                }
+                
+                // Hide link controls, show unlink controls
+                document.getElementById('link-duplicate-controls').classList.add('hidden');
+                document.getElementById('unlink-duplicate-controls').classList.remove('hidden');
+                
+                // Disable all status buttons for duplicates
+                document.querySelectorAll('.status-btn').forEach(btn => {
+                    btn.disabled = true;
+                    btn.style.opacity = '0.5';
+                    btn.style.cursor = 'not-allowed';
+                    btn.title = 'Status is synced from the original issue';
+                });
+            } else {
+                 // Show link controls, hide unlink controls
+                document.getElementById('link-duplicate-controls').classList.remove('hidden');
+                document.getElementById('unlink-duplicate-controls').classList.add('hidden');
+                
+                // Reset all button styles first
+                document.querySelectorAll('.status-btn').forEach(btn => {
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    btn.style.cursor = 'pointer';
+                    btn.style.background = 'var(--admin-card-bg)';
+                    btn.style.color = 'var(--admin-text)';
+                    btn.title = '';
+                });
+
+                // Disable the current status button
+                const currentStatusBtn = document.getElementById(`btn-status-${issue.status}`);
+                if (currentStatusBtn) {
+                    currentStatusBtn.disabled = true;
+                    currentStatusBtn.style.opacity = '0.5';
+                    currentStatusBtn.style.cursor = 'default';
+                    currentStatusBtn.style.background = 'var(--admin-primary)';
+                    currentStatusBtn.style.color = 'white';
+                    currentStatusBtn.title = 'Already in this status';
+                }
+            }
         }
         const trackerRes = await fetch(`${API_BASE_URL}/issues/${id}/tracker`);
         const trackerLogs = await trackerRes.json();
@@ -245,20 +316,117 @@ function closeModal() {
     window.history.replaceState({}, '', url);
 }
 
-async function updateStatus(newStatus) {
+function updateStatus(newStatus) {
     if (!currentIssueId) return;
+    
+    // Show Custom Confirmation Overlay instead of native alert/confirm
+    const overlay = document.getElementById('status-confirm-overlay');
+    const messageEl = document.getElementById('confirm-message');
+    const yesBtn = document.getElementById('confirm-yes-btn');
+
+    if (overlay && messageEl && yesBtn) {
+        const friendlyStatus = newStatus === 'fixed' ? 'Resolved' : (newStatus === 'progress' ? 'In Progress' : 'Acknowledged');
+        messageEl.textContent = `Are you sure you want to update the status of this issue to "${friendlyStatus}"?`;
+        yesBtn.setAttribute('data-pending-status', newStatus);
+        overlay.classList.remove('hidden');
+    }
+}
+
+async function executeStatusUpdate(newStatus) {
     const adminUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
     if (!adminUser) return;
+    
     try {
         const res = await fetch(`${API_BASE_URL}/admin/issues/${currentIssueId}/status`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: newStatus, admin_id: adminUser.id, note: `Status updated to ${newStatus} by Admin` })
+            body: JSON.stringify({ 
+                status: newStatus, 
+                admin_id: adminUser.id, 
+                note: `Status updated to ${newStatus} by Admin` 
+            })
         });
         const data = await res.json();
         if (data.success) {
             openIssueDetails(currentIssueId);
             loadIssues();
-        } else { alert('Failed to update status'); }
-    } catch (err) { console.error('Error updating status:', err); }
+        } else { 
+            alert(data.message || 'Failed to update status'); 
+        }
+    } catch (err) { 
+        console.error('Error updating status:', err); 
+    }
+}
+
+async function markAsDuplicate() {
+    if (!currentIssueId) return;
+    const parentTicketId = document.getElementById('duplicate-ticket-input').value.trim().toUpperCase();
+    if (!parentTicketId) return alert('Please enter a parent Ticket ID');
+
+    const adminUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
+    
+    try {
+        // First find the parent issue ID by Ticket ID
+        const searchRes = await fetch(`${API_BASE_URL}/issues?ticket=${parentTicketId}`);
+        const searchData = await searchRes.json();
+        const parentIssues = Array.isArray(searchData) ? searchData : searchData.data;
+        
+        if (!parentIssues || parentIssues.length === 0) {
+            return alert('Parent Issue not found. Please check the Ticket ID.');
+        }
+        
+        const parentIssue = parentIssues[0];
+        
+        if (parentIssue.id === currentIssueId) {
+            return alert('An issue cannot be a duplicate of itself.');
+        }
+
+        const res = await fetch(`${API_BASE_URL}/admin/issues/${currentIssueId}/mark-duplicate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                original_issue_id: parentIssue.id, 
+                admin_id: adminUser?.id,
+                note: `Marked as duplicate of ${parentTicketId} by Admin`
+            })
+        });
+        
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('duplicate-ticket-input').value = '';
+            openIssueDetails(currentIssueId);
+            loadIssues();
+        } else {
+            alert(data.message || 'Failed to mark as duplicate');
+        }
+    } catch (err) {
+        console.error('Error marking as duplicate:', err);
+    }
+}
+
+async function unlinkDuplicate() {
+    if (!currentIssueId || !confirm('Are you sure you want to unlink this issue? It will become a unique issue again.')) return;
+    
+    const adminUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
+    
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/issues/${currentIssueId}/unlink-duplicate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                admin_id: adminUser?.id,
+                note: `Unlinked from parent issue by Admin`
+            })
+        });
+        
+        const data = await res.json();
+        if (data.success) {
+            openIssueDetails(currentIssueId);
+            loadIssues();
+        } else {
+            alert(data.message || 'Failed to unlink duplicate');
+        }
+    } catch (err) {
+        console.error('Error unlinking duplicate:', err);
+    }
 }

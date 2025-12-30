@@ -86,12 +86,20 @@ CREATE INDEX IF NOT EXISTS idx_issue_tracker_issue_id ON issue_tracker (issue_id
 CREATE OR REPLACE VIEW issues_with_votes AS
 SELECT 
     i.*,
-    COALESCE(SUM(CASE WHEN v.vote_type = 'upvote' THEN 1 ELSE 0 END), 0) AS upvotes,
-    COALESCE(SUM(CASE WHEN v.vote_type = 'downvote' THEN 1 ELSE 0 END), 0) AS downvotes,
-    COALESCE(SUM(CASE WHEN v.vote_type = 'upvote' THEN 1 WHEN v.vote_type = 'downvote' THEN -1 ELSE 0 END), 0) AS net_votes
+    COALESCE(v_agg.upvotes, 0) AS upvotes,
+    COALESCE(v_agg.downvotes, 0) AS downvotes,
+    COALESCE(v_agg.net_votes, 0) AS net_votes
 FROM issues i
-LEFT JOIN votes v ON i.id = v.issue_id
-GROUP BY i.id;
+LEFT JOIN (
+    SELECT 
+        COALESCE(i2.duplicate_of, i2.id) as effective_issue_id,
+        SUM(CASE WHEN v.vote_type = 'upvote' THEN 1 ELSE 0 END) AS upvotes,
+        SUM(CASE WHEN v.vote_type = 'downvote' THEN 1 ELSE 0 END) AS downvotes,
+        SUM(CASE WHEN v.vote_type = 'upvote' THEN 1 WHEN v.vote_type = 'downvote' THEN -1 ELSE 0 END) AS net_votes
+    FROM votes v
+    JOIN issues i2 ON v.issue_id = i2.id
+    GROUP BY COALESCE(i2.duplicate_of, i2.id)
+) v_agg ON i.id = v_agg.effective_issue_id;
 
 -- Create Categories Table
 CREATE TABLE IF NOT EXISTS categories (

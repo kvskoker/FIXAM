@@ -43,13 +43,14 @@ router.get('/issues', async (req, res) => {
             LEFT JOIN users u ON i.reported_by = u.id
             LEFT JOIN (
                 SELECT 
-                    issue_id,
+                    COALESCE(i2.duplicate_of, i2.id) as effective_issue_id,
                     SUM(CASE WHEN vote_type = 'upvote' THEN 1 ELSE 0 END) as upvotes,
                     SUM(CASE WHEN vote_type = 'downvote' THEN 1 ELSE 0 END) as downvotes,
                     SUM(CASE WHEN vote_type = 'upvote' THEN 1 WHEN vote_type = 'downvote' THEN -1 ELSE 0 END) as net_votes
-                FROM votes
-                GROUP BY issue_id
-            ) v ON i.id = v.issue_id
+                FROM votes v
+                JOIN issues i2 ON v.issue_id = i2.id
+                GROUP BY COALESCE(i2.duplicate_of, i2.id)
+            ) v ON i.id = v.effective_issue_id
             WHERE 1=1
         `;
 
@@ -626,8 +627,26 @@ router.put('/admin/issues/:id/status', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Status is required' });
         }
 
+        // 0. Check if this is a duplicate issue or already has the same status
+        const checkIssue = await db.query('SELECT duplicate_of, status FROM issues WHERE id = $1', [id]);
+        if (checkIssue.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Issue not found' });
+        }
+        
+        const currentIssue = checkIssue.rows[0];
+        if (currentIssue.duplicate_of) {
+            return res.status(400).json({ success: false, message: 'Status cannot be set directly on a duplicate issue. Update the original issue instead.' });
+        }
+        
+        if (currentIssue.status === status) {
+            return res.status(400).json({ success: false, message: `Issue is already in ${status} status.` });
+        }
+
         // 1. Update Issue Status
         await db.query('UPDATE issues SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
+
+        // 1.b Propagation: Update all duplicates of this issue
+        await db.query('UPDATE issues SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE duplicate_of = $2', [status, id]);
 
         // 2. Log to Tracker
         // Map status to a readable action
@@ -643,6 +662,15 @@ router.put('/admin/issues/:id/status', async (req, res) => {
             VALUES ($1, $2, $3, $4)
         `, [id, action, description, admin_id || null]);
 
+        // Log for duplicates too
+        const duplicates = await db.query('SELECT id FROM issues WHERE duplicate_of = $1', [id]);
+        for (const dup of duplicates.rows) {
+            await db.query(`
+                INSERT INTO issue_tracker (issue_id, action, description, performed_by)
+                VALUES ($1, $2, $3, $4)
+            `, [dup.id, action, `Status synced from original: ${status}`, admin_id || null]);
+        }
+
         res.json({ success: true, message: 'Status updated successfully' });
 
     } catch (err) {
@@ -651,6 +679,62 @@ router.put('/admin/issues/:id/status', async (req, res) => {
     }
 });
 
+// POST /api/admin/issues/:id/mark-duplicate - Mark an issue as duplicate
+router.post('/admin/issues/:id/mark-duplicate', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { original_issue_id, admin_id, note } = req.body;
+
+        if (!original_issue_id) {
+            return res.status(400).json({ success: false, message: 'Original issue ID (parent issue) is required' });
+        }
+
+        // 0. Get original issue status
+        const originalIssue = await db.query('SELECT ticket_id, status FROM issues WHERE id = $1', [original_issue_id]);
+        if (originalIssue.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Original issue not found' });
+        }
+        const { ticket_id: originalTicketId, status: originalStatus } = originalIssue.rows[0];
+
+        // 1. Update issue: Set duplicate_of AND sync status
+        await db.query('UPDATE issues SET duplicate_of = $1, status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3', [original_issue_id, originalStatus, id]);
+
+        // 3. Log to Tracker
+        const description = note || `Marked as duplicate of ticket ${originalTicketId}`;
+        await db.query(`
+            INSERT INTO issue_tracker (issue_id, action, description, performed_by)
+            VALUES ($1, $2, $3, $4)
+        `, [id, 'marked_duplicate', description, admin_id || null]);
+
+        res.json({ success: true, message: 'Issue marked as duplicate' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
+});
+
+// POST /api/admin/issues/:id/unlink-duplicate - Unlink a duplicate issue
+router.post('/admin/issues/:id/unlink-duplicate', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { admin_id, note } = req.body;
+
+        // 1. Update issue
+        await db.query('UPDATE issues SET duplicate_of = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+
+        // 2. Log to Tracker
+        const description = note || `Unlinked from original issue (marked as unique)`;
+        await db.query(`
+            INSERT INTO issue_tracker (issue_id, action, description, performed_by)
+            VALUES ($1, $2, $3, $4)
+        `, [id, 'unlinked_duplicate', description, admin_id || null]);
+
+        res.json({ success: true, message: 'Issue unlinked successfully' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
+});
 
 // ==========================================
 // USER MANAGEMENT ROUTES

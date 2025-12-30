@@ -372,6 +372,19 @@
     <!-- Issue Details Modal -->
     <div id="issue-modal" class="login-overlay hidden" style="z-index: 10000;">
         <div class="login-card" style="max-width: 800px; text-align: left; position: relative; max-height: 90vh; overflow-y: auto;">
+            <!-- Confirmation Overlay inside Modal -->
+            <div id="status-confirm-overlay" class="hidden" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; border-radius: 12px; padding: 2rem; text-align: center;">
+                <div style="background: var(--admin-card-bg); padding: 2rem; border-radius: 12px; border: 1px solid var(--admin-border); max-width: 400px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);">
+                    <i class="fa-solid fa-circle-question" style="font-size: 3rem; color: var(--admin-primary); margin-bottom: 1rem;"></i>
+                    <h3 id="confirm-title" style="margin-bottom: 0.5rem; font-family: 'Outfit', sans-serif;">Confirm Action</h3>
+                    <p id="confirm-message" style="color: var(--admin-text-muted); margin-bottom: 2rem;">Are you sure you want to proceed?</p>
+                    <div style="display: flex; gap: 1rem;">
+                        <button id="confirm-yes-btn" style="flex: 1; padding: 0.75rem; background: var(--admin-primary); color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Yes, Update</button>
+                        <button id="confirm-no-btn" style="flex: 1; padding: 0.75rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; font-weight: 600; cursor: pointer;">Cancel</button>
+                    </div>
+                </div>
+            </div>
+
             <button id="close-modal" style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; color: var(--admin-text-muted); font-size: 1.5rem; cursor: pointer;">&times;</button>
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
@@ -404,9 +417,29 @@
                     <div style="margin-bottom: 2rem;">
                         <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem;">Update Status</label>
                         <div style="display: flex; gap: 0.5rem;">
-                            <button onclick="updateStatus('acknowledged')" class="status-btn" style="flex: 1; padding: 0.5rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer;">Acknowledge</button>
-                            <button onclick="updateStatus('progress')" class="status-btn" style="flex: 1; padding: 0.5rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer;">In Progress</button>
-                            <button onclick="updateStatus('fixed')" class="status-btn" style="flex: 1; padding: 0.5rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer;">Resolved</button>
+                            <button id="btn-status-acknowledged" onclick="updateStatus('acknowledged')" class="status-btn" style="flex: 1; padding: 0.5rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer;">Acknowledge</button>
+                            <button id="btn-status-progress" onclick="updateStatus('progress')" class="status-btn" style="flex: 1; padding: 0.5rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer;">In Progress</button>
+                            <button id="btn-status-fixed" onclick="updateStatus('fixed')" class="status-btn" style="flex: 1; padding: 0.5rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer;">Resolved</button>
+                        </div>
+                    </div>
+
+                    <div id="duplicate-management-section" style="margin-bottom: 2rem; border-top: 1px solid var(--admin-border); padding-top: 1.5rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600;">Duplicate Management</label>
+                        
+                        <div id="link-duplicate-controls">
+                            <p style="font-size: 0.8rem; color: var(--admin-text-muted); margin-bottom: 0.75rem;">Link this report to an existing parent issue.</p>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <input type="text" id="duplicate-ticket-input" placeholder="Ticket ID (e.g. ABC123XYZ)" style="flex: 1; background: var(--admin-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.5rem; border-radius: 6px; font-family: monospace;">
+                                <button onclick="markAsDuplicate()" style="background: var(--admin-warning); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Link</button>
+                            </div>
+                        </div>
+
+                        <div id="unlink-duplicate-controls" class="hidden">
+                            <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid var(--admin-warning); padding: 1rem; border-radius: 6px; margin-bottom: 1rem;">
+                                <p style="font-size: 0.85rem; color: var(--admin-warning); font-weight: 600; margin-bottom: 0.25rem;">Linked as Duplicate</p>
+                                <p style="font-size: 0.8rem; color: var(--admin-text-muted); margin-bottom: 1rem;">This issue inherits its status from the original report.</p>
+                                <button onclick="unlinkDuplicate()" style="width: 100%; background: var(--admin-danger); color: white; border: none; padding: 0.6rem; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem;">Unlink & Make Unique</button>
+                            </div>
                         </div>
                     </div>
 

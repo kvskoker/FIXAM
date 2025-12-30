@@ -57,6 +57,14 @@ class FixamHandler {
                 messageBody: messageBody
             });
 
+            // Check if user is disabled
+            const user = await this.fixamDb.getUser(fromNumber);
+            if (user && user.is_disabled) {
+                logger.log('webhook', `Blocked message from disabled user: ${fromNumber}`);
+                await this.sendMessage(fromNumber, "🚫 *Access Denied*\n\nYour account has been disabled. Please contact support if you believe this is a mistake.");
+                return;
+            }
+
             // Handle different message types
             if (message.type === 'text') {
                 logger.log('webhook', 'Handling text message');
@@ -238,12 +246,92 @@ class FixamHandler {
                 currentData.title = title;
                 currentData.urgency = urgency;
 
-                await this.fixamDb.updateConversationState(fromNumber, { 
-                    current_step: 'awaiting_report_confirmation',
-                    data: currentData
-                });
+                // Check for duplicates within 100m and 1 month
+                const duplicates = await this.fixamDb.findPotentialDuplicates(currentData.lat, currentData.lng, 100, category, 30);
                 
-                await this.sendReportSummary(fromNumber, currentData);
+                if (duplicates.length > 0) {
+                    currentData.potential_duplicates = duplicates;
+                    await this.fixamDb.updateConversationState(fromNumber, { 
+                        current_step: 'awaiting_duplicate_action',
+                        data: currentData
+                    });
+
+                    let msg = `🔍 *Similar issues found nearby:*\n\n`;
+                    duplicates.forEach((dup, i) => {
+                        msg += `📍 *${dup.title}* (${dup.ticket_id})\n`;
+                        msg += `   Status: ${dup.status}\n`;
+                    });
+                    msg += `\nIt seems this might have been reported already. What would you like to do?\n\n`;
+                    msg += `1️⃣ *View more details* of these issues\n`;
+                    msg += `2️⃣ *Report as a new* separate issue\n`;
+                    msg += `3️⃣ *Vote/Support* an existing issue\n\n`;
+                    msg += `Type *9* to cancel.`;
+                    
+                    await this.sendMessage(fromNumber, msg);
+                } else {
+                    await this.fixamDb.updateConversationState(fromNumber, { 
+                        current_step: 'awaiting_report_confirmation',
+                        data: currentData
+                    });
+                    await this.sendReportSummary(fromNumber, currentData);
+                }
+                break;
+
+            case 'awaiting_duplicate_action':
+                if (input === '1') {
+                    // View details
+                    const dups = state.data.potential_duplicates;
+                    let msg = `📝 *Issue Details:*\n\n`;
+                    dups.forEach(dup => {
+                        msg += `🎫 *Ticket:* ${dup.ticket_id}\n`;
+                        msg += `📋 *Title:* ${dup.title}\n`;
+                        msg += `📝 *Desc:* ${dup.description || 'No description'}\n`;
+                        msg += `-------------------\n`;
+                    });
+                    msg += `\n1️⃣ Report as *NEW* issue\n2️⃣ *Vote* on an existing issue\n9️⃣ Cancel`;
+                    await this.sendMessage(fromNumber, msg);
+                } else if (input === '2') {
+                    // Report anyway
+                    await this.fixamDb.updateConversationState(fromNumber, { 
+                        current_step: 'awaiting_report_confirmation'
+                    });
+                    await this.sendReportSummary(fromNumber, state.data);
+                } else if (input === '3') {
+                    // Vote
+                    const dups = state.data.potential_duplicates;
+                    let msg = `Which issue would you like to support? Reply with the number:\n\n`;
+                    dups.forEach((dup, i) => {
+                        msg += `${i + 1}. *${dup.title}* (${dup.ticket_id})\n`;
+                    });
+                    msg += `\n9. Cancel`;
+                    await this.fixamDb.updateConversationState(fromNumber, { 
+                        current_step: 'awaiting_duplicate_selection_for_vote'
+                    });
+                    await this.sendMessage(fromNumber, msg);
+                } else if (input === '9') {
+                    await this.sendMessage(fromNumber, "Cancelled. Type 'Hi' for main menu.");
+                    await this.fixamDb.resetConversationState(fromNumber);
+                } else {
+                    await this.sendMessage(fromNumber, "Please choose 1, 2, 3 or 9.");
+                }
+                break;
+
+            case 'awaiting_duplicate_selection_for_vote':
+                const sel = parseInt(input);
+                const potentialDups = state.data.potential_duplicates;
+                if (sel >= 1 && sel <= potentialDups.length) {
+                    const selectedIssue = potentialDups[sel - 1];
+                    await this.fixamDb.updateConversationState(fromNumber, { 
+                        current_step: 'awaiting_vote_confirmation',
+                        data: { ...state.data, issue_id: selectedIssue.id, ticket_id: selectedIssue.ticket_id, title: selectedIssue.title }
+                    });
+                    await this.sendMessage(fromNumber, `Found Issue: *${selectedIssue.title}* (${selectedIssue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                } else if (input === '9') {
+                    await this.sendMessage(fromNumber, "Cancelled. Type 'Hi' for main menu.");
+                    await this.fixamDb.resetConversationState(fromNumber);
+                } else {
+                    await this.sendMessage(fromNumber, `Please enter a number between 1 and ${potentialDups.length}.`);
+                }
                 break;
 
             case 'awaiting_report_confirmation':
