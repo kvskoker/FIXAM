@@ -115,7 +115,7 @@ SELECT id, role_id FROM users WHERE role_id IS NOT NULL;\n\n`;
         const desc = `Automatically reported via WhatsApp. Requires investigation at ${title}.`;
         const imageUrl = `https://picsum.photos/seed/${ticketId}/400/300`;
 
-        issues.push({ id: i + 1, date });
+        issues.push({ id: i + 1, date, status });
         sql += `('${ticketId}', '${title.replace(/'/g, "''")}', '${category.name}', '${status}', ${lat.toFixed(6)}, ${lng.toFixed(6)}, '${desc.replace(/'/g, "''")}', '${imageUrl}', ${reportedBy}, '${formatDate(date)}', '${formatDate(date)}')${i === 199 ? ';' : ','}\n`;
     }
     sql += `\n`;
@@ -146,13 +146,25 @@ SELECT id, role_id FROM users WHERE role_id IS NOT NULL;\n\n`;
     const trackers = [];
     for (let i = 0; i < 200; i++) {
         const issueId = i + 1;
-        const issueDate = issues[i].date;
+        const issue = issues[i];
+        const issueDate = issue.date;
+        
         trackers.push(`(${issueId}, 'reported', 'Citizen reported issue', null, '${formatDate(issueDate)}')`);
         
-        // Maybe some follow up actions
-        if (Math.random() > 0.5) {
-            const followUpDate = randomDate(issueDate, new Date(issueDate.getTime() + 86400000 * 2)); // 2 days later
-            trackers.push(`(${issueId}, 'acknowledged', 'System received report', null, '${formatDate(followUpDate)}')`);
+        // Generate realistic history based on status
+        if (issue.status === 'acknowledged' || issue.status === 'progress' || issue.status === 'fixed') {
+            const ackDate = randomDate(issueDate, new Date(issueDate.getTime() + 86400000 * 1)); // Within 1 day
+            trackers.push(`(${issueId}, 'acknowledged', 'System received report', null, '${formatDate(ackDate)}')`);
+            
+            if (issue.status === 'progress' || issue.status === 'fixed') {
+                const progressDate = randomDate(ackDate, new Date(ackDate.getTime() + 86400000 * 2)); // Within 2 more days
+                trackers.push(`(${issueId}, 'in_progress', 'Technicians assigned to site', null, '${formatDate(progressDate)}')`);
+                
+                if (issue.status === 'fixed') {
+                    const fixedDate = randomDate(progressDate, new Date(progressDate.getTime() + 86400000 * 4)); // Within 4 more days
+                    trackers.push(`(${issueId}, 'resolved', 'Issue resolved and verified', null, '${formatDate(fixedDate)}')`);
+                }
+            }
         }
     }
     sql += trackers.join(',\n') + ';';
