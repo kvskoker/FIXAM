@@ -249,7 +249,11 @@ function renderTrendsChart(trends) {
     trendsChart = new Chart(ctxTrends, {
         type: 'line',
         data: {
-            labels: allDates.map(d => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })),
+            labels: allDates.map(d => {
+                const [year, month, day] = d.split('-');
+                const date = new Date(year, month - 1, day);
+                return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            }),
             datasets: [
                 {
                     label: 'Issues Reported',

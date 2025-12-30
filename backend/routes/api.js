@@ -240,12 +240,12 @@ router.get('/stats/trends', async (req, res) => {
     try {
         const { start_date, end_date } = req.query;
         let reportsQuery = `
-            SELECT TO_CHAR(created_at, 'YYYY-MM-DD') as date, COUNT(*) as count
+            SELECT TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') as date, COUNT(*) as count
             FROM issues
             WHERE 1=1
         `;
         let resolutionsQuery = `
-            SELECT TO_CHAR(created_at, 'YYYY-MM-DD') as date, COUNT(*) as count
+            SELECT TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') as date, COUNT(*) as count
             FROM issue_tracker
             WHERE action = 'resolved'
         `;
@@ -259,9 +259,9 @@ router.get('/stats/trends', async (req, res) => {
             pCount++;
         }
         if (end_date) {
-            reportsQuery += ` AND created_at <= $${pCount}`;
-            resolutionsQuery += ` AND created_at <= $${pCount}`;
-            params.push(`${end_date} 23:59:59`);
+            reportsQuery += ` AND created_at <= $${pCount}::timestamp + interval '1 day' - interval '1 second'`;
+            resolutionsQuery += ` AND created_at <= $${pCount}::timestamp + interval '1 day' - interval '1 second'`;
+            params.push(end_date);
             pCount++;
         }
 
@@ -271,8 +271,8 @@ router.get('/stats/trends', async (req, res) => {
             resolutionsQuery += ` AND created_at >= CURRENT_DATE - INTERVAL '14 days'`;
         }
 
-        reportsQuery += ` GROUP BY TO_CHAR(created_at, 'YYYY-MM-DD') ORDER BY date ASC`;
-        resolutionsQuery += ` GROUP BY TO_CHAR(created_at, 'YYYY-MM-DD') ORDER BY date ASC`;
+        reportsQuery += ` GROUP BY 1 ORDER BY 1 ASC`;
+        resolutionsQuery += ` GROUP BY 1 ORDER BY 1 ASC`;
 
         const [reportsResult, resolutionsResult] = await Promise.all([
             db.query(reportsQuery, params),
