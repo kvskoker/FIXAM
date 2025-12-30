@@ -291,9 +291,22 @@ function setupDateRestrictions() {
         const today = new Date().toISOString().split('T')[0];
         startDate.max = today;
         endDate.max = today;
+        
         startDate.addEventListener('change', () => {
             endDate.min = startDate.value;
-            if (endDate.value && endDate.value < startDate.value) endDate.value = startDate.value;
+            if (endDate.value && endDate.value < startDate.value) {
+                endDate.value = startDate.value;
+                updateURLParams({ start_date: startDate.value, end_date: endDate.value });
+                loadDashboardData();
+            }
+        });
+
+        endDate.addEventListener('change', () => {
+            if (startDate.value && startDate.value > endDate.value) {
+                startDate.value = endDate.value;
+                updateURLParams({ start_date: startDate.value, end_date: endDate.value });
+                loadDashboardData();
+            }
         });
     }
 }

@@ -88,12 +88,42 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
+    // Initialize Date Restrictions
+    setupDateRestrictions();
+
     // Check for ID in URL to auto-open modal
     const urlParams = getURLParams();
     if (urlParams.id) {
         setTimeout(() => openIssueDetails(parseInt(urlParams.id)), 1000);
     }
 });
+
+function setupDateRestrictions() {
+    const startDate = document.getElementById('issue-filter-start');
+    const endDate = document.getElementById('issue-filter-end');
+    if (startDate && endDate) {
+        const today = new Date().toISOString().split('T')[0];
+        startDate.max = today;
+        endDate.max = today;
+        
+        startDate.addEventListener('change', () => {
+            endDate.min = startDate.value;
+            if (endDate.value && endDate.value < startDate.value) {
+                endDate.value = startDate.value;
+                syncFiltersToURL();
+                loadIssues();
+            }
+        });
+
+        endDate.addEventListener('change', () => {
+            if (startDate.value && startDate.value > endDate.value) {
+                startDate.value = endDate.value;
+                syncFiltersToURL();
+                loadIssues();
+            }
+        });
+    }
+}
 
 function syncFiltersToURL() {
     const searchEl = document.getElementById('issue-search');

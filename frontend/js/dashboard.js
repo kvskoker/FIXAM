@@ -11,6 +11,25 @@ const API_BASE_URL = window.location.port === '3000'
     ? `http://${window.location.hostname}:5000/api`
     : '/api';
 
+function setupDateRestrictions() {
+    const today = new Date().toISOString().split('T')[0];
+    startDateInput.max = today;
+    endDateInput.max = today;
+
+    startDateInput.addEventListener('change', () => {
+        endDateInput.min = startDateInput.value;
+        if (endDateInput.value && endDateInput.value < startDateInput.value) {
+            endDateInput.value = startDateInput.value;
+        }
+    });
+
+    endDateInput.addEventListener('change', () => {
+        if (startDateInput.value && startDateInput.value > endDateInput.value) {
+            startDateInput.value = endDateInput.value;
+        }
+    });
+}
+
 async function fetchDashboardData() {
     try {
         const start = startDateInput.value;
@@ -191,11 +210,31 @@ function renderTrendsChart(trends) {
         trendsChart.destroy();
     }
 
-    // Merge data by date
-    const allDates = [...new Set([
+    // Merge data by date and ensure today is included
+    const today = new Date().toISOString().split('T')[0];
+    const rawDates = [
         ...trends.reports.map(r => r.date),
         ...trends.resolutions.map(r => r.date)
-    ])].sort();
+    ];
+    
+    // Also include today and the filtered range if applicable
+    rawDates.push(today);
+    if (startDateInput.value) rawDates.push(startDateInput.value);
+    if (endDateInput.value) rawDates.push(endDateInput.value);
+
+    const uniqueDates = [...new Set(rawDates)].sort();
+    
+    // Fill in missing dates between min and max to have a continuous trend line
+    const allDates = [];
+    if (uniqueDates.length > 0) {
+        let current = new Date(uniqueDates[0]);
+        const last = new Date(uniqueDates[uniqueDates.length - 1]);
+        
+        while (current <= last) {
+            allDates.push(current.toISOString().split('T')[0]);
+            current.setDate(current.getDate() + 1);
+        }
+    }
 
     const reportsData = allDates.map(date => {
         const item = trends.reports.find(r => r.date === date);
@@ -291,7 +330,8 @@ function renderTrendsChart(trends) {
     });
 }
 
-// Initial Fetch
+// Initial Setup
+setupDateRestrictions();
 fetchDashboardData();
 
 // Date Filter Listeners
