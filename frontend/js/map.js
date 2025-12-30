@@ -264,18 +264,47 @@ function renderIssues(issues) {
         }
 
         const popupContent = `
-            <div class="popup-content" style="min-width: 200px;">
+            <div class="popup-content" style="min-width: 280px; padding: 5px;">
                 ${mediaContent}
-                <div style="font-size: 0.75rem; font-weight: 600; color: ${color}; margin-bottom: 4px;">${issue.category}</div>
-                <div class="popup-title" style="font-weight: 700; margin-bottom: 4px;">${issue.title}</div>
-                <div class="popup-desc" style="font-size: 0.85rem; color: #64748b; margin-bottom: 8px;">${issue.description}</div>
-                <button class="btn btn-outline" onclick="viewTracker(${issue.id})" style="width: 100%; font-size: 0.8rem; padding: 6px;">
-                    <i class="fa-solid fa-clock-rotate-left"></i> History
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                     <div style="font-size: 0.7rem; font-weight: 650; color: ${color}; text-transform: uppercase;">${issue.category}</div>
+                     <span style="background: rgba(${colors[statusType].r}, ${colors[statusType].g}, ${colors[statusType].b}, 0.15); color: ${color}; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: capitalize;">${issue.status}</span>
+                </div>
+                <div class="popup-title" style="font-weight: 700; font-size: 1.1rem; margin-bottom: 10px; color: var(--text-primary);">${issue.title}</div>
+                
+                <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 0.85rem; margin-bottom: 15px; color: var(--text-secondary);">
+                    <div style="font-weight: 500;">Issue ID:</div>
+                    <div style="color: var(--text-primary); font-family: monospace; font-weight: 600;">#${issue.ticket_id}</div>
+                    
+                    <div style="font-weight: 500;">Reported:</div>
+                    <div style="color: var(--text-primary);">${new Date(issue.reported_on || issue.created_at).toLocaleDateString()}</div>
+                    
+                    <div style="font-weight: 500;">By:</div>
+                    <div style="color: var(--text-primary);">${issue.reported_by_name || 'Anonymous citizen'}</div>
+                    
+                    <div style="font-weight: 500;">Location:</div>
+                    <div style="color: var(--text-primary); font-size: 0.8rem;"><i class="fa-solid fa-location-dot" style="margin-right: 4px; opacity: 0.7;"></i>Freetown, SL (${parseFloat(issue.lat).toFixed(4)}, ${parseFloat(issue.lng).toFixed(4)})</div>
+                </div>
+
+                <div class="popup-desc" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 15px; line-height: 1.4; border-top: 1px solid var(--border-color); padding-top: 8px;">${issue.description}</div>
+                
+                <button class="btn btn-primary" onclick="viewTracker(${issue.id})" style="width: 100%; font-size: 0.85rem; padding: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 8px;">
+                    <i class="fa-solid fa-clock-rotate-left"></i> View Full Activity History
                 </button>
             </div>
         `;
 
         marker.bindPopup(popupContent);
+        
+        // Add zoom and open popup on marker click
+        marker.on('click', (e) => {
+            map.flyTo(e.latlng, 16);
+            // Small timeout ensures the popup opens after the animation starts/settles
+            setTimeout(() => {
+                marker.openPopup();
+            }, 300);
+        });
+
         markers[issue.id] = marker;
         clusterGroup.addLayer(marker);
 
