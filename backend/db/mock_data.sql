@@ -1,5 +1,8 @@
 -- Extended Mock Data Generated on 2025-12-29T16:25:51.670Z
 
+-- Clear existing data and reset sequences to ensure predictable IDs for mock data
+TRUNCATE TABLE votes, issue_tracker, issues, users RESTART IDENTITY CASCADE;
+
 -- Insert Mock Users (50 users + 1 admin)
 INSERT INTO users (phone_number, name, role_id, password, created_at) VALUES
 ('000', 'System Admin', (SELECT id FROM roles WHERE name = 'Admin'), '00dc290f5213798bac46b374885e2b8a677f4c7fbdd645088737951fb2b8a677f4c7fb', '2025-01-01 00:00:00'),
