@@ -20,12 +20,12 @@ class FixamDatabase {
     async registerUser(phoneNumber, name) {
         const sql = "INSERT INTO users (phone_number, name) VALUES ($1, $2) ON CONFLICT (phone_number) DO UPDATE SET name = COALESCE(EXCLUDED.name, users.name) RETURNING id";
         try {
-            await this.db.query(sql, [phoneNumber, name]);
+            const result = await this.db.query(sql, [phoneNumber, name]);
             this.debugLog(`User registered/updated: ${phoneNumber}`, { name });
-            return true;
+            return result.rows[0].id;
         } catch (error) {
             this.debugLog('Error registering user', { error: error.message, phoneNumber });
-            return false;
+            return null;
         }
     }
 

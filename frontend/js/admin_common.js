@@ -1,4 +1,6 @@
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = window.location.port === '3000' 
+    ? `http://${window.location.hostname}:5000/api`
+    : '/api';
 
 function checkAuth(callback) {
     const adminUser = localStorage.getItem('fixam_admin_user');

@@ -138,7 +138,11 @@ router.get('/issues', async (req, res) => {
         const countSqlParams = [];
         let pCount = 1;
         
-        if (search) { countSql += ` AND (i.title ILIKE $${pCount} OR i.description ILIKE $${pCount})`; countSqlParams.push(`%${search}%`); pCount++; }
+        if (search) { 
+            countSql += ` AND (i.title ILIKE $${pCount} OR i.description ILIKE $${pCount} OR i.ticket_id ILIKE $${pCount})`; 
+            countSqlParams.push(`%${search}%`); 
+            pCount++; 
+        }
         if (category) { countSql += ` AND i.category = $${pCount}`; countSqlParams.push(category); pCount++; }
         if (status) { countSql += ` AND i.status = $${pCount}`; countSqlParams.push(status); pCount++; }
         if (ticket) { countSql += ` AND i.ticket_id = $${pCount}`; countSqlParams.push(ticket); pCount++; }
