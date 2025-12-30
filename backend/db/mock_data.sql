@@ -52,7 +52,8 @@ INSERT INTO users (phone_number, name, role_id, password, created_at) VALUES
 ('232720617319', 'Sorie Bangura', (SELECT id FROM roles WHERE name = 'User'), null, '2025-02-09 04:42:28'),
 ('232717372996', 'Ibrahim Bunjun', (SELECT id FROM roles WHERE name = 'User'), null, '2025-01-04 13:46:21'),
 ('232757693770', 'Sia Bangura', (SELECT id FROM roles WHERE name = 'User'), null, '2025-05-26 15:36:07'),
-('232700940772', 'Isatu Kargbo', (SELECT id FROM roles WHERE name = 'User'), null, '2025-01-06 05:33:51');
+('232700940772', 'Isatu Kargbo', (SELECT id FROM roles WHERE name = 'User'), null, '2025-01-06 05:33:51')
+ON CONFLICT (phone_number) DO NOTHING;
 
 -- Insert Mock Issues (200 issues)
 INSERT INTO issues (ticket_id, title, category, status, lat, lng, description, image_url, reported_by, reported_on, created_at) VALUES
@@ -255,7 +256,8 @@ INSERT INTO issues (ticket_id, title, category, status, lat, lng, description, i
 ('FIX0000197', 'Broken culvert near West End', 'Road', 'critical', 8.781037, -12.730884, 'Automatically reported via WhatsApp. Requires investigation at Broken culvert near West End.', 'https://picsum.photos/seed/FIX0000197/400/300', 14, '2025-11-16 11:58:29', '2025-11-16 11:58:29'),
 ('FIX0000198', 'Fallen power line on King Harman Rd', 'Electricity', 'fixed', 8.529064, -13.250338, 'Automatically reported via WhatsApp. Requires investigation at Fallen power line on King Harman Rd.', 'https://picsum.photos/seed/FIX0000198/400/300', 25, '2025-10-09 01:45:17', '2025-10-09 01:45:17'),
 ('FIX0000199', 'Missing manhole cover on Market St', 'Road', 'acknowledged', 8.729284, -12.739039, 'Automatically reported via WhatsApp. Requires investigation at Missing manhole cover on Market St.', 'https://picsum.photos/seed/FIX0000199/400/300', 25, '2025-10-11 20:53:49', '2025-10-11 20:53:49'),
-('FIX0000200', 'Leaking valve on Main Highway', 'Water', 'critical', 8.322273, -13.092942, 'Automatically reported via WhatsApp. Requires investigation at Leaking valve on Main Highway.', 'https://picsum.photos/seed/FIX0000200/400/300', 49, '2025-10-31 07:10:29', '2025-10-31 07:10:29');
+('FIX0000200', 'Leaking valve on Main Highway', 'Water', 'critical', 8.322273, -13.092942, 'Automatically reported via WhatsApp. Requires investigation at Leaking valve on Main Highway.', 'https://picsum.photos/seed/FIX0000200/400/300', 49, '2025-10-31 07:10:29', '2025-10-31 07:10:29')
+ON CONFLICT (ticket_id) DO NOTHING;
 
 -- Insert random votes
 INSERT INTO votes (issue_id, user_id, vote_type, created_at) VALUES
