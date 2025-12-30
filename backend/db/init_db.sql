@@ -6,7 +6,7 @@ BEGIN
         id SERIAL PRIMARY KEY,
         name VARCHAR(50) UNIQUE NOT NULL
     );
-    INSERT INTO roles (name) VALUES ('Admin'), ('User') ON CONFLICT (name) DO NOTHING;
+    INSERT INTO roles (name) VALUES ('Admin'), ('Operation'), ('User') ON CONFLICT (name) DO NOTHING;
 
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='role_id') THEN 
         ALTER TABLE users ADD COLUMN role_id INTEGER REFERENCES roles(id); 
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS roles (
 );
 
 -- Insert Default Roles
-INSERT INTO roles (name) VALUES ('Admin'), ('User') ON CONFLICT (name) DO NOTHING;
+INSERT INTO roles (name) VALUES ('Admin'), ('Operation'), ('User') ON CONFLICT (name) DO NOTHING;
 
 -- Create Users Table
 CREATE TABLE IF NOT EXISTS users (
@@ -55,6 +55,37 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Create User Roles Mapping Table (Many-to-Many)
+CREATE TABLE IF NOT EXISTS user_roles (
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    role_id INTEGER REFERENCES roles(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, role_id)
+);
+
+-- Create Groups Table
+CREATE TABLE IF NOT EXISTS groups (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create User Groups Mapping Table
+CREATE TABLE IF NOT EXISTS user_groups (
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    group_id INTEGER REFERENCES groups(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, group_id)
+);
+
+-- Insert Default Groups
+INSERT INTO groups (name, description) VALUES 
+('EDSA', 'Electricity Distribution and Supply Authority'),
+('SLRSA', 'Sierra Leone Road Safety Authority'),
+('MOH', 'Ministry of Health'),
+('FCC', 'Freetown City Council'),
+('EPA', 'Environmental Protection Agency')
+ON CONFLICT (name) DO NOTHING;
 
 -- Create Issues Table
 CREATE TABLE IF NOT EXISTS issues (

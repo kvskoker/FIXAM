@@ -8,6 +8,9 @@ const categories = [
     { name: 'Health', templates: ['Overflowing sewage in {area}', 'Medical waste found near {road}', 'Stagnant water breeding mosquitoes at {area}', 'Public toilet in disrepair in {city}'] }
 ];
 
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
+
 const cities = [
     { name: 'Freetown', lat: 8.48, lng: -13.23 },
     { name: 'Bo', lat: 7.96, lng: -11.74 },
@@ -43,19 +46,31 @@ const userNames = [
     'Kallon', 'Lamin', 'Bunjun', 'Fofanah', 'Tarawallie', 'Sheriff', 'Gbla', 'Dumbuya', 'Carew', 'Mason'
 ];
 
+const crypto = require('crypto');
+
+function hashPassword(password, phone) {
+    if (!password || !phone) return null;
+    return crypto.createHash('sha512').update(password + phone).digest('hex');
+}
+
 function generateMockData() {
     let sql = `-- Extended Mock Data Generated on ${new Date().toISOString()}\n\n`;
+
+    // 0. Clear existing data
+    sql += `-- Clear existing data and reset sequences\n`;
+    sql += `TRUNCATE TABLE votes, issue_tracker, issues, user_roles, user_groups, users RESTART IDENTITY CASCADE;\n\n`;
 
     // 1. Users
     sql += `-- Insert Mock Users (50 users + 1 admin)\n`;
     sql += `INSERT INTO users (phone_number, name, role_id, password, created_at) VALUES\n`;
     const users = [];
     
-    // Default Admin
-    const adminPhone = '000';
-    const adminPassHash = '00dc290f5213798bac46b374885e2b8a677f4c7fbdd645088737951fb2b8a677f4c7fb'; // Hash of 'admin' salt '000'
-    sql += `('${adminPhone}', 'System Admin', (SELECT id FROM roles WHERE name = 'Admin'), '${adminPassHash}', '2025-01-01 00:00:00'),\n`;
-    users.push({ id: 1, name: 'System Admin', phone: adminPhone });
+    // Default Super Admin
+    const adminPhone = process.env.SUPER_ADMIN_PHONE || '23200000000';
+    const adminPass = process.env.SUPER_ADMIN_PASSWORD || 'Adm1n@Fixam';
+    const adminPassHash = hashPassword(adminPass, adminPhone);
+    sql += `('${adminPhone}', 'Super Admin', (SELECT id FROM roles WHERE name = 'Admin'), '${adminPassHash}', '2025-01-01 00:00:00'),\n`;
+    users.push({ id: 1, name: 'Super Admin', phone: adminPhone });
 
     for (let i = 0; i < 50; i++) {
         const firstName = userNames[Math.floor(Math.random() * 20)];
@@ -63,10 +78,15 @@ function generateMockData() {
         const name = `${firstName} ${lastName}`;
         const phone = `232${Math.floor(700000000 + Math.random() * 99999999)}`;
         const date = randomDate(new Date('2025-01-01'), new Date('2025-09-30'));
-        users.push({ id: i + 2, name, phone }); // Offset by 2 because 000 is ID 1 (assuming serial starts at 1)
+        users.push({ id: i + 2, name, phone });
         sql += `('${phone}', '${name}', (SELECT id FROM roles WHERE name = 'User'), null, '${formatDate(date)}')${i === 49 ? ';' : ','}\n`;
     }
     sql += `\n`;
+
+    // 1.b User Roles (Important for login)
+    sql += `-- Populate user_roles mapping table\n`;
+    sql += `INSERT INTO user_roles (user_id, role_id) 
+SELECT id, role_id FROM users WHERE role_id IS NOT NULL;\n\n`;
 
     // 2. Issues
     sql += `-- Insert Mock Issues (200 issues)\n`;
