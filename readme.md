@@ -1,5 +1,7 @@
 # FIXAM - Facilitating Issue eXchange for Accountable Municipalities
 
+**Live Demo:** [https://fixam.maxcit.com/](https://fixam.maxcit.com/)
+
 A civic engagement platform that enables citizens to report municipal issues via WhatsApp and visualize them on an interactive map.
 
 ## Project Structure
@@ -7,13 +9,20 @@ A civic engagement platform that enables citizens to report municipal issues via
 ```
 Codebase/
 ├── frontend/              # Web interface
+│   ├── admin/             # Admin Portal pages
+│   │   ├── issues.html    # Issue Management
+│   │   ├── overview.html  # Analytics Dashboard
+│   │   └── users.html     # User & Group Management
 │   ├── css/
 │   │   └── style.css     # Global styles
 │   ├── js/
-│   │   ├── map.js        # Map logic
-│   │   └── dashboard.js  # Dashboard logic
-│   ├── index.html        # Civic Map (Public View)
-│   └── dashboard.html    # Government Dashboard
+│   │   ├── map.js         # Map logic
+│   │   ├── dashboard.js  # Dashboard logic
+│   │   ├── admin_issues.js
+│   │   ├── admin_overview.js
+│   │   └── admin_users.js
+│   ├── index.html         # Civic Map (Public Public)
+│   └── dashboard.html     # Statistics View
 │
 ├── backend/              # Node.js API server
 │   ├── db/
@@ -42,17 +51,20 @@ Codebase/
 - Issue filtering and voting system
 - Real-time updates from database
 
-### 2. Government Dashboard
-- Statistical overview of reports
-- Category distribution charts
-- Priority alerts for critical issues
-- Sentiment analysis (planned)
+### 2. Government Dashboard (Admin Portal)
+- **Role-Based Access Control**: Secure login for Admin and Operations personnel.
+- **Issue Management**: Track, manage, and resolve citizen reports with a complete activity timeline.
+- **Duplicate Management**: Automatically link duplicate reports to aggregate community feedback and sync resolution status.
+- **Advanced Filtering**: Persistent filters (category, status, date) across refreshes using URL parameters.
+- **User & Group Management**: Manage municipal staff and departmental groups.
+- Statistical overview and category distribution charts.
 
 ### 3. WhatsApp Integration
-- Report issues via conversational interface
-- AI-powered categorization and summarization
-- Location sharing support
-- Automated ticket generation
+- Conversational reporting with AI-powered categorization and summarization.
+- **Voice-to-Text**: Native support for voice notes via Whisper AI transcription.
+- **Security & Moderation**: Automated blocking of disabled accounts and image safety filtering.
+- Location sharing support with reverse geocoding.
+- Automated ticket generation and real-time community voting.
 
 ## Setup Instructions
 
@@ -179,31 +191,22 @@ DB_PORT=5432
 ## API Endpoints
 
 ### GET /api/issues
-Fetch all reported issues from the database.
+Fetch all reported issues with vote aggregation, search, filter, and pagination support. Duplicate issues automatically aggregate their votes to the original report.
 
-**Response:**
-```json
-[
-  {
-    "id": 1,
-    "title": "Burst Pipe on Jomo Kenyatta Road",
-    "category": "Water",
-    "status": "critical",
-    "lat": 8.4845,
-    "lng": -13.2345,
-    "description": "Large water pipe burst...",
-    "image_url": "https://...",
-    "votes": 156,
-    "created_at": "2023-10-27T10:30:00"
-  }
-]
-```
+### POST /api/admin/issues/:id/mark-duplicate
+Links an issue as a duplicate of another. Inherits parent status and redirects community support.
+
+### POST /api/admin/issues/:id/unlink-duplicate
+Restores a duplicate issue as a unique, independent report.
+
+### PUT /api/admin/issues/:id/status
+Updates issue status with mandatory confirmation and automatic propagation to all linked duplicates.
 
 ### GET /api/webhook
 WhatsApp webhook verification endpoint.
 
 ### POST /api/webhook
-Handle incoming WhatsApp messages.
+Handle incoming WhatsApp messages with stateful conversation management.
 
 ## WhatsApp Workflow
 
