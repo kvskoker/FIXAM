@@ -244,12 +244,12 @@ router.get('/stats/trends', async (req, res) => {
     try {
         const { start_date, end_date } = req.query;
         let reportsQuery = `
-            SELECT TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') as date, COUNT(*) as count
+            SELECT TO_CHAR(created_at AT TIME ZONE 'Atlantic/Reykjavik', 'YYYY-MM-DD') as date, COUNT(*) as count
             FROM issues
             WHERE 1=1
         `;
         let resolutionsQuery = `
-            SELECT TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') as date, COUNT(*) as count
+            SELECT TO_CHAR(created_at AT TIME ZONE 'Atlantic/Reykjavik', 'YYYY-MM-DD') as date, COUNT(*) as count
             FROM issue_tracker
             WHERE action = 'resolved'
         `;
