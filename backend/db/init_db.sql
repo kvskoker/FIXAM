@@ -1,6 +1,16 @@
 -- Ensure columns exist for older database versions
 DO $$ 
 BEGIN 
+    -- Roles table must exist first for foreign key
+    CREATE TABLE IF NOT EXISTS roles (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(50) UNIQUE NOT NULL
+    );
+    INSERT INTO roles (name) VALUES ('Admin'), ('User') ON CONFLICT (name) DO NOTHING;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='role_id') THEN 
+        ALTER TABLE users ADD COLUMN role_id INTEGER REFERENCES roles(id); 
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_disabled') THEN 
         ALTER TABLE users ADD COLUMN is_disabled BOOLEAN DEFAULT FALSE; 
     END IF;
