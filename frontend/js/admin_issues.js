@@ -230,14 +230,14 @@ function renderIssuesTable(issues) {
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid var(--admin-border)';
         tr.innerHTML = `
-            <td style="padding: 1rem; font-family: monospace;">${issue.ticket_id || 'N/A'}</td>
-            <td style="padding: 1rem;">${issue.category}</td>
-            <td style="padding: 1rem; font-weight: 500;">${issue.title}</td>
-            <td style="padding: 1rem; color: var(--admin-text-muted);">${issue.lat}, ${issue.lng}</td>
-            <td style="padding: 1rem;">${issue.upvotes || 0}</td>
-            <td style="padding: 1rem;"><span style="color: ${statusColors[issue.status] || 'white'}; font-weight: 600; text-transform: capitalize;">${issue.status}</span></td>
-            <td style="padding: 1rem; color: var(--admin-text-muted); font-size: 0.9rem;">${new Date(issue.created_at).toLocaleDateString()}</td>
-            <td style="padding: 1rem;"><button onclick="openIssueDetails(${issue.id})" style="background: var(--admin-primary); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer;">Manage</button></td>
+            <td data-label="Issue ID" style="padding: 1rem; font-family: monospace;">${issue.ticket_id || 'N/A'}</td>
+            <td data-label="Category" style="padding: 1rem;">${issue.category}</td>
+            <td data-label="Title" style="padding: 1rem; font-weight: 500;">${issue.title}</td>
+            <td data-label="Location" style="padding: 1rem; color: var(--admin-text-muted);">${parseFloat(issue.lat).toFixed(4)}, ${parseFloat(issue.lng).toFixed(4)}</td>
+            <td data-label="Votes" style="padding: 1rem;">${issue.upvotes || 0}</td>
+            <td data-label="Status" style="padding: 1rem;"><span style="color: ${statusColors[issue.status] || 'white'}; font-weight: 600; text-transform: capitalize;">${issue.status}</span></td>
+            <td data-label="Date" style="padding: 1rem; color: var(--admin-text-muted); font-size: 0.9rem;">${new Date(issue.created_at).toLocaleDateString()}</td>
+            <td data-label="Action" style="padding: 1rem;"><button onclick="openIssueDetails(${issue.id})" style="background: var(--admin-primary); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; width: 100%;">Manage</button></td>
         `;
         tbody.appendChild(tr);
     });

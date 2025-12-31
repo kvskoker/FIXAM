@@ -111,32 +111,36 @@ function renderUsers(users) {
 
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td>
-                <div style="display: flex; align-items: center; gap: 0.75rem;">
-                    <div style="width: 32px; height: 32px; border-radius: 50%; background: var(--admin-primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.8rem;">
+            <td data-label="User">
+                <div style="display: flex; align-items: center; gap: 0.75rem; width: 100%;">
+                    <div style="width: 32px; height: 32px; border-radius: 50%; background: var(--admin-primary); color: white; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.8rem;">
                         ${(user.name || 'U').charAt(0).toUpperCase()}
                     </div>
-                    <div>
+                    <div style="text-align: left; overflow: hidden; text-overflow: ellipsis;">
                         <div style="font-weight: 500;">${user.name || 'Anonymous'} ${isSelf ? '<span style="color: var(--admin-primary); font-size: 0.75rem; margin-left: 0.5rem;">(You)</span>' : ''}</div>
                     </div>
                 </div>
             </td>
-            <td>${user.phone_number}</td>
-            <td>
-                ${roles.map(r => `<span class="role-badge role-${r.toLowerCase()}">${r}</span>`).join('')}
+            <td data-label="Phone">${user.phone_number}</td>
+            <td data-label="Roles">
+                <div style="display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end;">
+                    ${roles.map(r => `<span class="role-badge role-${r.toLowerCase()}">${r}</span>`).join('')}
+                </div>
             </td>
-            <td>
-                ${groups.map(g => `<span class="group-badge">${g}</span>`).join('') || '<span style="color: var(--admin-text-muted); font-size: 0.8rem;">None</span>'}
+            <td data-label="Groups">
+                <div style="display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end;">
+                    ${groups.map(g => `<span class="group-badge">${g}</span>`).join('') || '<span style="color: var(--admin-text-muted); font-size: 0.8rem;">None</span>'}
+                </div>
             </td>
-            <td>
+            <td data-label="Status">
                 <span class="status-badge ${user.is_disabled ? 'status-disabled' : 'status-active'}">
                     ${user.is_disabled ? 'Disabled' : 'Active'}
                 </span>
             </td>
-            <td style="color: var(--admin-text-muted); font-size: 0.85rem;">
+            <td data-label="Joined" style="color: var(--admin-text-muted); font-size: 0.85rem;">
                 ${new Date(user.created_at).toLocaleDateString()}
             </td>
-            <td style="text-align: right;">
+            <td data-label="Actions" style="text-align: right;">
                 <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
                     <button class="action-btn" onclick="editUser(${JSON.stringify(user).replace(/"/g, '&quot;')})" title="Edit User">
                         <i class="fa-solid fa-pen"></i>
@@ -317,18 +321,18 @@ function renderGroups(groups) {
     groups.forEach(group => {
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td style="font-weight: 600; color: var(--admin-primary);">${group.name}</td>
-            <td>${group.description || '<span style="color: var(--admin-text-muted);">No description</span>'}</td>
-            <td>
+            <td data-label="Group Name" style="font-weight: 600; color: var(--admin-primary);">${group.name}</td>
+            <td data-label="Description">${group.description || '<span style="color: var(--admin-text-muted);">No description</span>'}</td>
+            <td data-label="Members">
                 <div style="font-size: 0.9rem;">
                     <i class="fa-solid fa-users" style="margin-right: 0.5rem; color: var(--admin-text-muted);"></i>
                     ${group.member_count} members
                 </div>
             </td>
-            <td style="color: var(--admin-text-muted); font-size: 0.85rem;">
+            <td data-label="Created" style="color: var(--admin-text-muted); font-size: 0.85rem;">
                 ${new Date(group.created_at).toLocaleDateString()}
             </td>
-            <td style="text-align: right;">
+            <td data-label="Actions" style="text-align: right;">
                 <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
                     <button class="action-btn" onclick="editGroup(${JSON.stringify(group).replace(/"/g, '&quot;')})" title="Edit Group">
                         <i class="fa-solid fa-pen"></i>

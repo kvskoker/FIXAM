@@ -211,6 +211,7 @@
                 grid-template-columns: 1fr;
                 grid-template-rows: auto 1fr;
                 height: 100vh;
+                overflow: hidden;
             }
             .admin-sidebar {
                 flex-direction: row;
@@ -227,12 +228,96 @@
                 width: 100%;
                 justify-content: space-around;
             }
+            .admin-nav-item {
+                padding: 0.5rem;
+            }
             .admin-nav-item span { display: none; }
-            .admin-header-section { margin: 0; padding: 0.5rem; background: none; border: none; }
-            .admin-header-section img { height: 35px; }
-            .admin-main { padding: 1.5rem; height: calc(100vh - 70px); }
-            .admin-header { flex-direction: column; align-items: flex-start; gap: 1rem; }
-            #admin-info, .admin-user-display { display: none !important; }
+            .admin-header-section { 
+                margin: 0; 
+                padding: 0; 
+                background: none; 
+                border: none; 
+                width: auto;
+            }
+            .admin-header-section img { height: 32px; }
+            #theme-toggle-admin { width: 32px; height: 32px; }
+            
+            .admin-main { 
+                padding: 1rem; 
+                height: calc(100vh - 70px); 
+                overflow-y: auto;
+            }
+            .admin-header { 
+                flex-direction: column; 
+                align-items: flex-start; 
+                gap: 1rem; 
+                margin-bottom: 1.5rem;
+            }
+            .admin-header h1 { font-size: 1.5rem; }
+
+            .issues-toolbar {
+                flex-direction: column;
+                align-items: stretch !important;
+                gap: 0.75rem !important;
+            }
+            .issues-toolbar input, .issues-toolbar select {
+                width: 100% !important;
+            }
+            
+            /* Table responsiveness */
+            .chart-card table thead { display: none; }
+            .chart-card table tr { 
+                display: block; 
+                margin-bottom: 1rem; 
+                border: 1px solid var(--admin-border); 
+                border-radius: 8px;
+                padding: 0.5rem;
+                background: var(--admin-card-bg);
+            }
+            .chart-card table td { 
+                display: flex; 
+                justify-content: space-between; 
+                align-items: center; 
+                text-align: right;
+                padding: 0.6rem 0.5rem !important;
+                border: none !important;
+            }
+            .chart-card table td::before { 
+                content: attr(data-label); 
+                font-weight: 600; 
+                text-align: left;
+                color: var(--admin-text-muted);
+                font-size: 0.85rem;
+            }
+
+            .pagination-controls {
+                flex-wrap: wrap;
+                gap: 0.5rem;
+                padding: 1rem 0;
+            }
+            #page-info {
+                position: static !important;
+                width: 100%;
+                text-align: center;
+                order: -1;
+            }
+
+            /* Modal grid to stack */
+            #issue-modal .login-card {
+                width: 95% !important;
+                margin: 10px;
+                padding: 1.5rem !important;
+            }
+            #issue-modal .login-card > div[style*="grid-template-columns"] {
+                grid-template-columns: 1fr !important;
+                gap: 1.5rem !important;
+            }
+            #issue-modal div[style*="border-left"] {
+                border-left: none !important;
+                padding-left: 0 !important;
+                border-top: 1px solid var(--admin-border);
+                padding-top: 1.5rem;
+            }
         }
     </style>
 </head>
