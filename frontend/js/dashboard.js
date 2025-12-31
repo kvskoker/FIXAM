@@ -254,7 +254,7 @@ function renderTrendsChart(trends) {
                 const [year, month, day] = d.split('-');
                 // Create UTC date to ensure labels match the YYYY-MM-DD string exactly
                 const date = new Date(Date.UTC(year, month - 1, day));
-                return date.toLocaleDateString(undefined, { 
+                return date.toLocaleDateString('en-GB', { 
                     month: 'short', 
                     day: 'numeric',
                     timeZone: 'UTC' // Explicitly use UTC for display

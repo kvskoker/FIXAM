@@ -236,7 +236,7 @@ function renderIssuesTable(issues) {
             <td data-label="Location" style="padding: 1rem; color: var(--admin-text-muted);">${parseFloat(issue.lat).toFixed(4)}, ${parseFloat(issue.lng).toFixed(4)}</td>
             <td data-label="Votes" style="padding: 1rem;">${issue.upvotes || 0}</td>
             <td data-label="Status" style="padding: 1rem;"><span style="color: ${statusColors[issue.status] || 'white'}; font-weight: 600; text-transform: capitalize;">${issue.status}</span></td>
-            <td data-label="Date" style="padding: 1rem; color: var(--admin-text-muted); font-size: 0.9rem;">${new Date(issue.created_at).toLocaleDateString()}</td>
+            <td data-label="Date" style="padding: 1rem; color: var(--admin-text-muted); font-size: 0.9rem;">${new Date(issue.created_at).toLocaleDateString('en-GB')}</td>
             <td data-label="Action" style="padding: 1rem;"><button onclick="openIssueDetails(${issue.id})" style="background: var(--admin-primary); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; width: 100%;">Manage</button></td>
         `;
         tbody.appendChild(tr);
@@ -328,7 +328,7 @@ function renderTimeline(logs) {
         item.style.cssText = 'margin-bottom: 1.5rem; position: relative;';
         item.innerHTML = `
             <div style="position: absolute; left: -1.35rem; top: 0; width: 12px; height: 12px; background: var(--admin-primary); border-radius: 50%; border: 2px solid var(--admin-card-bg);"></div>
-            <div style="font-size: 0.85rem; color: var(--admin-text-muted); margin-bottom: 0.25rem;">${new Date(log.created_at).toLocaleString()}</div>
+            <div style="font-size: 0.85rem; color: var(--admin-text-muted); margin-bottom: 0.25rem;">${new Date(log.created_at).toLocaleString('en-GB')}</div>
             <div style="font-weight: 600; margin-bottom: 0.25rem; text-transform: capitalize;">${log.action.replace('_', ' ')}</div>
             <div style="font-size: 0.9rem; color: var(--admin-text-muted);">${log.description}</div>
             ${log.performed_by_name ? `<div style="font-size: 0.8rem; color: var(--admin-primary); margin-top: 0.25rem;">By: ${log.performed_by_name}</div>` : ''}

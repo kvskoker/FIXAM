@@ -277,7 +277,7 @@ function renderIssues(issues) {
                     <div style="color: var(--text-primary); font-family: monospace; font-weight: 600;">#${issue.ticket_id}</div>
                     
                     <div style="font-weight: 500;">Reported:</div>
-                    <div style="color: var(--text-primary);">${new Date(issue.reported_on || issue.created_at).toLocaleDateString()}</div>
+                    <div style="color: var(--text-primary);">${new Date(issue.reported_on || issue.created_at).toLocaleDateString('en-GB')}</div>
                     
                     <div style="font-weight: 500;">By:</div>
                     <div style="color: var(--text-primary);">${issue.reported_by_name || 'Anonymous citizen'}</div>
@@ -327,7 +327,7 @@ function renderIssues(issues) {
                 <i class="fa-solid fa-location-dot"></i> Freetown, SL
             </div>
             <div class="issue-meta">
-                <span>${new Date(issue.reported_on || issue.created_at).toLocaleDateString()}</span>
+                <span>${new Date(issue.reported_on || issue.created_at).toLocaleDateString('en-GB')}</span>
                 <div class="vote-count">
                     <i class="fa-solid fa-arrow-up"></i> ${issue.upvotes || 0}
                 </div>
@@ -480,7 +480,7 @@ async function viewTracker(issueId) {
                             <div style="font-weight: 600; color: var(--text-color); text-transform: capitalize;">${log.action.replace('_', ' ')}</div>
                             <div style="font-size: 0.9rem; color: #64748b; margin-top: 0.25rem;">${log.description || 'No description'}</div>
                             ${log.performed_by_name ? `<div style="font-size: 0.85rem; color: #94a3b8; margin-top: 0.25rem;">By: ${log.performed_by_name}</div>` : ''}
-                            <div style="font-size: 0.8rem; color: #cbd5e1; margin-top: 0.25rem;">${new Date(log.created_at).toLocaleString()}</div>
+                            <div style="font-size: 0.8rem; color: #cbd5e1; margin-top: 0.25rem;">${new Date(log.created_at).toLocaleString('en-GB')}</div>
                         </div>
                     </div>
                 `;

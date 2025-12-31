@@ -138,7 +138,7 @@ function renderUsers(users) {
                 </span>
             </td>
             <td data-label="Joined" style="color: var(--admin-text-muted); font-size: 0.85rem;">
-                ${new Date(user.created_at).toLocaleDateString()}
+                ${new Date(user.created_at).toLocaleDateString('en-GB')}
             </td>
             <td data-label="Actions" style="text-align: right;">
                 <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
@@ -330,7 +330,7 @@ function renderGroups(groups) {
                 </div>
             </td>
             <td data-label="Created" style="color: var(--admin-text-muted); font-size: 0.85rem;">
-                ${new Date(group.created_at).toLocaleDateString()}
+                ${new Date(group.created_at).toLocaleDateString('en-GB')}
             </td>
             <td data-label="Actions" style="text-align: right;">
                 <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
