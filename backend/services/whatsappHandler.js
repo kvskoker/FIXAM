@@ -109,7 +109,7 @@ class FixamHandler {
             
             if (state && state.current_step === 'awaiting_name') {
                 // Register user
-                const name = input;
+                const name = this.extractName(input);
                 if (name.length < 2) {
                     await this.sendMessage(fromNumber, "Please enter a valid name.");
                     return;
@@ -660,6 +660,39 @@ class FixamHandler {
             messageType: 'text',
             messageBody: body
         });
+    }
+    extractName(input) {
+        // 1. Remove common greetings/punctuation from start
+        let clean = input.replace(/^(hi|hello|hey|good\s+(morning|afternoon|evening))\s*[!,.]*\s*/i, '');
+        
+        // 2. Remove trailing punctuation
+        clean = clean.replace(/[.!]+$/, '');
+        
+        // 3. Check for Intro Patterns
+        const patterns = [
+            /^my name is\s+(.+)/i,
+            /^name is\s+(.+)/i,
+            /^i am\s+(.+)/i,
+            /^i'm\s+(.+)/i,
+            /^im\s+(.+)/i,
+            /^call me\s+(.+)/i,
+            /^this is\s+(.+)/i,
+            /^names\s+(.+)/i,
+            /^it's\s+(.+)/i,
+            /^its\s+(.+)/i
+        ];
+
+        for (const pattern of patterns) {
+            const match = clean.match(pattern);
+            if (match && match[1]) {
+                // Return the captured name, trimmed
+                // Also capitalize first letter of each word for good measure
+                return match[1].trim().replace(/\w\S*/g, (w) => (w.replace(/^\w/, (c) => c.toUpperCase())));
+            }
+        }
+        
+        // 4. Fallback: Return formatted original input
+        return clean.trim().replace(/\w\S*/g, (w) => (w.replace(/^\w/, (c) => c.toUpperCase())));
     }
 }
 
