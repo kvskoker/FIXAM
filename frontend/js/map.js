@@ -294,15 +294,20 @@ function renderIssues(issues) {
             </div>
         `;
 
-        marker.bindPopup(popupContent);
+        marker.bindPopup(popupContent, {
+            autoPan: false, // Prevent map shifting while opening popup
+            closeButton: true,
+            maxWidth: 300
+        });
         
         // Add zoom and open popup on marker click
         marker.on('click', (e) => {
+            L.DomEvent.stopPropagation(e); // Prevent map click handler from triggering
             map.flyTo(e.latlng, 16);
-            // Small timeout ensures the popup opens after the animation starts/settles
+            // Small timeout ensures the popup opens AFTER the animation base starts
             setTimeout(() => {
                 marker.openPopup();
-            }, 300);
+            }, 350);
         });
 
         markers[issue.id] = marker;
@@ -333,7 +338,7 @@ function renderIssues(issues) {
             map.flyTo([issue.lat, issue.lng], 16);
             setTimeout(() => {
                 marker.openPopup();
-            }, 300);
+            }, 350);
             
             document.querySelectorAll('.issue-card').forEach(c => c.style.borderColor = 'var(--border-color)');
             card.style.borderColor = 'var(--primary-color)';
