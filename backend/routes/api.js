@@ -678,6 +678,32 @@ router.put('/admin/issues/:id/status', async (req, res) => {
             `, [dup.id, action, `Status synced from original: ${status}`, admin_id || null]);
         }
 
+        // 3. Notify Reporters via WhatsApp
+        try {
+            const reportersResult = await db.query(`
+                SELECT i.ticket_id, i.title, u.phone_number
+                FROM issues i
+                JOIN users u ON i.reported_by = u.id
+                WHERE (i.id = $1 OR i.duplicate_of = $1) 
+                AND u.phone_number IS NOT NULL
+            `, [id]);
+
+            const statusMap = {
+                'acknowledged': 'Acknowledged 📝',
+                'progress': 'In Progress 🏗️',
+                'fixed': 'Resolved ✅',
+                'critical': 'High Priority 🚨'
+            };
+            const friendlyStatus = (statusMap[status] || status).toUpperCase();
+
+            for (const row of reportersResult.rows) {
+                const message = `🔔 *Issue Update*\n\nThe status of your report *${row.title}* (#${row.ticket_id}) has been updated to: *${friendlyStatus}*.\n\nThank you for helping us make our community better! 🌟`;
+                await whatsappService.sendMessage(row.phone_number, message);
+            }
+        } catch (notifyErr) {
+            console.error('Error notifying reporters:', notifyErr);
+        }
+
         res.json({ success: true, message: 'Status updated successfully' });
 
     } catch (err) {
