@@ -12,22 +12,38 @@ const API_BASE_URL = window.location.port === '3000'
     : '/api';
 
 function setupDateRestrictions() {
-    const today = new Date().toISOString().split('T')[0];
-    startDateInput.max = today;
-    endDateInput.max = today;
-
-    startDateInput.addEventListener('change', () => {
-        endDateInput.min = startDateInput.value;
-        if (endDateInput.value && endDateInput.value < startDateInput.value) {
-            endDateInput.value = startDateInput.value;
+    const today = new Date();
+    
+    // Initialize Flatpickr for Start Date
+    const startPicker = flatpickr("#dashboard-start-date", {
+        dateFormat: "Y-m-d",
+        altInput: true,
+        altFormat: "d/m/Y",
+        maxDate: today,
+        onChange: function(selectedDates, dateStr, instance) {
+            endPicker.set('minDate', dateStr);
+            if (endDateInput.value && endDateInput.value < dateStr) {
+                endPicker.setDate(dateStr);
+            }
+            fetchDashboardData();
         }
     });
 
-    endDateInput.addEventListener('change', () => {
-        if (startDateInput.value && startDateInput.value > endDateInput.value) {
-            startDateInput.value = endDateInput.value;
+    // Initialize Flatpickr for End Date
+    const endPicker = flatpickr("#dashboard-end-date", {
+        dateFormat: "Y-m-d",
+        altInput: true,
+        altFormat: "d/m/Y",
+        maxDate: today,
+        onChange: function(selectedDates, dateStr, instance) {
+            startPicker.set('maxDate', dateStr ? dateStr : today);
+            fetchDashboardData();
         }
     });
+
+    // Store pickers on elements for easy access if needed
+    startDateInput._flatpickr = startPicker;
+    endDateInput._flatpickr = endPicker;
 }
 
 async function fetchDashboardData() {
@@ -345,5 +361,4 @@ setupDateRestrictions();
 fetchDashboardData();
 
 // Date Filter Listeners
-startDateInput.addEventListener('change', fetchDashboardData);
-endDateInput.addEventListener('change', fetchDashboardData);
+// Date Filter Listeners handled by Flatpickr in setupDateRestrictions

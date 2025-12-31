@@ -13,8 +13,47 @@
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- Flatpickr CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    
     <!-- Custom CSS -->
     <link rel="stylesheet" href="css/style.css">
+    <style>
+
+         :root {
+            /* Light Theme (Default) */
+            --admin-bg: #f8fafc;
+            --admin-card-bg: #ffffff;
+            --admin-text: #1e293b;
+            --admin-text-muted: #64748b;
+            --admin-primary: #2563eb;
+            --admin-success: #22c55e;
+            --admin-warning: #f59e0b;
+            --admin-danger: #ef4444;
+            --admin-border: #e2e8f0;
+        }
+
+        body.dark-mode {
+            --admin-bg: #0f172a;
+            --admin-card-bg: #1e293b;
+            --admin-text: #f8fafc;
+            --admin-text-muted: #94a3b8;
+            --admin-primary: #3b82f6;
+            --admin-success: #10b981;
+            --admin-border: #334155;
+        }
+
+        .filter-input {
+            background: var(--admin-card-bg);
+            border: 1px solid var(--admin-border);
+            color: var(--admin-text);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            outline: none;
+            width: 100%;
+        }
+    </style>
 
         <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -58,7 +97,7 @@
                     <h3 style="margin-bottom: 0.5rem; font-size: 1rem;">Filters</h3>
                     <div style="margin-bottom: 0.75rem;">
                         <label style="display: block; font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.25rem;">Category</label>
-                        <select id="dashboard-category-filter" style="width: 100%; padding: 8px; border-radius: 6px; background: var(--background-color); color: var(--text-primary); border: 1px solid var(--border-color); font-family: inherit; font-size: 0.85rem; outline: none; cursor: pointer;">
+                        <select id="dashboard-category-filter" style="width: 100%; padding: 6px 12px; border-radius: 6px; background: var(--background-color); color: var(--text-primary); border: 1px solid var(--border-color); font-family: inherit; font-size: 0.85rem; outline: none; cursor: pointer;">
                             <option value="">All Categories</option>
                             <!-- Populated by JS -->
                         </select>
@@ -66,11 +105,11 @@
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
                         <div>
                             <label style="display: block; font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.25rem;">From</label>
-                            <input type="date" id="dashboard-start-date" style="width: 100%; padding: 8px; border-radius: 6px; background: var(--background-color); color: var(--text-primary); border: 1px solid var(--border-color); font-family: inherit; font-size: 0.85rem; outline: none;">
+                            <input class="filter-input form-control" type="date" id="dashboard-start-date">
                         </div>
                         <div>
                             <label style="display: block; font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.25rem;">To</label>
-                            <input type="date" id="dashboard-end-date" style="width: 100%; padding: 8px; border-radius: 6px; background: var(--background-color); color: var(--text-primary); border: 1px solid var(--border-color); font-family: inherit; font-size: 0.85rem; outline: none;">
+                            <input class="filter-input form-control" type="date" id="dashboard-end-date">
                         </div>
                     </div>
                 </div>
@@ -132,6 +171,9 @@
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
+    <!-- Flatpickr JS -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
     <!-- App JS -->
     <script src="js/theme.js"></script>
     <script src="js/dashboard.js"></script>

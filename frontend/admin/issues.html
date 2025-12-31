@@ -13,6 +13,9 @@
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- Flatpickr CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+
     <!-- Custom CSS -->
     <link rel="stylesheet" href="../css/style.css">
     <style>
@@ -100,6 +103,16 @@
 
         .login-form button:hover {
             background: #2563eb;
+        }
+
+        .filter-input {
+            background: var(--admin-card-bg);
+            border: 1px solid var(--admin-border);
+            color: var(--admin-text);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            outline: none;
         }
 
         .admin-container {
@@ -381,9 +394,9 @@
 
                 <!-- Issues Toolbar -->
                 <div class="issues-toolbar" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center;">
-                    <input type="text" id="issue-search" placeholder="Search..." style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.5rem; border-radius: 6px; width: 300px;">
+                    <input type="text" id="issue-search" placeholder="Search..." style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 6px 12px; border-radius: 6px; width: 300px;">
 
-                    <select id="issue-filter-category" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.5rem; border-radius: 6px;">
+                    <select id="issue-filter-category" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 6px 12px; border-radius: 6px;">
                         <option value="">All Categories</option>
                         <option value="Water">Water</option>
                         <option value="Road">Road</option>
@@ -393,7 +406,7 @@
                         <option value="Other">Other</option>
                     </select>
 
-                    <select id="issue-filter-status" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.5rem; border-radius: 6px;">
+                    <select id="issue-filter-status" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 6px 12px; border-radius: 6px;">
                         <option value="">All Statuses</option>
                         <option value="critical">Critical</option>
                         <option value="progress">In Progress</option>
@@ -401,9 +414,9 @@
                     </select>
 
                     <div style="display: flex; gap: 0.5rem; align-items: center;">
-                        <input type="date" id="issue-filter-start" placeholder="Start" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.4rem 0.5rem; border-radius: 6px; width: 130px;">
+                        <input class="filter-input form-control" type="date" id="issue-filter-start" placeholder="Start">
                         <span style="color: var(--admin-text-muted);">-</span>
-                        <input type="date" id="issue-filter-end" placeholder="End" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.4rem 0.5rem; border-radius: 6px; width: 130px;">
+                        <input class="filter-input form-control" type="date" id="issue-filter-end" placeholder="End">
                         <button id="reset-issues-filters" title="Reset Filters" style="background: none; border: 1px solid var(--admin-border); color: var(--admin-text-muted); padding: 0.4rem 0.75rem; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">
                             <i class="fa-solid fa-rotate-left"></i>
                         </button>
@@ -411,7 +424,7 @@
 
                     <div style="flex-grow: 1;"></div>
 
-                    <select id="issue-sort" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.5rem; border-radius: 6px;">
+                    <select id="issue-sort" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 6px 12px; border-radius: 6px;">
                         <option value="newest">Newest First</option>
                         <option value="oldest">Oldest First</option>
                         <option value="most_votes">Most Votes</option>
@@ -536,6 +549,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Flatpickr JS -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
     <!-- Scripts -->
     <script src="../js/theme.js"></script>

@@ -27,8 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (resetFiltersBtn) {
         resetFiltersBtn.addEventListener('click', () => {
             document.getElementById('global-category-filter').value = 'All';
-            document.getElementById('global-date-start').value = '';
-            document.getElementById('global-date-end').value = '';
+            if (window.resetDateFilters) window.resetDateFilters();
             
             updateURLParams({ category: null, start_date: null, end_date: null });
             loadDashboardData();
@@ -287,26 +286,45 @@ function renderInsights(insights) {
 function setupDateRestrictions() {
     const startDate = document.getElementById('global-date-start');
     const endDate = document.getElementById('global-date-end');
+    
     if (startDate && endDate) {
-        const today = new Date().toISOString().split('T')[0];
-        startDate.max = today;
-        endDate.max = today;
-        
-        startDate.addEventListener('change', () => {
-            endDate.min = startDate.value;
-            if (endDate.value && endDate.value < startDate.value) {
-                endDate.value = startDate.value;
-                updateURLParams({ start_date: startDate.value, end_date: endDate.value });
+        const today = new Date();
+
+        const startPicker = flatpickr(startDate, {
+            dateFormat: "Y-m-d",
+            altInput: true,
+            altFormat: "d/m/Y",
+            maxDate: today,
+            onChange: function(selectedDates, dateStr, instance) {
+                endPicker.set('minDate', dateStr);
+                if (endDate.value && endDate.value < dateStr) {
+                    endPicker.setDate(dateStr);
+                }
+                updateURLParams({ start_date: dateStr, end_date: endDate.value });
                 loadDashboardData();
             }
         });
 
-        endDate.addEventListener('change', () => {
-            if (startDate.value && startDate.value > endDate.value) {
-                startDate.value = endDate.value;
-                updateURLParams({ start_date: startDate.value, end_date: endDate.value });
+        const endPicker = flatpickr(endDate, {
+            dateFormat: "Y-m-d",
+            altInput: true,
+            altFormat: "d/m/Y",
+            maxDate: today,
+            onChange: function(selectedDates, dateStr, instance) {
+                startPicker.set('maxDate', dateStr ? dateStr : today);
+                updateURLParams({ start_date: startDate.value, end_date: dateStr });
                 loadDashboardData();
             }
         });
+
+        // Handle initial values from URL
+        if(startDate.value) startPicker.setDate(startDate.value, false);
+        if(endDate.value) endPicker.setDate(endDate.value, false);
+        
+        // Expose to window for reset
+        window.resetDateFilters = () => {
+             startPicker.clear();
+             endPicker.clear();
+        };
     }
 }

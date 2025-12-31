@@ -101,27 +101,40 @@ document.addEventListener('DOMContentLoaded', () => {
 function setupDateRestrictions() {
     const startDate = document.getElementById('issue-filter-start');
     const endDate = document.getElementById('issue-filter-end');
+
     if (startDate && endDate) {
-        const today = new Date().toISOString().split('T')[0];
-        startDate.max = today;
-        endDate.max = today;
-        
-        startDate.addEventListener('change', () => {
-            endDate.min = startDate.value;
-            if (endDate.value && endDate.value < startDate.value) {
-                endDate.value = startDate.value;
+        const today = new Date();
+
+        const startPicker = flatpickr(startDate, {
+            dateFormat: "Y-m-d",
+            altInput: true,
+            altFormat: "d/m/Y",
+            maxDate: today,
+            onChange: function(selectedDates, dateStr, instance) {
+                endPicker.set('minDate', dateStr);
+                if (endDate.value && endDate.value < dateStr) {
+                    endPicker.setDate(dateStr);
+                }
                 syncFiltersToURL();
                 loadIssues();
             }
         });
 
-        endDate.addEventListener('change', () => {
-            if (startDate.value && startDate.value > endDate.value) {
-                startDate.value = endDate.value;
+        const endPicker = flatpickr(endDate, {
+            dateFormat: "Y-m-d",
+            altInput: true,
+            altFormat: "d/m/Y",
+            maxDate: today,
+            onChange: function(selectedDates, dateStr, instance) {
+                startPicker.set('maxDate', dateStr ? dateStr : today);
                 syncFiltersToURL();
                 loadIssues();
             }
         });
+        
+        // Handle initial values if set from URL
+        if(startDate.value) startPicker.setDate(startDate.value, false);
+        if(endDate.value) endPicker.setDate(endDate.value, false);
     }
 }
 
