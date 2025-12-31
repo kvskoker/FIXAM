@@ -463,6 +463,9 @@ body.dark-mode .header {
     .app-container:has(.dashboard-grid) .header .d-flex,
     .app-container:has(.main-content) .header .d-flex {
         display: flex !important;
+        flex-wrap: nowrap;
+        flex-direction: row;
+        justify-content: space-between;
     }
 
     .app-container:has(.dashboard-grid) .map-container,
