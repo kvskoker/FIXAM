@@ -32,6 +32,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='issues' AND column_name='urgency') THEN 
         ALTER TABLE issues ADD COLUMN urgency VARCHAR(20) DEFAULT 'medium'; 
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='issues' AND column_name='resolution_note') THEN 
+        ALTER TABLE issues ADD COLUMN resolution_note TEXT; 
+    END IF;
 END $$;
 
 -- Create Roles Table
@@ -101,6 +104,7 @@ CREATE TABLE IF NOT EXISTS issues (
     reported_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     duplicate_of INTEGER REFERENCES issues(id) ON DELETE SET NULL,
     urgency VARCHAR(20) DEFAULT 'medium', -- low, medium, high, critical
+    resolution_note TEXT,
     reported_on TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
