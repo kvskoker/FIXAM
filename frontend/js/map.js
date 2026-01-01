@@ -263,6 +263,16 @@ function renderIssues(issues) {
             mediaContent = `<img src="${issue.image_url || 'https://via.placeholder.com/400'}" class="popup-image" alt="${issue.title}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 8px; margin-bottom: 8px;">`;
         }
 
+        let resolutionNoteHtml = '';
+        if (issue.status === 'fixed' && issue.resolution_note) {
+            resolutionNoteHtml = `
+                <div class="resolution-note">
+                    <div class="resolution-note-title">Resolution Note</div>
+                    <div class="resolution-note-text">${issue.resolution_note}</div>
+                </div>
+            `;
+        }
+
         const popupContent = `
             <div class="popup-content" style="min-width: 280px; padding: 5px;">
                 ${mediaContent}
@@ -271,6 +281,7 @@ function renderIssues(issues) {
                      <span style="background: rgba(${colors[statusType].r}, ${colors[statusType].g}, ${colors[statusType].b}, 0.15); color: ${color}; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: capitalize;">${issue.status}</span>
                 </div>
                 <div class="popup-title" style="font-weight: 700; font-size: 1.1rem; margin-bottom: 10px; color: var(--text-primary);">${issue.title}</div>
+                ${resolutionNoteHtml}
                 
                 <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 0.85rem; margin-bottom: 15px; color: var(--text-secondary);">
                     <div style="font-weight: 500;">Issue ID:</div>
@@ -449,19 +460,21 @@ async function viewTracker(issueId) {
 
         const modalContent = document.createElement('div');
         modalContent.style.cssText = `
-            background: white;
+            background: var(--surface-color);
+            color: var(--text-primary);
             padding: 2rem;
             border-radius: 12px;
             max-width: 600px;
             max-height: 80vh;
             overflow-y: auto;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border-color);
         `;
 
         let trackerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-                <h2 style="margin: 0; color: var(--text-color);">Issue History</h2>
-                <button onclick="this.closest('[style*=fixed]').remove()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b;">&times;</button>
+                <h2 style="margin: 0; color: var(--text-primary);">Issue History</h2>
+                <button onclick="this.closest('[style*=fixed]').remove()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-secondary);">&times;</button>
             </div>
         `;
 
@@ -477,10 +490,10 @@ async function viewTracker(issueId) {
                         <div style="position: absolute; left: -2rem; top: 0; width: 12px; height: 12px; border-radius: 50%; background: var(--primary-color); border: 3px solid white; box-shadow: 0 0 0 2px var(--primary-color);"></div>
                         ${!isLast ? '<div style="position: absolute; left: -1.44rem; top: 12px; width: 2px; height: calc(100% - 12px); background: #e2e8f0;"></div>' : ''}
                         <div>
-                            <div style="font-weight: 600; color: var(--text-color); text-transform: capitalize;">${log.action.replace('_', ' ')}</div>
-                            <div style="font-size: 0.9rem; color: #64748b; margin-top: 0.25rem;">${log.description || 'No description'}</div>
-                            ${log.performed_by_name ? `<div style="font-size: 0.85rem; color: #94a3b8; margin-top: 0.25rem;">By: ${log.performed_by_name}</div>` : ''}
-                            <div style="font-size: 0.8rem; color: #cbd5e1; margin-top: 0.25rem;">${new Date(log.created_at).toLocaleString('en-GB')}</div>
+                            <div style="font-weight: 600; color: var(--text-primary); text-transform: capitalize;">${log.action.replace('_', ' ')}</div>
+                            <div style="font-size: 0.9rem; color: var(--text-secondary); margin-top: 0.25rem;">${log.description || 'No description'}</div>
+                            ${log.performed_by_name ? `<div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">By: ${log.performed_by_name}</div>` : ''}
+                            <div style="font-size: 0.8rem; color: var(--text-secondary); opacity: 0.7; margin-top: 0.25rem;">${new Date(log.created_at).toLocaleString('en-GB')}</div>
                         </div>
                     </div>
                 `;

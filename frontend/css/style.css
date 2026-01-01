@@ -492,3 +492,133 @@ body.dark-mode .header {
         height: 220px;
     }
 }
+
+/* Password Toggle Styles */
+.password-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.password-wrapper input {
+    width: 100%;
+    padding-right: 2.5rem !important; /* Make room for the icon */
+}
+
+.password-toggle-icon {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%; /* Center vertically in wrapper */
+    transform: translateY(-50%); /* Adjust for absolute centering */
+    cursor: pointer;
+    color: var(--text-secondary);
+    z-index: 10;
+    padding: 0.25rem;
+    margin-top: -0.5rem; /* Correction for wrapper being just the input usually, but we need to check the markup structure */
+}
+
+/* Adjust top position because the input has a margin-bottom */
+.login-form .password-wrapper .password-toggle-icon {
+   top: calc(50% - 0.5rem); /* Adjust based on input's margin-bottom of 1rem if wrapper helps */
+   transform: none;
+   margin-top: 0;
+}
+
+/* Actually, the input has margin-bottom: 1rem in .login-form input. 
+   If we wrap the input, the wrapper will take the height of the input. 
+   If the wrapper doesn't have margin-bottom, the next element (button) might be too close.
+   So .password-wrapper should probably have the margin-bottom that the input had. 
+*/
+.password-wrapper {
+    margin-bottom: 1rem;
+    display: block; /* Ensure it takes full width */
+}
+
+.password-wrapper input {
+    margin-bottom: 0 !important; /* Remove margin from input as wrapper handles it */
+}
+
+.password-toggle-icon {
+    top: 50%;
+    transform: translateY(-50%); 
+}
+
+.password-toggle-icon:hover {
+    color: var(--primary-color);
+}
+
+/* Chat Now Button */
+.chat-now-btn {
+    display: inline-block;
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--primary-color);
+    padding: 12px;
+    border-radius: 16px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.chat-now-btn:hover {
+    background: white;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+body.dark-mode .chat-now-btn {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+body.dark-mode .chat-now-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+/* Leaflet Popup Dark Mode Support */
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+    background-color: var(--surface-color) !important;
+    color: var(--text-primary) !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2) !important;
+}
+
+.leaflet-popup-close-button {
+    color: var(--text-secondary) !important;
+}
+
+/* Resolution Note */
+.resolution-note {
+    background-color: rgba(34, 197, 94, 0.1);
+    border-left: 4px solid var(--success-color);
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 12px;
+    margin-top: 8px;
+}
+
+.resolution-note-title {
+    color: #166534;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+
+.resolution-note-text {
+    color: #15803d;
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
+body.dark-mode .resolution-note {
+    background-color: rgba(34, 197, 94, 0.15);
+}
+
+body.dark-mode .resolution-note-title {
+    color: #4ade80; /* lighter green for dark mode */
+}
+
+body.dark-mode .resolution-note-text {
+    color: #86efac; /* even lighter green for dark mode */
+}

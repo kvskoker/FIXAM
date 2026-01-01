@@ -130,4 +130,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (logoutBtn) {
         logoutBtn.addEventListener('click', handleLogout);
     }
+
+    // Password Toggle Handler
+    const togglePassword = document.getElementById('toggle-password');
+    const adminPassword = document.getElementById('admin-password');
+    if (togglePassword && adminPassword) {
+        togglePassword.addEventListener('click', () => {
+            const type = adminPassword.getAttribute('type') === 'password' ? 'text' : 'password';
+            adminPassword.setAttribute('type', type);
+            // Toggle the eye/eye-slash icon
+            togglePassword.classList.toggle('fa-eye');
+            togglePassword.classList.toggle('fa-eye-slash');
+        });
+    }
 });

@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FIXAM - User Management</title>
+
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-title" content="Fixam" />
+<link rel="manifest" href="/site.webmanifest" />
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -437,7 +444,10 @@
             <img src="../fixam-logo-blue.svg" alt="FIXAM" height="80" style="margin-bottom: 1rem;">
             <form id="login-form">
                 <input type="tel" id="admin-phone" placeholder="Phone Number" class="form-control" style="margin-bottom: 1rem;" required>
-                <input type="password" id="admin-password" placeholder="Password" class="form-control" style="margin-bottom: 1.5rem;" required>
+                <div class="password-wrapper" style="margin-bottom: 1.5rem;">
+                    <input type="password" id="admin-password" placeholder="Password" class="form-control" style="margin-bottom: 0;" required>
+                    <i class="fa-solid fa-eye password-toggle-icon" id="toggle-password"></i>
+                </div>
                 <button type="submit" class="btn btn-primary" style="width: 100%;">Access Portal</button>
             </form>
             <p id="login-error" style="color: var(--admin-danger); margin-top: 1rem; display: none;">Invalid credentials</p>

@@ -35,6 +35,7 @@ router.get('/issues', async (req, res) => {
         let query = `
             SELECT 
                 i.*,
+                i.resolution_note,
                 u.name as reported_by_name,
                 COALESCE(v.upvotes, 0) as upvotes,
                 COALESCE(v.downvotes, 0) as downvotes,
@@ -650,10 +651,17 @@ router.put('/admin/issues/:id/status', async (req, res) => {
         }
 
         // 1. Update Issue Status
-        await db.query('UPDATE issues SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
-
-        // 1.b Propagation: Update all duplicates of this issue
-        await db.query('UPDATE issues SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE duplicate_of = $2', [status, id]);
+        if (status === 'fixed' && note) {
+            await db.query('UPDATE issues SET status = $1, resolution_note = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3', [status, note, id]);
+            
+            // 1.b Propagation: Update all duplicates of this issue
+            await db.query('UPDATE issues SET status = $1, resolution_note = $2, updated_at = CURRENT_TIMESTAMP WHERE duplicate_of = $3', [status, note, id]);
+        } else {
+            await db.query('UPDATE issues SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
+            
+            // 1.b Propagation: Update all duplicates of this issue
+            await db.query('UPDATE issues SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE duplicate_of = $2', [status, id]);
+        }
 
         // 2. Log to Tracker
         // Map status to a readable action

@@ -75,8 +75,31 @@ document.addEventListener('DOMContentLoaded', () => {
     if (confirmYes) {
         confirmYes.addEventListener('click', async () => {
             const pendingStatus = confirmYes.getAttribute('data-pending-status');
+            const noteInput = document.getElementById('confirm-note-input');
+            const noteError = document.getElementById('confirm-note-error');
+            const note = noteInput.value.trim();
+
+            if (pendingStatus === 'fixed' && !note) {
+                noteError.style.display = 'block';
+                return;
+            } else {
+                noteError.style.display = 'none';
+            }
+
             if (pendingStatus) {
-                await executeStatusUpdate(pendingStatus);
+                // Show spinner
+                const originalText = confirmYes.innerHTML;
+                confirmYes.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Updating...';
+                confirmYes.disabled = true;
+                document.getElementById('confirm-no-btn').disabled = true;
+
+                await executeStatusUpdate(pendingStatus, note);
+                
+                // Reset (though modal closes, good practice)
+                confirmYes.innerHTML = originalText;
+                confirmYes.disabled = false;
+                document.getElementById('confirm-no-btn').disabled = false;
+                
                 document.getElementById('status-confirm-overlay').classList.add('hidden');
             }
         });
@@ -366,16 +389,33 @@ function updateStatus(newStatus) {
     const overlay = document.getElementById('status-confirm-overlay');
     const messageEl = document.getElementById('confirm-message');
     const yesBtn = document.getElementById('confirm-yes-btn');
+    const noteLabel = document.getElementById('confirm-note-label');
+    const noteInput = document.getElementById('confirm-note-input');
+    const noteError = document.getElementById('confirm-note-error');
 
     if (overlay && messageEl && yesBtn) {
         const friendlyStatus = newStatus === 'fixed' ? 'Resolved' : (newStatus === 'progress' ? 'In Progress' : 'Acknowledged');
         messageEl.textContent = `Are you sure you want to update the status of this issue to "${friendlyStatus}"?`;
         yesBtn.setAttribute('data-pending-status', newStatus);
+        
+        // Reset inputs
+        noteInput.value = '';
+        noteError.style.display = 'none';
+
+        if (newStatus === 'fixed') {
+            noteLabel.innerHTML = 'Resolution Note <span style="color: var(--admin-danger);">*</span> (Visible to Public)';
+            noteInput.placeholder = 'Please explain how this issue was resolved...';
+        } else {
+            noteLabel.textContent = 'Internal Note (Optional)';
+            noteInput.placeholder = 'Add a note for the log...';
+        }
+
         overlay.classList.remove('hidden');
+        setTimeout(() => noteInput.focus(), 100);
     }
 }
 
-async function executeStatusUpdate(newStatus) {
+async function executeStatusUpdate(newStatus, note) {
     const adminUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
     if (!adminUser) return;
     
@@ -386,7 +426,7 @@ async function executeStatusUpdate(newStatus) {
             body: JSON.stringify({ 
                 status: newStatus, 
                 admin_id: adminUser.id, 
-                note: `Status updated to ${newStatus} by Admin` 
+                note: note || `Status updated to ${newStatus} by Admin` 
             })
         });
         const data = await res.json();

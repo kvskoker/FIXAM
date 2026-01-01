@@ -27,6 +27,8 @@ function initTheme() {
             if (icon) {
                 icon.className = isDark ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
             }
+            // Dispatch event for map to update
+            window.dispatchEvent(new CustomEvent('themeChanged', { detail: { isDark } }));
         });
     }
 

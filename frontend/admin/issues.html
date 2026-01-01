@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FIXAM - Issue Management</title>
     
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-title" content="Fixam" />
+<link rel="manifest" href="/site.webmanifest" />
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -345,7 +352,10 @@
            
             <form id="login-form" class="login-form">
                 <input type="tel" id="admin-phone" placeholder="Phone Number" required>
-                <input type="password" id="admin-password" placeholder="Password (Phone Number)" required>
+                <div class="password-wrapper">
+                    <input type="password" id="admin-password" placeholder="Password (Phone Number)" required>
+                    <i class="fa-solid fa-eye password-toggle-icon" id="toggle-password"></i>
+                </div>
                 <button type="submit">Access Dashboard</button>
             </form>
             <p id="login-error" style="color: var(--admin-danger); margin-top: 1rem; display: none;">Invalid credentials</p>
@@ -475,7 +485,13 @@
                 <div style="background: var(--admin-card-bg); padding: 2rem; border-radius: 12px; border: 1px solid var(--admin-border); max-width: 400px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);">
                     <i class="fa-solid fa-circle-question" style="font-size: 3rem; color: var(--admin-primary); margin-bottom: 1rem;"></i>
                     <h3 id="confirm-title" style="margin-bottom: 0.5rem; font-family: 'Outfit', sans-serif;">Confirm Action</h3>
-                    <p id="confirm-message" style="color: var(--admin-text-muted); margin-bottom: 2rem;">Are you sure you want to proceed?</p>
+                    <p id="confirm-message" style="color: var(--admin-text-muted); margin-bottom: 1rem;">Are you sure you want to proceed?</p>
+                    
+                    <div id="confirm-note-container" style="margin-bottom: 1.5rem; text-align: left;">
+                        <label id="confirm-note-label" style="display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.5rem; color: var(--admin-text);">Note</label>
+                        <textarea id="confirm-note-input" class="form-control" rows="3" placeholder="Enter a note..." style="width: 100%; padding: 0.75rem; border: 1px solid var(--admin-border); border-radius: 6px; background: var(--admin-bg); color: var(--admin-text);"></textarea>
+                        <p id="confirm-note-error" style="color: var(--admin-danger); font-size: 0.8rem; margin-top: 0.25rem; display: none;">Please provide a resolution note.</p>
+                    </div>
                     <div style="display: flex; gap: 1rem;">
                         <button id="confirm-yes-btn" style="flex: 1; padding: 0.75rem; background: var(--admin-primary); color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Yes, Update</button>
                         <button id="confirm-no-btn" style="flex: 1; padding: 0.75rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; font-weight: 600; cursor: pointer;">Cancel</button>

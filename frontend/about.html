@@ -5,12 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FIXAM - About The Project</title>
 
+    
+
     <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="shortcut icon" href="/favicon.ico" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <meta name="apple-mobile-web-app-title" content="Fixam" />
-    <link rel="manifest" href="/site.webmanifest" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-title" content="Fixam" />
+<link rel="manifest" href="/site.webmanifest" />
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -39,35 +41,39 @@
         }
 
         .hero-section {
-            background: linear-gradient(135deg, #2563eb, #1d4ed8);
-            color: white;
+            background: var(--surface-color);
+            color: var(--text-primary);
             padding: 2.5rem;
             border-radius: 12px;
             margin-bottom: 2rem;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            border: 1px solid var(--border-color);
         }
 
         .hero-section h1 {
             margin: 0 0 0.5rem 0;
             font-size: 2rem;
+            color: var(--primary-color);
         }
 
         .hero-section .subtitle {
             font-size: 1.1rem;
-            opacity: 0.9;
+            color: var(--text-secondary);
             font-weight: 300;
         }
 
         .hero-meta {
             margin-top: 1.5rem;
             font-size: 0.9rem;
-            background: rgba(255,255,255,0.1);
+            background: var(--background-color);
             padding: 1rem;
             border-radius: 8px;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
         }
 
         .hero-meta a {
-            color: white;
+            color: var(--primary-color);
             text-decoration: underline;
         }
 
@@ -154,10 +160,7 @@
         .bg-yellow { background-color: #eab308; }
         .bg-green { background-color: #22c55e; }
 
-        /* Dark mode overrides (assuming base classes handle vars, but adding insurance) */
-        body.dark-mode .hero-section {
-            background: linear-gradient(135deg, #1e40af, #1e3a8a);
-        }
+
     </style>
 </head>
 <body>
@@ -177,7 +180,7 @@
                 <div style="font-weight: 600; margin-bottom: 0.5rem;">Use our WhatsApp channel to report issues</div>
                 <div class="d-flex">
                     <div style="font-size: 0.9rem; margin-bottom: 0.5rem;">Send <strong>Hi</strong> on WhatsApp to: <br>+232 33 788736</div>
-                <a href="https://wa.me/23233788736" target="_blank" style="display: inline-block; background: rgba(255, 255, 255, 0.9); color: #2563eb; padding: 4px 12px; border-radius: 16px; text-decoration: none; font-weight: 600; font-size: 0.85rem;">
+                <a href="https://wa.me/23233788736" target="_blank" class="chat-now-btn">
                     <i class="fa-brands fa-whatsapp"></i> Chat Now
                 </a>
                 </div>
@@ -219,7 +222,7 @@
                         <div><i class="fa-solid fa-trophy"></i> <strong>Event:</strong> Big 5 Game Changers Hackathon (MoCTI, Sierra Leone)</div>
                         <div style="margin-top: 5px;"><i class="fa-solid fa-layer-group"></i> <strong>Theme:</strong> Public Service Architecture Revamp</div>
                         <div style="margin-top: 5px;"><i class="fa-brands fa-github"></i> <strong>Repository:</strong> <a href="https://github.com/kvskoker/FIXAM" target="_blank">github.com/kvskoker/FIXAM</a></div>
-                        <div style="margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 10px;">
+                        <div style="margin-top: 10px; border-top: 1px solid var(--border-color); padding-top: 10px;">
                             <strong>Team:</strong> Kenneth V.S. Koker (Lead Developer) & Ibrahim Jalloh (Researcher)
                         </div>
                     </div>
@@ -273,8 +276,8 @@
                         <li><strong>Evidence:</strong> The user is prompted to upload a Photo or Video.</li>
                         <li><strong>Precise Location:</strong> The bot asks the user to "Share Location" using WhatsApp’s native attachment feature, capturing precise Latitude/Longitude coordinates or type an address like "8 Jones Street".</li>
                         <li><strong>Description (Inclusive Design):</strong> The user can type a text description <strong>OR</strong> send a voice note. This is critical for accessibility.</li>
-                        <li><strong>Confirmation:</strong> The user receives a unique "Ticket ID" and a link to track their issue on the live map.</li>
-                        <li><strong>Voting:</strong> Users can upvote/downvote issues using Ticket IDs to signal urgency.</li>
+                        <li><strong>Confirmation:</strong> The user receives a unique "Issue ID" and a link to track their issue on the live map.</li>
+                        <li><strong>Voting:</strong> Users can upvote/downvote issues using Issue IDs to signal urgency.</li>
                     </ol>
 
                     <h3 id="engine" style="color: #2563eb;">Step B: The Engine (AI & GIS Backend)</h3>
@@ -334,7 +337,7 @@
                 </section>
 
                 <footer style="text-align: center; margin-top: 3rem; opacity: 0.6; font-size: 0.8rem;">
-                    &copy; 2023 FIXAM Project. Open Source.
+                    &copy; 2025 - <span id="current-year"></span> FIXAM Project. Open Source.
                 </footer>
             </div>
         </main>
@@ -352,6 +355,9 @@
                 });
             });
         });
+
+        // Set current year
+        document.getElementById('current-year').textContent = new Date().getFullYear();
     </script>
 </body>
 </html>

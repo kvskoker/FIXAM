@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FIXAM - Overview</title>
+
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-title" content="Fixam" />
+<link rel="manifest" href="/site.webmanifest" />
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -430,7 +437,10 @@
            
             <form id="login-form" class="login-form">
                 <input type="tel" id="admin-phone" placeholder="Phone Number" required>
-                <input type="password" id="admin-password" placeholder="Password (Phone Number)" required>
+                <div class="password-wrapper">
+                    <input type="password" id="admin-password" placeholder="Password (Phone Number)" required>
+                    <i class="fa-solid fa-eye password-toggle-icon" id="toggle-password"></i>
+                </div>
                 <button type="submit">Access Dashboard</button>
             </form>
             <p id="login-error" style="color: var(--admin-danger); margin-top: 1rem; display: none;">Invalid credentials</p>
