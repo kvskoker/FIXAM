@@ -362,6 +362,17 @@ async function openIssueDetails(id) {
         }
         const trackerRes = await fetch(`${API_BASE_URL}/issues/${id}/tracker`);
         const trackerLogs = await trackerRes.json();
+        
+        // Add "Reported" event to timeline start
+        if (issue) {
+            trackerLogs.unshift({
+                created_at: issue.created_at,
+                action: 'reported',
+                description: 'Issue reported via WhatsApp channel',
+                performed_by_name: issue.reported_by_name || 'User' 
+            });
+        }
+        
         renderTimeline(trackerLogs);
     } catch (err) { console.error('Error opening details:', err); }
 }
