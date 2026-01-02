@@ -228,107 +228,80 @@
                     </div>
                 </div>
 
-                <!-- 1. Summary -->
+                <!-- 1. Executive Summary -->
                 <section id="executive-summary">
-                    <h2>1. Summary</h2>
+                    <h2>1. Executive Summary</h2>
                     <p>
-                        FIXAM is a crowdsourced civic problem-reporting platform designed to bridge the communication gap between citizens and local government in Sierra Leone. By utilizing a "Hybrid Bridge" architecture, the system combines the accessibility of conversational interfaces (WhatsApp) with the analytical power of geospatial technology (GIS/Maps).
+                        FIXAM is a comprehensive civic engagement ecosystem that empowers citizens to report municipal issues via WhatsApp and enables authorities to manage, analyze, and resolve them efficiently through advanced AI and automation.
                     </p>
                     <p>
-                        The platform solves the issue of community grievances being "lost in the void" of social media by converting unstructured citizen complaints into structured, actionable geospatial data for municipal authorities.
+                        By utilizing a "Hybrid Bridge" architecture, the system combines the accessibility of conversational interfaces (WhatsApp) with the analytical power of geospatial technology (GIS/Maps), bridging the gap between informal community grievances and formal government infrastructure planning.
                     </p>
                 </section>
 
-                <!-- 2. The Problem -->
-                <section id="problem">
-                    <h2>2. The Problem Statement</h2>
-                    <p>Currently, citizens in Sierra Leone lack a formal, effective channel to report infrastructure failures.</p>
-                    
-                    <div class="feature-grid">
-                        <div class="feature-card">
-                            <i class="fa-solid fa-bullhorn"></i>
-                            <h3>The Void</h3>
-                            <p>Problems like broken water pipes or potholes are often shouted into the void of social media or radio call-in shows, where they disappear without logging.</p>
-                        </div>
-                        <div class="feature-card">
-                            <i class="fa-solid fa-scale-unbalanced"></i>
-                            <h3>Lack of Prioritization</h3>
-                            <p>Local councils lack a data-driven way to distinguish between minor inconveniences and critical infrastructure failures (e.g., affecting 5 people vs 5,000).</p>
-                        </div>
-                        <div class="feature-card">
-                            <i class="fa-solid fa-link-slash"></i>
-                            <h3>The Disconnect</h3>
-                            <p>There is no shared "source of truth" between the government and the governed regarding the status of repairs.</p>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- 3. The Solution -->
+                <!-- 2. The Solution -->
                 <section id="solution">
-                    <h2>3. The Solution: "Chat-to-Map"</h2>
-                    <p>FIXAM introduces a workflow where the input is conversational (low barrier to entry) but the output is geospatial (high utility for planning).</p>
+                    <h2>2. The Solution: "Chat-to-Map" Ecosystem</h2>
+                    <p>FIXAM introduces a seamless workflow where the input is conversational (low barrier to entry) but the output is structured operational intelligence.</p>
 
-                    <h3 id="workflow" style="color: #2563eb;">Step A: The Citizen Experience (Reporting)</h3>
-                    <p>The user interface is built entirely within <strong>WhatsApp</strong>, the most widely used communication tool in the region, ensuring high accessibility.</p>
-                    <ol>
-                        <li><strong>Trigger:</strong> User sends "Hi" or "Report" to the official WhatsApp Business API number.</li>
-                        <li><strong>Categorization:</strong> An automated bot asks the user to report an issue.</li>
-                        <li><strong>Evidence:</strong> The user is prompted to upload a Photo or Video.</li>
-                        <li><strong>Precise Location:</strong> The bot asks the user to "Share Location" using WhatsApp’s native attachment feature, capturing precise Latitude/Longitude coordinates or type an address like "8 Jones Street".</li>
-                        <li><strong>Description (Inclusive Design):</strong> The user can type a text description <strong>OR</strong> send a voice note. This is critical for accessibility.</li>
-                        <li><strong>Confirmation:</strong> The user receives a unique "Issue ID" and a link to track their issue on the live map.</li>
-                        <li><strong>Voting:</strong> Users can upvote/downvote issues using Issue IDs to signal urgency.</li>
-                    </ol>
-
-                    <h3 id="engine" style="color: #2563eb;">Step B: The Engine (AI & GIS Backend)</h3>
-                    <p>This is the "Sanitizer" layer that converts raw user data into structured government intelligence.</p>
+                    <h3 id="workflow" style="color: #2563eb;">Step A: 🤖 Intelligent WhatsApp Bot</h3>
+                    <p>The primary reporting channel, designed for maximum accessibility.</p>
                     <ul>
-                        <li><strong>Geocoding:</strong> Uses Nominatim OSM API to convert pins into readable addresses.</li>
-                        <li><strong>Transcription:</strong> Voice notes are transcribed into text using AI.</li>
-                        <li><strong>Summarization:</strong> Gemini AI converts long rants into "One-line Summaries".</li>
-                        <li><strong>Deduplication:</strong> Checks a 100-meter radius to flag duplicate reports automatically.</li>
+                        <li><strong>Conversational Reporting:</strong> Guided flow for citizens to report issues naturally.</li>
+                        <li><strong>Voice-to-Text:</strong> Native support for <strong>Voice Notes</strong> (Krio/English), transcribed locally via Whisper.</li>
+                        <li><strong>Evidence:</strong> Users can send photos or videos as proof.</li>
+                        <li><strong>Safety First:</strong> Automated content moderation filters unsafe images (e.g., nudity) using localized AI.</li>
+                        <li><strong>Location Intelligence:</strong> Accepts GPS pins or text addresses with reverse geocoding.</li>
                     </ul>
 
-                    <h3 id="interface" style="color: #2563eb;">Step C: The Public Interface ("The Civic Map")</h3>
-                    <p>A mobile-responsive Web Application serves as the transparency layer.</p>
+                    <h3 id="engine" style="color: #2563eb;">Step B: 🧠 The AI Engine</h3>
+                    <p>The "Sanitizing Layer" that converts raw user data into government-ready data.</p>
                     <ul>
-                        <li><strong>Visuals:</strong> A map interface (Leaflet.js) using OpenStreetMap tiles.</li>
-                        <li><strong>Status Indicators:</strong>
-                            <ul style="list-style: none; padding-left: 0; margin-top: 10px;">
-                                <li><span class="status-dot bg-red"></span> <strong>Red:</strong> Critical/Unresolved</li>
-                                <li><span class="status-dot bg-yellow"></span> <strong>Yellow:</strong> In Progress</li>
-                                <li><span class="status-dot bg-green"></span> <strong>Green:</strong> Fixed</li>
-                            </ul>
-                        </li>
-                        <li><strong>Democratic Prioritization:</strong> Users can click pins to see upvote counts ("It affects me too").</li>
+                        <li><strong>Text Classification:</strong> Automatically tags issues (e.g., "Pothole" → "Road Infrastructure").</li>
+                        <li><strong>Summarization:</strong> Gemini AI converts detailed descriptions into concise summaries.</li>
+                        <li><strong>Duplicate Detection:</strong> Smart detection of similar issues within a 100m radius to prevent redundancy.</li>
                     </ul>
 
-                    <h3 style="color: #2563eb;">Step D: The Government Dashboard</h3>
-                    <p>A Command Center for high-level data patterns.</p>
+                    <h3 id="interface" style="color: #2563eb;">Step C: 🌍 Public Civic Map & Dashboard</h3>
+                    <p>Transparent real-time visualization for the community.</p>
                     <ul>
-                        <li><strong>Heatmaps:</strong> Aggregates upvotes to show "Hotspots" for budget allocation.</li>
-                        <li><strong>Insight Cards:</strong> Auto-generated alerts (e.g., "Top Priority: Waste Management in Central Freetown").</li>
-                        <li><strong>Sentiment Analysis:</strong> Gauges the "mood of the people" regarding specific issues.</li>
+                        <li><strong>Visuals:</strong> Interactive map with color-coded markers (Critical, In Progress, Resolved).</li>
+                        <li><strong>Status Indicators:</strong> Real-time tracking of repair progress.</li>
+                        <li><strong>Democratic Prioritization:</strong> Voting system allows communities to signal urgency.</li>
+                    </ul>
+
+                    <h3 style="color: #2563eb;">Step D: 🛡️ Admin Command Center</h3>
+                    <p>A powerful suite for government and operational teams.</p>
+                    <ul>
+                        <li><strong>Issue Management:</strong> Detailed audit trails, timelines, and status workflows.</li>
+                        <li><strong>Hotspot Analysis:</strong> Aggregates upvotes to show "Hotspots" for budget allocation.</li>
+                        <li><strong>User & Group Management:</strong> Organize personnel into operational departments (e.g., "Roads Authority", "Water Board").</li>
+                    </ul>
+
+                    <h3 style="color: #2563eb;">Step E: ⚡ Automatic Operational Alerts</h3>
+                    <p>Closing the loop from report to action.</p>
+                    <ul>
+                        <li><strong>Smart Routing:</strong> Issues are automatically forwarded to the relevant department based on category.</li>
+                        <li><strong>Instant Notifications:</strong> Operational teams receive immediate WhatsApp alerts with location, details, and direct links.</li>
                     </ul>
                 </section>
 
-                <!-- 4. Technical Stack -->
+                <!-- 3. Technical Stack -->
                 <section id="tech-stack">
-                    <h2>4. Technical Stack</h2>
+                    <h2>3. Technical Stack</h2>
                     <p>The project prioritizes open-source technologies to ensure sustainability.</p>
                     <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Frontend: Bootstrap, Leaflet</span>
-                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Backend: Node.js, Python</span>
+                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Frontend: Vanilla JS, Leaflet/Mapbox</span>
+                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Backend: Node.js, Express, Socket.io</span>
                         <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Database: PostgreSQL + PostGIS</span>
-                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Mapping: OSM & Nominatim</span>
-                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Messaging: WhatsApp Business API</span>
-                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">AI: google/embeddinggemma, Whisper, NudeNet</span>
+                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">AI: Whisper, NudeNet, Gemini</span>
+                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Integration: WhatsApp Business API</span>
                     </div>
                 </section>
 
-                <!-- 5. Impact -->
+                <!-- 4. Impact -->
                 <section id="impact">
-                    <h2>5. Impact Potential</h2>
+                    <h2>4. Impact Potential</h2>
                     <ol>
                         <li><strong>Democratizing Infrastructure Data:</strong> Giving every citizen with a phone the power to act as a city inspector.</li>
                         <li><strong>Enabling Data-Driven Governance:</strong> Moving from reactive, anecdote-based planning to proactive, heatmap-based resource allocation.</li>
