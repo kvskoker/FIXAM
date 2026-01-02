@@ -98,7 +98,11 @@ class FixamHandler {
         // Global Reset
         if (lowerInput === 'reset' || lowerInput === 'cancel' || input === '9') {
             await this.fixamDb.resetConversationState(fromNumber);
-            await this.sendMessage(fromNumber, "Conversation reset. Type 'Hi' to start again.");
+            if (user) {
+                await this.sendMainMenu(fromNumber, user.name);
+            } else {
+                await this.sendMessage(fromNumber, "Conversation reset. Type 'Hi' to start again.");
+            }
             return;
         }
 
@@ -644,12 +648,15 @@ class FixamHandler {
 
         const issue = await this.fixamDb.createIssue(issueData);
         if (issue) {
-            await this.sendMessage(fromNumber, `✅ Report Submitted!\n\nIssue ID: *${ticketId}*\n\nYou can view it on the live map: https://fixam.maxcit.com/?ticket=${ticketId}`);
+            // 1. Send Success Message
+            await this.sendMessage(fromNumber, `✅ *Report Submitted Successfully!*\n\nIssue ID: *${ticketId}*\n\nYou can track this issue here: https://fixam.maxcit.com/?ticket=${ticketId}`);
             
-            // Alert Operational Team if necessary
+            // 2. Alert Operational Team if necessary
             await this.alertOperationalTeam(issue);
 
-            await this.fixamDb.resetConversationState(fromNumber);
+            // 3. Reset to Menu automatically
+            const user = await this.fixamDb.getUser(fromNumber);
+            await this.sendMainMenu(fromNumber, user ? user.name : 'there');
         } else {
             await this.sendMessage(fromNumber, "❌ Error submitting report. Please try again later.");
         }
