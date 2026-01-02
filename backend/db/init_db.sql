@@ -191,5 +191,13 @@ INSERT INTO categories (name, icon, color) VALUES
 ('Road', 'fa-road', '#64748b'),
 ('Waste', 'fa-trash', '#ef4444'),
 ('Electricity', 'fa-bolt', '#eab308'),
-('Health', 'fa-heart-pulse', '#22c55e')
+('Health', 'fa-heart-pulse', '#22c55e'),
+('Environment', 'fa-leaf', '#22c55e')
 ON CONFLICT (name) DO NOTHING;
+
+-- Create Category-Group Mapping (Many-to-Many)
+CREATE TABLE IF NOT EXISTS category_groups (
+    category_id INTEGER REFERENCES categories(id) ON DELETE CASCADE,
+    group_id INTEGER REFERENCES groups(id) ON DELETE CASCADE,
+    PRIMARY KEY (category_id, group_id)
+);

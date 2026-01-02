@@ -148,7 +148,7 @@ class FixamHandler {
                     await this.sendMessage(fromNumber, "Great! Let's report an issue.\n\nPlease send a *Photo* or *Video* of the issue as evidence, or type *9* to cancel.");
                 } else if (input === '2' || lowerInput.includes('vote')) {
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_vote_ticket_id', data: {} });
-                    await this.sendMessage(fromNumber, "Okay! Please enter the *Ticket ID* of the issue you want to vote on, or type *9* to cancel.");
+                    await this.sendMessage(fromNumber, "Okay! Please enter the *Issue ID* of the issue you want to vote on, or type *9* to cancel.");
                 } else {
                     await this.sendMainMenu(fromNumber, user.name);
                 }
@@ -283,7 +283,7 @@ class FixamHandler {
                     const dups = state.data.potential_duplicates;
                     let msg = `📝 *Issue Details:*\n\n`;
                     dups.forEach(dup => {
-                        msg += `🎫 *Ticket:* ${dup.ticket_id}\n`;
+                        msg += `🎫 *Issue ID:* ${dup.ticket_id}\n`;
                         msg += `📋 *Title:* ${dup.title}\n`;
                         msg += `📝 *Desc:* ${dup.description || 'No description'}\n`;
                         msg += `-------------------\n`;
@@ -355,7 +355,7 @@ class FixamHandler {
                     });
                     await this.sendMessage(fromNumber, `Found Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
                 } else {
-                    await this.sendMessage(fromNumber, "Issue not found. Please check the Ticket ID and try again, or type *9* to cancel.");
+                    await this.sendMessage(fromNumber, "Issue not found. Please check the Issue ID and try again, or type *9* to cancel.");
                 }
                 break;
 
@@ -644,7 +644,7 @@ class FixamHandler {
 
         const issue = await this.fixamDb.createIssue(issueData);
         if (issue) {
-            await this.sendMessage(fromNumber, `✅ Report Submitted!\n\nTicket ID: *${ticketId}*\n\nYou can view it on the live map: https://fixam.maxcit.com/?ticket=${ticketId}`);
+            await this.sendMessage(fromNumber, `✅ Report Submitted!\n\nIssue ID: *${ticketId}*\n\nYou can view it on the live map: https://fixam.maxcit.com/?ticket=${ticketId}`);
             
             // Alert Operational Team if necessary
             await this.alertOperationalTeam(issue);
@@ -661,41 +661,38 @@ class FixamHandler {
             return;
         }
 
-        // Map Category to Group
-        const categoryGroups = {
-            'Electricity': 'EDSA',
-            'Road': 'SLRSA',
-            'Health': 'MOH',
-            'Waste': 'FCC',
-            'Water': 'FCC', // Defaulting to FCC or similar if Guma not present
-            'Environment': 'EPA'
-        };
-
-        const targetGroup = categoryGroups[issue.category];
-        if (!targetGroup) return;
-
-        logger.log('alert_system', `Alerting group ${targetGroup} for issue ${issue.ticket_id}`);
-
-        const operators = await this.fixamDb.getOperationalUsersByGroup(targetGroup);
-        if (!operators || operators.length === 0) {
-            logger.log('alert_system', `No operators found for group ${targetGroup}`);
+        // Get mapped groups for this category
+        const groups = await this.fixamDb.getGroupsForCategory(issue.category);
+        
+        if (!groups || groups.length === 0) {
+            logger.log('alert_system', `No groups found for category ${issue.category}`);
             return;
         }
 
-        const alertMessage = `🚨 *CRITICAL ISSUE ALERT* 🚨\n\n` +
-            `Ticket: *${issue.ticket_id}*\n` +
-            `Category: *${issue.category}* (${targetGroup})\n` +
-            `Urgency: *${issue.urgency.toUpperCase()}*\n` +
-            `Title: ${issue.title}\n` +
-            `Location: https://www.google.com/maps/search/?api=1&query=${issue.lat},${issue.lng}\n\n` +
-            `Please investigate immediately. login to admin portal for more details.`;
+        for (const group of groups) {
+            logger.log('alert_system', `Alerting group ${group.name} for issue ${issue.ticket_id}`);
 
-        for (const op of operators) {
-            try {
-                await this.sendMessage(op.phone_number, alertMessage);
-                logger.log('alert_system', `Alert sent to ${op.name} (${op.phone_number})`);
-            } catch (err) {
-                logger.logError('alert_system', `Failed to send alert to ${op.phone_number}`, err);
+            const operators = await this.fixamDb.getOperationalUsersByGroup(group.name);
+            if (!operators || operators.length === 0) {
+                logger.log('alert_system', `No operators found for group ${group.name}`);
+                continue;
+            }
+
+            const alertMessage = `🚨 *CRITICAL ISSUE ALERT* 🚨\n\n` +
+                `Issue ID: *${issue.ticket_id}*\n` +
+                `Category: *${issue.category}* (${group.name})\n` +
+                `Urgency: *${issue.urgency.toUpperCase()}*\n` +
+                `Title: ${issue.title}\n` +
+                `Location: https://www.google.com/maps/search/?api=1&query=${issue.lat},${issue.lng}\n\n` +
+                `Please investigate immediately. Login to admin portal for more details.`;
+
+            for (const op of operators) {
+                try {
+                    await this.sendMessage(op.phone_number, alertMessage);
+                    logger.log('alert_system', `Alert sent to ${op.name} (${op.phone_number})`);
+                } catch (err) {
+                    logger.logError('alert_system', `Failed to send alert to ${op.phone_number}`, err);
+                }
             }
         }
     }

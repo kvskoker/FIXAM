@@ -275,6 +275,24 @@ class FixamDatabase {
             return null;
         }
     }
+    // Get groups for a category
+    async getGroupsForCategory(categoryName) {
+        const sql = `
+            SELECT g.* 
+            FROM groups g 
+            JOIN category_groups cg ON g.id = cg.group_id 
+            JOIN categories c ON cg.category_id = c.id 
+            WHERE c.name = $1
+        `;
+        try {
+            const result = await this.db.query(sql, [categoryName]);
+            return result.rows;
+        } catch (error) {
+            this.debugLog('Error fetching groups for category', { error: error.message, categoryName });
+            return [];
+        }
+    }
+
     // Get operational users by group name
     async getOperationalUsersByGroup(groupName) {
         const sql = `

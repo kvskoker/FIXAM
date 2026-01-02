@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     checkAuth(() => {
         loadUsers();
         loadGroups();
+        loadCategoriesForGroupModal(); // Load categories for group modal
         initEventListeners();
     });
 });
@@ -348,10 +349,16 @@ function renderGroups(groups) {
     list.innerHTML = '';
 
     groups.forEach(group => {
+        const categories = Array.isArray(group.categories) ? group.categories : JSON.parse(group.categories || '[]');
+        const categoriesHtml = categories.length > 0
+            ? categories.map(c => `<span class="badge" style="background: rgba(37, 99, 235, 0.1); color: var(--admin-primary); border: 1px solid rgba(37, 99, 235, 0.2); margin-right: 6px; padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; display: inline-block; margin-bottom: 4px;">${c.name}</span>`).join('')
+            : '<span style="color: var(--admin-text-muted); font-style: italic;">None</span>';
+
         const row = document.createElement('tr');
         row.innerHTML = `
             <td data-label="Group Name" style="font-weight: 600; color: var(--admin-primary);">${group.name}</td>
             <td data-label="Description">${group.description || '<span style="color: var(--admin-text-muted);">No description</span>'}</td>
+            <td data-label="Assigned Categories">${categoriesHtml}</td>
             <td data-label="Members">
                 <div style="font-size: 0.9rem;">
                     <i class="fa-solid fa-users" style="margin-right: 0.5rem; color: var(--admin-text-muted);"></i>
@@ -425,6 +432,8 @@ async function handleGroupSubmit(e) {
     const id = document.getElementById('edit-group-id').value;
     const name = document.getElementById('group-name').value;
     const description = document.getElementById('group-desc').value;
+    
+    const categories = groupCategoriesTomSelect ? groupCategoriesTomSelect.getValue() : [];
 
     const method = id ? 'PUT' : 'POST';
     const url = id ? `${API_BASE_URL}/admin/groups/${id}` : `${API_BASE_URL}/admin/groups`;
@@ -433,7 +442,7 @@ async function handleGroupSubmit(e) {
         const response = await fetch(url, {
             method,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, description })
+            body: JSON.stringify({ name, description, categories })
         });
 
         if (response.ok) {
@@ -456,6 +465,15 @@ function editGroup(group) {
     document.getElementById('edit-group-id').value = group.id;
     document.getElementById('group-name').value = group.name;
     document.getElementById('group-desc').value = group.description || '';
+    
+    // Set Categories
+    if (groupCategoriesTomSelect) {
+        const categories = Array.isArray(group.categories) ? group.categories : JSON.parse(group.categories || '[]');
+        // API now returns objects {id, name}, extract IDs for select value
+        const categoryIds = categories.map(c => c.id);
+        groupCategoriesTomSelect.setValue(categoryIds);
+    }
+    
     openModal('group-modal');
 }
 
@@ -475,11 +493,53 @@ async function deleteGroup(id) {
     }
 }
 
+let groupCategoriesTomSelect;
+
+async function loadCategoriesForGroupModal() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/categories`);
+        const categories = await response.json();
+        
+        const select = document.getElementById('group-categories-select');
+        select.innerHTML = '';
+        categories.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.id; // Send ID to backend
+            opt.textContent = cat.name;
+            select.appendChild(opt);
+        });
+
+        if (groupCategoriesTomSelect) {
+            groupCategoriesTomSelect.destroy();
+        }
+
+        groupCategoriesTomSelect = new TomSelect('#group-categories-select', {
+            plugins: ['remove_button'],
+            create: false,
+            placeholder: 'Select categories...',
+            maxItems: null,
+            valueField: 'value',
+            labelField: 'text',
+            searchField: 'text',
+            onInitialize: function() {
+                this.wrapper.style.width = '100%';
+            }
+        });
+
+    } catch (err) {
+        console.error('Error loading categories:', err);
+    }
+}
+
 function resetGroupForm() {
     document.getElementById('group-form').reset();
     document.getElementById('edit-group-id').value = '';
     document.getElementById('group-error').style.display = 'none';
+    if (groupCategoriesTomSelect) {
+        groupCategoriesTomSelect.clear();
+    }
 }
+
 
 // ==========================================
 // UTILITY FUNCTIONS

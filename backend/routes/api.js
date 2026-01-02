@@ -1008,9 +1008,18 @@ router.get('/admin/roles', async (req, res) => {
 router.get('/admin/groups', async (req, res) => {
     try {
         const result = await db.query(`
-            SELECT g.*, COUNT(ug.user_id) as member_count
+            SELECT 
+                g.*, 
+                COUNT(DISTINCT ug.user_id) as member_count,
+                COALESCE(
+                    JSON_AGG(json_build_object('id', c.id, 'name', c.name)) 
+                    FILTER (WHERE c.id IS NOT NULL), 
+                    '[]'
+                ) as categories
             FROM groups g
             LEFT JOIN user_groups ug ON g.id = ug.group_id
+            LEFT JOIN category_groups cg ON g.id = cg.group_id
+            LEFT JOIN categories c ON cg.category_id = c.id
             GROUP BY g.id
             ORDER BY g.name ASC
         `);
@@ -1024,7 +1033,7 @@ router.get('/admin/groups', async (req, res) => {
 // POST /api/admin/groups
 router.post('/admin/groups', async (req, res) => {
     try {
-        const { name, description } = req.body;
+        const { name, description, categories } = req.body; // categories is now array of IDs
 
         // Check for duplicate group name
         const checkGroup = await db.query('SELECT id FROM groups WHERE name = $1', [name]);
@@ -1036,7 +1045,22 @@ router.post('/admin/groups', async (req, res) => {
             'INSERT INTO groups (name, description) VALUES ($1, $2) RETURNING id',
             [name, description]
         );
-        res.json({ success: true, groupId: result.rows[0].id });
+        const groupId = result.rows[0].id;
+
+        // Assign Categories
+        if (categories && categories.length > 0) {
+            for (const catId of categories) {
+                // Ensure it's an integer to prevent SQL injection if raw, but param binding handles it.
+                // Depending on frontend, it might send strings "1", "2". Check parse.
+                await db.query(`
+                    INSERT INTO category_groups (group_id, category_id)
+                    VALUES ($1, $2)
+                    ON CONFLICT DO NOTHING
+                `, [groupId, parseInt(catId)]);
+            }
+        }
+
+        res.json({ success: true, groupId });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });
@@ -1047,9 +1071,9 @@ router.post('/admin/groups', async (req, res) => {
 router.put('/admin/groups/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, description } = req.body;
+        const { name, description, categories } = req.body;
 
-        // Check if phone number is taken by another group
+        // Check if group name is taken by another group
         const checkGroup = await db.query('SELECT id FROM groups WHERE name = $1 AND id != $2', [name, id]);
         if (checkGroup.rows.length > 0) {
             return res.status(400).json({ error: 'Another group with this name already exists' });
@@ -1059,6 +1083,19 @@ router.put('/admin/groups/:id', async (req, res) => {
             'UPDATE groups SET name = $1, description = $2 WHERE id = $3',
             [name, description, id]
         );
+
+        // Update Categories
+        if (categories) { 
+            await db.query('DELETE FROM category_groups WHERE group_id = $1', [id]);
+            for (const catId of categories) {
+                await db.query(`
+                    INSERT INTO category_groups (group_id, category_id)
+                    VALUES ($1, $2)
+                    ON CONFLICT DO NOTHING
+                `, [id, parseInt(catId)]);
+            }
+        }
+
         res.json({ success: true });
     } catch (err) {
         console.error(err);
