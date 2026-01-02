@@ -669,6 +669,7 @@ class FixamHandler {
             lng: data.lng,
             description: data.description,
             image_url: data.image_url,
+            audio_url: data.audio_url || null,
             reported_by: userId,
             urgency: data.urgency || 'medium'
         };
