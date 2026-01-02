@@ -20,6 +20,10 @@
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- Tom Select -->
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+
     <!-- Custom CSS -->
     <link rel="stylesheet" href="../css/style.css">
     <style>
@@ -434,6 +438,30 @@
                 width: 90% !important;
             }
         }
+
+        /* Tom Select Customization */
+        .ts-control {
+            background-color: var(--admin-bg) !important;
+            border-color: var(--admin-border) !important;
+            color: var(--admin-text) !important;
+            border-radius: 6px !important;
+            padding: 0.75rem !important;
+        }
+        .ts-dropdown {
+            background-color: var(--admin-card-bg) !important;
+            border-color: var(--admin-border) !important;
+            color: var(--admin-text) !important;
+        }
+        .ts-dropdown .option {
+            color: var(--admin-text) !important;
+        }
+        .ts-dropdown .option.active {
+            background-color: var(--admin-bg) !important;
+            color: var(--admin-primary) !important;
+        }
+        .ts-input {
+             color: var(--admin-text) !important;
+        }
     </style>
 </head>
 <body>
@@ -596,7 +624,10 @@
                 </div>
                 <div class="form-group">
                     <label>Password (Leave blank to keep current or default)</label>
-                    <input type="password" id="user-password" class="form-control" placeholder="New password">
+                    <div class="password-wrapper">
+                        <input type="password" id="user-password" class="form-control" placeholder="New password">
+                        <i class="fa-solid fa-eye password-toggle-icon" id="toggle-user-password"></i>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Roles</label>
@@ -607,7 +638,7 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>Groups (for Operations) - Use Ctrl/Cmd + click to select multiple</label>
+                    <label>Groups (for Operations)</label>
                     <select id="groups-select" class="form-control" multiple style="height: 100px;">
                         <!-- Populated by JS -->
                     </select>

@@ -53,6 +53,15 @@ function initEventListeners() {
         openModal('group-modal');
     });
 
+    // Password Toggle
+    document.getElementById('toggle-user-password').addEventListener('click', function() {
+        const passwordInput = document.getElementById('user-password');
+        const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+        passwordInput.setAttribute('type', type);
+        this.classList.toggle('fa-eye');
+        this.classList.toggle('fa-eye-slash');
+    });
+
     // Forms
     document.getElementById('user-form').addEventListener('submit', handleUserSubmit);
     document.getElementById('group-form').addEventListener('submit', handleGroupSubmit);
@@ -260,10 +269,18 @@ function editUser(user) {
     });
 
     const groups = Array.isArray(user.groups) ? user.groups : JSON.parse(user.groups || '[]');
-    const select = document.getElementById('groups-select');
-    Array.from(select.options).forEach(opt => {
-        opt.selected = groups.includes(opt.value);
-    });
+    
+    // Update Tom Select if initialized
+    if (groupsTomSelect) {
+        groupsTomSelect.clear(); // Clear first
+        groupsTomSelect.setValue(groups);
+    } else {
+        // Fallback or race condition handling (unlikely if loadGroups runs first)
+        const select = document.getElementById('groups-select');
+        Array.from(select.options).forEach(opt => {
+            opt.selected = groups.includes(opt.value);
+        });
+    }
 
     openModal('user-modal');
 }
@@ -297,6 +314,18 @@ function resetUserForm() {
         cb.checked = cb.value === 'User'; // Default role
         cb.disabled = false;
     });
+    
+    // Reset password visibility
+    const passwordInput = document.getElementById('user-password');
+    passwordInput.setAttribute('type', 'password');
+    const toggleIcon = document.getElementById('toggle-user-password');
+    toggleIcon.classList.remove('fa-eye-slash');
+    toggleIcon.classList.add('fa-eye');
+
+    // Clear Tom Select
+    if (groupsTomSelect) {
+        groupsTomSelect.clear();
+    }
 }
 
 // ==========================================
@@ -350,8 +379,18 @@ function renderGroups(groups) {
     });
 }
 
+// Tom Select Instance
+let groupsTomSelect;
+
 function populateGroupsCheckboxes(groups) {
     const select = document.getElementById('groups-select');
+    
+    // Destroy existing instance to cleanly update options
+    if (groupsTomSelect) {
+        groupsTomSelect.destroy();
+        groupsTomSelect = null;
+    }
+
     select.innerHTML = '';
     groups.forEach(group => {
         const opt = document.createElement('option');
@@ -359,7 +398,27 @@ function populateGroupsCheckboxes(groups) {
         opt.textContent = group.name;
         select.appendChild(opt);
     });
+
+    // Initialize Tom Select
+    groupsTomSelect = new TomSelect('#groups-select', {
+        plugins: ['remove_button'],
+        create: false,
+        placeholder: 'Select groups...',
+        maxItems: null,
+        valueField: 'value',
+        labelField: 'text',
+        searchField: 'text',
+        onInitialize: function() {
+            // Fix for sometimes width 0 issue
+            this.wrapper.style.width = '100%';
+        }
+    });
 }
+// Removed handleGroupSubmit as it was not part of the target block
+// Removed editGroup as it was not part of the target block
+// Removed deleteGroup as it was not part of the target block
+// Removed resetGroupForm as it was not part of the target block
+
 
 async function handleGroupSubmit(e) {
     e.preventDefault();

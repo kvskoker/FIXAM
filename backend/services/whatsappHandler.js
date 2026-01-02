@@ -645,9 +645,58 @@ class FixamHandler {
         const issue = await this.fixamDb.createIssue(issueData);
         if (issue) {
             await this.sendMessage(fromNumber, `✅ Report Submitted!\n\nTicket ID: *${ticketId}*\n\nYou can view it on the live map: https://fixam.maxcit.com/?ticket=${ticketId}`);
+            
+            // Alert Operational Team if necessary
+            await this.alertOperationalTeam(issue);
+
             await this.fixamDb.resetConversationState(fromNumber);
         } else {
             await this.sendMessage(fromNumber, "❌ Error submitting report. Please try again later.");
+        }
+    }
+
+    async alertOperationalTeam(issue) {
+        // Only alert for High or Critical urgency
+        if (issue.urgency !== 'high' && issue.urgency !== 'critical') {
+            return;
+        }
+
+        // Map Category to Group
+        const categoryGroups = {
+            'Electricity': 'EDSA',
+            'Road': 'SLRSA',
+            'Health': 'MOH',
+            'Waste': 'FCC',
+            'Water': 'FCC', // Defaulting to FCC or similar if Guma not present
+            'Environment': 'EPA'
+        };
+
+        const targetGroup = categoryGroups[issue.category];
+        if (!targetGroup) return;
+
+        logger.log('alert_system', `Alerting group ${targetGroup} for issue ${issue.ticket_id}`);
+
+        const operators = await this.fixamDb.getOperationalUsersByGroup(targetGroup);
+        if (!operators || operators.length === 0) {
+            logger.log('alert_system', `No operators found for group ${targetGroup}`);
+            return;
+        }
+
+        const alertMessage = `🚨 *CRITICAL ISSUE ALERT* 🚨\n\n` +
+            `Ticket: *${issue.ticket_id}*\n` +
+            `Category: *${issue.category}* (${targetGroup})\n` +
+            `Urgency: *${issue.urgency.toUpperCase()}*\n` +
+            `Title: ${issue.title}\n` +
+            `Location: https://www.google.com/maps/search/?api=1&query=${issue.lat},${issue.lng}\n\n` +
+            `Please investigate immediately. login to admin portal for more details.`;
+
+        for (const op of operators) {
+            try {
+                await this.sendMessage(op.phone_number, alertMessage);
+                logger.log('alert_system', `Alert sent to ${op.name} (${op.phone_number})`);
+            } catch (err) {
+                logger.logError('alert_system', `Failed to send alert to ${op.phone_number}`, err);
+            }
         }
     }
 
