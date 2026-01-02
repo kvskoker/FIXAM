@@ -298,6 +298,16 @@ async function openIssueDetails(id) {
             document.getElementById('modal-title').textContent = issue.title;
             document.getElementById('modal-desc').textContent = issue.description;
             document.getElementById('modal-location').textContent = `${issue.lat}, ${issue.lng}`;
+            
+            // Reverse geocode to get address
+            fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${issue.lat}&lon=${issue.lng}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.display_name) {
+                        document.getElementById('modal-location').textContent = data.display_name;
+                    }
+                })
+                .catch(err => console.error('Geocoding error:', err));
             document.getElementById('modal-image').src = issue.image_url || 'https://via.placeholder.com/400x200?text=No+Image';
 
             const statusEl = document.getElementById('modal-status');

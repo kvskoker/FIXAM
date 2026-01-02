@@ -652,7 +652,7 @@ class FixamHandler {
             await this.sendMessage(fromNumber, `✅ *Report Submitted Successfully!*\n\nIssue ID: *${ticketId}*\n\nYou can track this issue here: https://fixam.maxcit.com/?ticket=${ticketId}`);
             
             // 2. Alert Operational Team if necessary
-            await this.alertOperationalTeam(issue);
+            await this.alertOperationalTeam(issue, data.address);
 
             // 3. Reset to Menu automatically
             const user = await this.fixamDb.getUser(fromNumber);
@@ -662,11 +662,8 @@ class FixamHandler {
         }
     }
 
-    async alertOperationalTeam(issue) {
-        // Only alert for High or Critical urgency
-        if (issue.urgency !== 'high' && issue.urgency !== 'critical') {
-            return;
-        }
+    async alertOperationalTeam(issue, address) {
+        // Alert relevant groups for ALL issues regardless of urgency
 
         // Get mapped groups for this category
         const groups = await this.fixamDb.getGroupsForCategory(issue.category);
@@ -679,26 +676,24 @@ class FixamHandler {
         for (const group of groups) {
             logger.log('alert_system', `Alerting group ${group.name} for issue ${issue.ticket_id}`);
 
-            const operators = await this.fixamDb.getOperationalUsersByGroup(group.name);
-            if (!operators || operators.length === 0) {
-                logger.log('alert_system', `No operators found for group ${group.name}`);
+            const members = await this.fixamDb.getGroupMembers(group.name);
+            if (!members || members.length === 0) {
+                logger.log('alert_system', `No members found for group ${group.name}`);
                 continue;
             }
 
-            const alertMessage = `🚨 *CRITICAL ISSUE ALERT* 🚨\n\n` +
-                `Issue ID: *${issue.ticket_id}*\n` +
-                `Category: *${issue.category}* (${group.name})\n` +
-                `Urgency: *${issue.urgency.toUpperCase()}*\n` +
-                `Title: ${issue.title}\n` +
-                `Location: https://www.google.com/maps/search/?api=1&query=${issue.lat},${issue.lng}\n\n` +
-                `Please investigate immediately. Login to admin portal for more details.`;
+            const alertMessage = `🚨 *ISSUE ALERT* 🚨\n\n` +
+                `*Title:* ${issue.title}\n` +
+                `*Loc:* ${address || `${issue.lat}, ${issue.lng}`}\n` +
+                `*ID:* ${issue.ticket_id}\n` +
+                `*Link:* https://fixam.maxcit.com/?ticket=${issue.ticket_id}`;
 
-            for (const op of operators) {
+            for (const member of members) {
                 try {
-                    await this.sendMessage(op.phone_number, alertMessage);
-                    logger.log('alert_system', `Alert sent to ${op.name} (${op.phone_number})`);
+                    await this.sendMessage(member.phone_number, alertMessage);
+                    logger.log('alert_system', `Alert sent to ${member.name} (${member.phone_number})`);
                 } catch (err) {
-                    logger.logError('alert_system', `Failed to send alert to ${op.phone_number}`, err);
+                    logger.logError('alert_system', `Failed to send alert to ${member.phone_number}`, err);
                 }
             }
         }

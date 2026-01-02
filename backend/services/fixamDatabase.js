@@ -293,22 +293,20 @@ class FixamDatabase {
         }
     }
 
-    // Get operational users by group name
-    async getOperationalUsersByGroup(groupName) {
+    // Get group members by group name
+    async getGroupMembers(groupName) {
         const sql = `
             SELECT u.phone_number, u.name 
             FROM users u 
-            JOIN user_roles ur ON u.id = ur.user_id 
-            JOIN roles r ON ur.role_id = r.id 
             JOIN user_groups ug ON u.id = ug.user_id 
             JOIN groups g ON ug.group_id = g.id 
-            WHERE r.name = 'Operation' AND g.name = $1 AND u.is_disabled = FALSE
+            WHERE g.name = $1 AND u.is_disabled = FALSE
         `;
         try {
             const result = await this.db.query(sql, [groupName]);
             return result.rows;
         } catch (error) {
-            this.debugLog('Error fetching operational users', { error: error.message, groupName });
+            this.debugLog('Error fetching group members', { error: error.message, groupName });
             return [];
         }
     }
