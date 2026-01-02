@@ -138,7 +138,35 @@ async def lifespan(app: FastAPI):
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
+import subprocess
+
 app = FastAPI(lifespan=lifespan)
+
+def get_media_duration(file_path):
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        return float(result.stdout)
+    except Exception as e:
+        print(f"Error checking duration: {e}")
+        return 0.0
+
+@app.post("/check-duration")
+def check_duration(file: UploadFile = File(...)):
+    suffix = f".{file.filename.split('.')[-1]}" if '.' in file.filename else ".tmp"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = tmp.name
+
+    try:
+        duration = get_media_duration(tmp_path)
+        return {"duration": duration}
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 @app.post("/classify-image")
 def classify_image(image: UploadFile = File(...)):

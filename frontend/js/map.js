@@ -263,6 +263,16 @@ function renderIssues(issues) {
             mediaContent = `<img src="${issue.image_url || 'https://via.placeholder.com/400'}" class="popup-image" alt="${issue.title}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 8px; margin-bottom: 8px;">`;
         }
 
+        let audioContent = '';
+        if (issue.audio_url) {
+            audioContent = `
+                <div style="margin-bottom: 10px;">
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px;">Voice Report:</div>
+                    <audio controls src="${issue.audio_url}" style="width: 100%; height: 32px; border-radius: 4px;"></audio>
+                </div>
+            `;
+        }
+
         let resolutionNoteHtml = '';
         if (issue.status === 'fixed' && issue.resolution_note) {
             resolutionNoteHtml = `
@@ -281,6 +291,7 @@ function renderIssues(issues) {
                      <span style="background: rgba(${colors[statusType].r}, ${colors[statusType].g}, ${colors[statusType].b}, 0.15); color: ${color}; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: capitalize;">${issue.status}</span>
                 </div>
                 <div class="popup-title" style="font-weight: 700; font-size: 1.1rem; margin-bottom: 10px; color: var(--text-primary);">${issue.title}</div>
+                ${audioContent}
                 ${resolutionNoteHtml}
                 
                 <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 0.85rem; margin-bottom: 15px; color: var(--text-secondary);">

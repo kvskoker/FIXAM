@@ -35,6 +35,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='issues' AND column_name='resolution_note') THEN 
         ALTER TABLE issues ADD COLUMN resolution_note TEXT; 
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='issues' AND column_name='audio_url') THEN 
+        ALTER TABLE issues ADD COLUMN audio_url TEXT; 
+    END IF;
 END $$;
 
 -- Create Roles Table
@@ -101,6 +104,7 @@ CREATE TABLE IF NOT EXISTS issues (
     lng DECIMAL(10, 6) NOT NULL,
     description TEXT,
     image_url TEXT,
+    audio_url TEXT,
     reported_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     duplicate_of INTEGER REFERENCES issues(id) ON DELETE SET NULL,
     urgency VARCHAR(20) DEFAULT 'medium', -- low, medium, high, critical

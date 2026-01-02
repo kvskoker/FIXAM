@@ -299,6 +299,23 @@ async function openIssueDetails(id) {
             document.getElementById('modal-desc').textContent = issue.description;
             document.getElementById('modal-location').textContent = `${issue.lat}, ${issue.lng}`;
             
+            // Audio Player
+            const descContainer = document.getElementById('modal-desc');
+            descContainer.innerHTML = ''; // Clear previous
+            if (issue.audio_url) {
+                const audioContainer = document.createElement('div');
+                audioContainer.style.marginBottom = '1rem';
+                audioContainer.innerHTML = `
+                    <div style="font-size: 0.8rem; color: var(--admin-text-muted); margin-bottom: 0.5rem;">Voice Report:</div>
+                    <audio controls src="${issue.audio_url}" style="width: 100%;"></audio>
+                `;
+                descContainer.appendChild(audioContainer);
+            }
+            // Add transcribed text (description)
+            const textDiv = document.createElement('div');
+            textDiv.textContent = issue.description;
+            descContainer.appendChild(textDiv);
+            
             // Reverse geocode to get address
             fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${issue.lat}&lon=${issue.lng}`)
                 .then(res => res.json())

@@ -454,6 +454,28 @@ class FixamHandler {
                     logger.logError('media_handler', 'AI Safety Check failed', error.message);
                     // Proceeding despite error to avoid blocking user flow if AI service is down
                 }
+            } else if (downloadResult && mediaType === 'video') {
+                // Check duration
+                try {
+                    logger.log('media_handler', 'Checking video duration...');
+                    const formData = new FormData();
+                    formData.append('file', downloadResult.buffer, { filename: 'video.mp4', contentType: downloadResult.mimeType || 'video/mp4' });
+                    
+                    const durationRes = await axios.post('http://localhost:8000/check-duration', formData, {
+                        headers: { ...formData.getHeaders() },
+                        maxContentLength: Infinity,
+                        maxBodyLength: Infinity
+                    });
+                    
+                    const duration = durationRes.data.duration;
+                    if (duration > 60) {
+                        logger.log('media_handler', `Video rejected: Duration ${duration}s > 60s`);
+                        await this.sendMessage(fromNumber, "⚠️ Video too long! Please send a video shorter than 1 minute.");
+                        return;
+                    }
+                } catch (error) {
+                    logger.logError('media_handler', 'Duration Check failed', error.message);
+                }
             }
             
             let mediaUrl = '';
@@ -463,31 +485,15 @@ class FixamHandler {
                 const filename = `${crypto.randomUUID()}.${extension}`;
                 const folder = mediaType === 'image' ? 'images' : 'videos';
                 
-                // Log current working directory for debugging
-                logger.log('media_handler', `Current working directory: ${process.cwd()}`);
-                
                 // Use frontend/uploads for web accessibility
                 const uploadsDir = path.join(process.cwd(), 'frontend', 'uploads', 'issues', folder);
                 const filePath = path.join(uploadsDir, filename);
                 
-                logger.log('media_handler', `Constructed uploads dir: ${uploadsDir}`);
-                logger.log('media_handler', `Full file path: ${filePath}`);
-                logger.log('media_handler', `Directory exists: ${fs.existsSync(uploadsDir)}`);
-                
                 // Ensure directory exists
                 if (!fs.existsSync(uploadsDir)) {
-                    logger.log('media_handler', `Creating directory: ${uploadsDir}`);
-                    try {
-                        fs.mkdirSync(uploadsDir, { recursive: true });
-                        logger.log('media_handler', 'Directory created successfully');
-                    } catch (mkdirError) {
-                        logger.logError('media_handler', 'Failed to create directory', mkdirError);
-                        await this.sendMessage(fromNumber, "⚠️ Server error. Please contact support.");
-                        return;
-                    }
+                    fs.mkdirSync(uploadsDir, { recursive: true });
                 }
                 
-                logger.log('media_handler', `Attempting to save file...`);
                 try {
                     fs.writeFileSync(filePath, downloadResult.buffer);
                     mediaUrl = `/uploads/issues/${folder}/${filename}`;
@@ -530,6 +536,27 @@ class FixamHandler {
             let transcribedText = '';
 
             if (downloadResult) {
+                // Check duration first
+                try {
+                    const formData = new FormData();
+                    formData.append('file', downloadResult.buffer, { filename: 'audio.ogg', contentType: downloadResult.mimeType || 'audio/ogg' });
+                    
+                    const durationRes = await axios.post('http://localhost:8000/check-duration', formData, {
+                        headers: { ...formData.getHeaders() },
+                        maxContentLength: Infinity,
+                        maxBodyLength: Infinity
+                    });
+                    
+                    const duration = durationRes.data.duration;
+                    if (duration > 60) {
+                        await this.sendMessage(fromNumber, "⚠️ Voice note too long! Please keep it under 1 minute.");
+                        return; // Stop processing, do not save
+                    }
+                } catch (error) {
+                    logger.logError('media_handler', 'Audio Duration Check failed', error.message);
+                    // Proceed cautiously or block? proceeding for now
+                }
+
                 const extension = downloadResult.mimeType ? downloadResult.mimeType.split('/')[1].split(';')[0] : 'ogg';
                 const filename = `${crypto.randomUUID()}.${extension}`;
                 
@@ -571,7 +598,7 @@ class FixamHandler {
             const currentData = state.data || {};
             // Use transcribed text if available, otherwise fallback to a user-friendly message
             currentData.description = transcribedText ? transcribedText : "[Voice Note - Transcription unavailable]";
-            currentData.voice_url = mediaUrl;
+            currentData.audio_url = mediaUrl; // Capture for saving
 
             // Analyze with AI using the transcribed text if available
             let category = 'Uncategorized';
