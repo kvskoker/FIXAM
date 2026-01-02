@@ -187,12 +187,41 @@ CREATE TABLE IF NOT EXISTS categories (
 
 -- Insert Default Categories
 INSERT INTO categories (name, icon, color) VALUES
-('Water', 'fa-faucet-drip', '#3b82f6'),
-('Road', 'fa-road', '#64748b'),
-('Waste', 'fa-trash', '#ef4444'),
-('Electricity', 'fa-bolt', '#eab308'),
-('Health', 'fa-heart-pulse', '#22c55e'),
-('Environment', 'fa-leaf', '#22c55e')
+('Electricity & Power Supply', 'fa-bolt', '#eab308'),
+('Water Supply', 'fa-faucet-drip', '#3b82f6'),
+('Road Infrastructure', 'fa-road', '#64748b'),
+('Public Transportation', 'fa-bus', '#f59e0b'),
+('Drainage & Flooding', 'fa-water', '#0ea5e9'),
+('Waste Management', 'fa-trash', '#ef4444'),
+('Housing & Urban Development', 'fa-city', '#6366f1'),
+('Telecommunications', 'fa-tower-cell', '#8b5cf6'),
+('Internet Access', 'fa-wifi', '#d946ef'),
+('Health Facilities', 'fa-heart-pulse', '#22c55e'),
+('Education Facilities', 'fa-school', '#f43f5e'),
+('Public Safety', 'fa-shield-halved', '#ef4444'),
+('Security', 'fa-lock', '#334155'),
+('Fire Services', 'fa-fire-extinguisher', '#dc2626'),
+('Social Welfare', 'fa-hand-holding-heart', '#ec4899'),
+('Environmental Pollution', 'fa-smog', '#71717a'),
+('Deforestation', 'fa-tree', '#16a34a'),
+('Animal Control', 'fa-dog', '#a16207'),
+('Public Space Maintenance', 'fa-broom', '#14b8a6'),
+('Natural Disaster Response', 'fa-house-tsunami', '#b91c1c'),
+('Corruption', 'fa-money-bill-transfer', '#854d0e'),
+('Accountability', 'fa-scale-balanced', '#1e293b'),
+('Local Taxation', 'fa-file-invoice-dollar', '#15803d'),
+('Streetlights', 'fa-lightbulb', '#facc15'),
+('Bridges & Culverts', 'fa-bridge', '#57534e'),
+('Public Buildings', 'fa-building-columns', '#475569'),
+('Sewage & Sanitation', 'fa-toilet', '#7c2d12'),
+('Traffic Management', 'fa-traffic-light', '#ef4444'),
+('Road Safety', 'fa-car-burst', '#b91c1c'),
+('Youth Engagement', 'fa-people-group', '#8b5cf6'),
+('Gender-Based Violence', 'fa-person-harassing', '#9f1239'),
+('Child Protection', 'fa-child-reaching', '#fbbf24'),
+('Disability Access', 'fa-wheelchair', '#2563eb'),
+('Market Operations', 'fa-shop', '#ea580c'),
+('Service Access', 'fa-universal-access', '#06b6d4')
 ON CONFLICT (name) DO NOTHING;
 
 -- Create Category-Group Mapping (Many-to-Many)

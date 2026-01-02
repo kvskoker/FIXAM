@@ -1,11 +1,10 @@
 const axios = require('axios');
 const logger = require('./logger');
 const path = require('path');
+const db = require('../db');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const LOCAL_AI_URL = 'http://localhost:8000/analyze-issue';
-
-const CATEGORIES = "Electricity & Power Supply, Water Supply, Road Infrastructure, Public Transportation, Drainage & Flooding, Waste Management, Housing & Urban Development, Telecommunications, Internet Access, Health Facilities, Education Facilities, Public Safety, Security, Fire Services, Social Welfare, Environmental Pollution, Deforestation, Animal Control, Public Space Maintenance, Natural Disaster Response, Corruption, Accountability, Local Taxation, Streetlights, Bridges & Culverts, Public Buildings, Sewage & Sanitation, Traffic Management, Road Safety, Youth Engagement, Gender-Based Violence, Child Protection, Disability Access, Market Operations, Service Access";
 
 /**
  * Analyze text using Qwen AI to categorize, summarize, and determine urgency.
@@ -16,9 +15,18 @@ async function analyzeIssue(text) {
     logger.log('ai_debug', `Analyzing issue with Qwen AI. Text length: ${text.length}`);
 
     try {
+        let categoriesList;
+        try {
+            const result = await db.query('SELECT name FROM categories');
+            categoriesList = result.rows.map(row => row.name).join(', ');
+        } catch (err) {
+            logger.logError('ai_debug', 'Error fetching categories', err);
+            categoriesList = "Uncategorized";
+        }
+
         const requestBody = {
             description: text,
-            categories: CATEGORIES
+            categories: categoriesList
         };
 
         logger.logObject('ai_debug', 'Request Body', requestBody);
