@@ -1,4 +1,4 @@
-:root {
+ :root {
     /* Corporate Light Theme (Default) */
     --primary-color: #2563eb;
     --secondary-color: #475569;
@@ -51,6 +51,46 @@ body {
     line-height: 1.5;
     height: 100vh;
     overflow: hidden; /* For map app feel */
+}
+
+/* Custom Modern Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: rgba(148, 163, 184, 0.5); /* slate-400 at 50% */
+    border-radius: 10px;
+    border: 2px solid transparent; /* padding around scrollbar thumb */
+    background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(100, 116, 139, 0.8); /* slate-500 at 80% */
+}
+
+/* Dark Mode Scrollbar */
+body.dark-mode ::-webkit-scrollbar-thumb {
+    background-color: rgba(148, 163, 184, 0.3);
+}
+
+body.dark-mode ::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(148, 163, 184, 0.6);
+}
+
+/* Firefox Support */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+}
+
+body.dark-mode * {
+    scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
 }
 
 /* Layout */
@@ -621,4 +661,67 @@ body.dark-mode .resolution-note-title {
 
 body.dark-mode .resolution-note-text {
     color: #86efac; /* even lighter green for dark mode */
+}
+
+/* Mobile Landscape Fix */
+@media screen and (max-height: 600px) and (orientation: landscape) {
+    /* Force Side-by-Side Layout */
+    .app-container {
+        flex-direction: row !important;
+    }
+
+    .sidebar {
+        width: 320px !important; /* Fixed width, usable for reading */
+        height: 100vh !important;
+        overflow-y: auto !important; /* Allow sidebar to scroll */
+        display: block !important; 
+        order: 0 !important;
+        border-right: 1px solid var(--border-color) !important;
+        border-top: none !important;
+    }
+
+    .map-container {
+        flex: 1 !important;
+        height: 100vh !important;
+        order: 1 !important;
+    }
+
+    .issue-list {
+        overflow: visible !important; 
+        height: auto !important;
+        flex: none !important;
+        padding-bottom: 2rem;
+    }
+    
+    /* Compact Header */
+    .header {
+        padding: 0.5rem 1rem !important;
+    }
+    
+    .logo {
+        height: 32px;
+    }
+    .logo img {
+        height: 32px;
+    }
+    
+    /* Hide promotional text in landscape to save space */
+    .header .d-flex {
+        display: none !important;
+    }
+    
+    .header div[style*="font-weight: 600"] {
+        display: none !important;
+    }
+    .header hr {
+        display: none !important;
+    }
+
+    /* Ensure filters fit */
+    .filter-section {
+        padding: 0.5rem !important;
+    }
+    .search-box {
+        margin-bottom: 0.5rem !important;
+    }
 }
