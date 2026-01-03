@@ -589,7 +589,7 @@ async function handlePenaltySubmit(e) {
 
     const msgDiv = document.getElementById('penalty-error');
 
-    if (!confirm(`Are you sure you want to deduct ${amount} points from this user?`)) return;
+
 
     try {
         const response = await fetch(`${API_BASE_URL}/admin/users/${id}/penalize`, {

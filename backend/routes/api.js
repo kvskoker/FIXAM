@@ -845,6 +845,7 @@ router.get('/admin/users', async (req, res) => {
                 u.name, 
                 u.phone_number, 
                 u.last_login,
+                u.created_at,
                 u.is_disabled,
                 u.points,
                 (
