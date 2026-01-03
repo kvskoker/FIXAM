@@ -44,6 +44,7 @@ The primary reporting channel, designed for accessibility and ease of use.
 - **Safety First**: Automated content moderation filters unsafe images (e.g., nudity) using local NudeNet.
 - **Location Intelligence**: Handles GPS location sharing and text-based addresses with reverse geocoding.
 - **Duplicate Detection**: Smart detection of similar issues within a 100m radius to prevent spam and redundancy.
+- **Automated Feedback Loop**: Citizens receive real-time status updates via WhatsApp when their issue is acknowledged or resolved, keeping them informed without manual follow-ups.
 
 ### 2. 🌍 Public Civic Map & Dashboard
 Transparent real-time visualization for the community.
