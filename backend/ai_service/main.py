@@ -12,6 +12,7 @@ import tempfile
 from dotenv import load_dotenv
 import json
 import re
+import psycopg2
 
 # Load environment variables from backend/.env
 # Get the directory of the current script
@@ -25,6 +26,7 @@ transcription_pipe = None
 nude_detector = None
 qwen_model = None
 qwen_tokenizer = None
+categories_list = []
 
 QWEN_MODEL_ID = "Qwen/Qwen3-0.6B"
 
@@ -33,7 +35,7 @@ class AnalysisRequest(BaseModel):
 
 class AnalyzeIssueRequest(BaseModel):
     description: str
-    categories: Optional[str] = "Electricity, Water, Road, Transportation, Drainage, Waste, Housing & Urban Development, Telecommunications, Internet, Health Services, Education Services, Public Safety, Security, Fire Services, Social Welfare, Environmental Pollution, Deforestation, Animal Control, Public Space Maintenance, Disaster Management, Corruption, Accountability, Local Taxation, Streetlights, Bridges or Culverts, Public Buildings, Sewage or Toilet Facilities, Traffic Management, Road Safety, Youth Engagement, Gender-Based Violence, Child Protection, Disability Access, Market Operations, Service Access"
+    categories: Optional[str] = None
 
 UNSAFE_LABELS = [
     "BUTTOCKS_EXPOSED",
@@ -49,8 +51,34 @@ async def lifespan(app: FastAPI):
     """
     Load models when the server starts.
     """
-    global transcription_pipe, nude_detector, qwen_model, qwen_tokenizer
+    global transcription_pipe, nude_detector, qwen_model, qwen_tokenizer, categories_list
     
+    # --- Load Categories from DB ---
+    print("Loading categories from database...")
+    try:
+        conn = psycopg2.connect(
+            host=os.environ.get("DB_HOST", "localhost"),
+            database=os.environ.get("DB_NAME", "fixam"),
+            user=os.environ.get("DB_USER", "postgres"),
+            password=os.environ.get("DB_PASSWORD", "password"),
+            port=os.environ.get("DB_PORT", "5432")
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM categories;")
+        rows = cur.fetchall()
+        categories_list = [row[0] for row in rows]
+        print(f"Loaded {len(categories_list)} categories from database.")
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"Failed to fetch categories from DB: {e}")
+        # Fallback
+        categories_list = [
+            "Electricity", "Water", "Road", "Transportation", "Drainage", "Waste", 
+            "Housing", "Telecommunications", "Health", "Education", "Security"
+        ]
+        print("Using fallback categories.")
+
     # --- Load Whisper ---
     device = "cuda:0" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
@@ -231,7 +259,7 @@ def analyze_issue(request: AnalyzeIssueRequest):
         "urgency": "low|medium|high|critical"
     }
     """
-    global qwen_model, qwen_tokenizer
+    global qwen_model, qwen_tokenizer, categories_list
     if qwen_model is None or qwen_tokenizer is None:
         raise HTTPException(status_code=503, detail="Qwen model is not loaded.")
 
@@ -239,6 +267,13 @@ def analyze_issue(request: AnalyzeIssueRequest):
         # Prepare the prompt
         user_description = request.description
         categories = request.categories
+        
+        # Use DB categories if not provided in request
+        if not categories:
+            if categories_list:
+                categories = ", ".join(categories_list)
+            else:
+                categories = "Electricity, Water, Road, General"
         
         prompt = f'''Summarize the following description in 5 words max and determine which category the description belongs. 
 Description: {user_description}

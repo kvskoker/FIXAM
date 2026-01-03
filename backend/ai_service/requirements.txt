@@ -7,3 +7,4 @@ transformers
 accelerate
 scipy
 python-dotenv
+psycopg2-binary
