@@ -130,8 +130,8 @@
         </aside>
 
         <!-- Main Dashboard Content -->
-        <main class="map-container" style="background-color: var(--background-color);">
-            <div class="dashboard-grid">
+        <main class="map-container citizen-main" style="background-color: var(--background-color);">
+            <div class="citizen-grid">
                 <!-- Stat Cards -->
                 <div class="stat-card">
                     <div class="stat-label">Total Reports (This Week)</div>
@@ -158,16 +158,16 @@
                 </div>
 
                 <!-- Charts -->
-                <div class="stat-card" style="grid-column: span 3;">
+                <div class="stat-card" style="grid-column: 1 / -1;">
                     <h3 class="issue-title">Issues Trend</h3>
-                    <div class="chart-container">
+                    <div class="chart-container citizen-chart-container">
                         <canvas id="trendsChart"></canvas>
                     </div>
                 </div>
 
-                <div class="stat-card" style="grid-column: span 3;">
+                <div class="stat-card" style="grid-column: 1 / -1;">
                     <h3 class="issue-title">Reports by Category</h3>
-                    <div class="chart-container">
+                    <div class="chart-container citizen-chart-container">
                         <canvas id="categoryChart"></canvas>
                     </div>
                 </div>
