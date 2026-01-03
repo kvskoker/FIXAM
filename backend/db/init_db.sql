@@ -22,6 +22,12 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Ensure columns exist if table was already created
+ALTER TABLE users ADD COLUMN IF NOT EXISTS points INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role_id INTEGER REFERENCES roles(id) ON DELETE SET NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_disabled BOOLEAN DEFAULT FALSE;
+
 CREATE INDEX IF NOT EXISTS idx_users_points ON users (points DESC);
 
 -- 3. User Roles Table (Many-to-Many)
