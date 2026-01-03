@@ -140,7 +140,16 @@ class FixamDatabase {
 
         try {
             const result = await this.db.query(sql, values);
-            return result.rows[0];
+            const issue = result.rows[0];
+            
+            // Gamification: Award 10 points for reporting
+            if (issue.reported_by) {
+                // Don't await strictly to avoid blocking response? 
+                // Better to await to ensure consistency or handle error quietly. 
+                // But since we have a try-catch block, awaiting is fine.
+                await this.addPoints(issue.reported_by, 10, 'report_created', issue.id);
+            }
+            return issue;
         } catch (error) {
             this.debugLog('Error creating issue', { error: error.message });
             return null;
@@ -225,6 +234,15 @@ class FixamDatabase {
         `;
         try {
             await this.db.query(sql, [issueId, userId, voteType]);
+            
+            // Gamification: Award 1 point to the reporter if it's an upvote
+            if (voteType === 'upvote') {
+                const issue = await this.getIssueById(issueId);
+                if (issue && issue.reported_by && issue.reported_by !== userId) {
+                     // Prevent self-voting points farming if desired, though self-voting isn't explicitly blocked logic-wise
+                     await this.addPoints(issue.reported_by, 1, 'issue_upvoted', issueId);
+                }
+            }
             return true;
         } catch (error) {
             this.debugLog('Error voting on issue', { error: error.message });
@@ -308,6 +326,46 @@ class FixamDatabase {
             return result.rows;
         } catch (error) {
             this.debugLog('Error fetching group members', { error: error.message, groupName });
+            return [];
+        }
+    }
+    // Add Points to User
+    async addPoints(userId, amount, actionType, relatedIssueId = null) {
+        if (!userId) return false;
+        
+        const client = await this.db.connect();
+        try {
+            await client.query('BEGIN');
+            
+            // Update user points
+            await client.query('UPDATE users SET points = points + $1 WHERE id = $2', [amount, userId]);
+            
+            // Log transaction
+            await client.query(
+                'INSERT INTO user_point_logs (user_id, amount, action_type, related_issue_id) VALUES ($1, $2, $3, $4)', 
+                [userId, amount, actionType, relatedIssueId]
+            );
+            
+            await client.query('COMMIT');
+            this.debugLog(`Added ${amount} points to user ${userId} for ${actionType}`);
+            return true;
+        } catch (error) {
+            await client.query('ROLLBACK');
+            this.debugLog('Error adding points', { error: error.message, userId, amount });
+            return false;
+        } finally {
+            client.release();
+        }
+    }
+
+    // Get Leaderboard (Top 5)
+    async getLeaderboard(limit = 5) {
+        const sql = "SELECT name, points FROM users WHERE points > 0 ORDER BY points DESC LIMIT $1";
+        try {
+            const result = await this.db.query(sql, [limit]);
+            return result.rows;
+        } catch (error) {
+            this.debugLog('Error fetching leaderboard', { error: error.message });
             return [];
         }
     }

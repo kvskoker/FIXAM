@@ -82,6 +82,15 @@ Privacy-focused, offline-capable AI services running alongside the platform.
 - **Transcription**: Voice-to-text for inclusive reporting.
 - **Content Safety**: On-device image analysis to protect the platform from abuse.
 
+### 6. 🏆 Citizen Rewards System
+Gamifying civic engagement to encourage consistent participation.
+- **Earn Points**: Citizens accumulate digital points for positive actions:
+  - **+10 Points**: Reporting a valid issue.
+  - **+50 Points**: When a reported issue is physically resolved (Verified Fix).
+  - **+1 Point**: Each time a community member upvotes their report.
+- **Leaderboard**: Users can track their "Citizen Score" directly via WhatsApp.
+- **Incentives**: High-scoring citizens gain recognition, fostering a sense of ownership and civic pride.
+
 ## Setup Instructions
 
 ### Prerequisites

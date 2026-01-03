@@ -153,6 +153,13 @@ class FixamHandler {
                 } else if (input === '2' || lowerInput.includes('vote')) {
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_vote_ticket_id', data: {} });
                     await this.sendMessage(fromNumber, "Okay! Please enter the *Issue ID* of the issue you want to vote on, or type *9* to cancel.");
+                } else if (input === '3' || lowerInput.includes('point')) {
+                    const points = user.points || 0;
+                    // Mock leaderboard rank for now or fetch it
+                    // Simple message
+                    await this.sendMessage(fromNumber, `🏆 *Your Citizen Score*\n\nYou currently have: *${points} Points* ⭐\n\n*How to earn points:*\n+10 pts: Report an Issue\n+50 pts: Issue Resolved\n+1 pt: Getting Upvoted\n\nKeep participating to unlock future rewards! 🎁`);
+                    // Stay in main menu
+                    await this.sendMainMenu(fromNumber, user.name);
                 } else {
                     await this.sendMainMenu(fromNumber, user.name);
                 }
@@ -634,7 +641,7 @@ class FixamHandler {
     }
 
     async sendMainMenu(fromNumber, name) {
-        await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today?\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*`);
+        await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today?\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *My Points* 🏆`);
         await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category' });
     }
 
