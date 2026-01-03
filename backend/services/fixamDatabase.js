@@ -237,11 +237,16 @@ class FixamDatabase {
             await this.db.query(sql, [issueId, userId, voteType]);
             
             // Gamification: Award 1 point to the reporter if it's an upvote
-            if (voteType === 'upvote') {
-                const issue = await this.getIssueById(issueId);
-                if (issue && issue.reported_by && issue.reported_by !== userId) {
-                     // Prevent self-voting points farming if desired, though self-voting isn't explicitly blocked logic-wise
-                     await this.addPoints(issue.reported_by, 1, 'issue_upvoted', issueId);
+            // Gamification: Point Logic
+            const issue = await this.getIssueById(issueId);
+            if (issue && issue.reported_by && issue.reported_by !== userId) {
+                if (voteType === 'upvote') {
+                    // +1 Point for community validation
+                    await this.addPoints(issue.reported_by, 1, 'issue_upvoted', issueId);
+                } else if (voteType === 'downvote') {
+                    // -2 Points for reporting spam/fake issues
+                    // We penalize more heavily than we reward for votes to discourage point farming
+                    await this.addPoints(issue.reported_by, -2, 'issue_downvoted', issueId);
                 }
             }
             return true;
@@ -338,8 +343,8 @@ class FixamDatabase {
         try {
             await client.query('BEGIN');
             
-            // Update user points
-            await client.query('UPDATE users SET points = points + $1 WHERE id = $2', [amount, userId]);
+            // Update user points (Ensure floor of 0)
+            await client.query('UPDATE users SET points = GREATEST(0, points + $1) WHERE id = $2', [amount, userId]);
             
             // Log transaction
             await client.query(

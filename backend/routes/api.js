@@ -802,7 +802,7 @@ router.post('/admin/issues/:id/unlink-duplicate', async (req, res) => {
 // ==========================================
 
 // GET /api/admin/users - List users with roles and groups
-router.get('/admin/users', async (req, res) => {
+router.get('/api/admin/users', async (req, res) => {
     try {
         const { search, role, group, sort, page = 1, limit = 8 } = req.query;
         const pageNum = parseInt(page);
@@ -838,40 +838,48 @@ router.get('/admin/users', async (req, res) => {
         const totalItems = parseInt(countResult.rows[0].total);
 
         // 2. Main query with pagination
-        let query = `
+        // Using subqueries to aggregate roles and groups to avoid row explosion
+        let sql = `
             SELECT 
-                u.id, u.phone_number, u.name, u.is_disabled, u.last_login, u.created_at,
-                COALESCE(roles.role_names, '[]') as roles,
-                COALESCE(groups.group_names, '[]') as groups
+                u.id, 
+                u.name, 
+                u.phone_number, 
+                u.last_login,
+                u.is_disabled,
+                u.points,
+                (
+                    SELECT COALESCE(array_agg(r.name), '{}')
+                    FROM user_roles ur
+                    JOIN roles r ON ur.role_id = r.id
+                    WHERE ur.user_id = u.id
+                ) as roles,
+                (
+                    SELECT COALESCE(array_agg(g.name), '{}')
+                    FROM user_groups ug
+                    JOIN groups g ON ug.group_id = g.id
+                    WHERE ug.user_id = u.id
+                ) as groups
             FROM users u
-            LEFT JOIN (
-                SELECT ur.user_id, JSON_AGG(r.name) as role_names
-                FROM user_roles ur
-                JOIN roles r ON ur.role_id = r.id
-                GROUP BY ur.user_id
-            ) roles ON u.id = roles.user_id
-            LEFT JOIN (
-                SELECT ug.user_id, JSON_AGG(g.name) as group_names
-                FROM user_groups ug
-                JOIN groups g ON ug.group_id = g.id
-                GROUP BY ug.user_id
-            ) groups ON u.id = groups.user_id
             ${filterClauses}
         `;
 
         // Sorting
         if (sort === 'oldest') {
-            query += ` ORDER BY u.created_at ASC`;
-        } else if (sort === 'name') {
-            query += ` ORDER BY u.name ASC`;
+            sql += ` ORDER BY u.created_at ASC`;
+        } else if (sort === 'newest') {
+            sql += ` ORDER BY u.created_at DESC`;
+        } else if (sort === 'name_asc') {
+            sql += ` ORDER BY u.name ASC`;
+        } else if (sort === 'name_desc') {
+            sql += ` ORDER BY u.name DESC`;
         } else {
-            query += ` ORDER BY u.created_at DESC`;
+            sql += ` ORDER BY u.created_at DESC`; // Default
         }
-        
-        query += ` LIMIT $${pCount} OFFSET $${pCount + 1}`;
-        const mainParams = [...filterParams, limitNum, offset];
 
-        const result = await db.query(query, mainParams);
+        sql += ` LIMIT $${pCount} OFFSET $${pCount + 1}`;
+        filterParams.push(limitNum, offset);
+
+        const result = await db.query(sql, filterParams);
 
         res.json({
             data: result.rows,
@@ -882,11 +890,55 @@ router.get('/admin/users', async (req, res) => {
                 total_pages: Math.ceil(totalItems / limitNum)
             }
         });
+
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
+
+// POST /api/admin/users/:id/penalize - Admin Penalty Route
+router.post('/api/admin/users/:id/penalize', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { amount, reason } = req.body;
+
+        if (!amount || amount <= 0) {
+            return res.status(400).json({ success: false, message: 'Invalid penalty amount' });
+        }
+
+        const client = await db.connect();
+        try {
+            await client.query('BEGIN');
+            // Ensure points don't go below 0 (managed by GREATEST logic)
+            await client.query('UPDATE users SET points = GREATEST(0, points - $1) WHERE id = $2', [amount, id]);
+            await client.query(
+                'INSERT INTO user_point_logs (user_id, amount, action_type) VALUES ($1, $2, $3)',
+                [id, -amount, 'admin_penalty']
+            );
+            await client.query('COMMIT');
+            
+            // Notify User
+            const userRes = await client.query('SELECT phone_number FROM users WHERE id = $1', [id]);
+            if (userRes.rows.length > 0) {
+                const phone = userRes.rows[0].phone_number;
+                const msg = `⚠️ *Account Alert*\n\nYou have been penalized *${amount} points* by an administrator.\nReason: ${reason || 'Violation of community guidelines'}.\n\nPlease adhere to our terms to avoid further penalties.`;
+                await whatsappService.sendMessage(phone, msg);
+            }
+            
+            res.json({ success: true, message: 'User penalized successfully' });
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
+});
+
 
 // POST /api/admin/users - Create User
 router.post('/admin/users', async (req, res) => {

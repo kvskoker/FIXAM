@@ -66,6 +66,7 @@ function initEventListeners() {
     // Forms
     document.getElementById('user-form').addEventListener('submit', handleUserSubmit);
     document.getElementById('group-form').addEventListener('submit', handleGroupSubmit);
+    document.getElementById('penalty-form').addEventListener('submit', handlePenaltySubmit);
 
     // Pagination
     document.getElementById('prev-page').addEventListener('click', () => {
@@ -150,6 +151,9 @@ function renderUsers(users) {
             <td data-label="Joined" style="color: var(--admin-text-muted); font-size: 0.85rem;">
                 ${new Date(user.created_at).toLocaleDateString('en-GB')}
             </td>
+            <td data-label="Points" style="font-weight: 600; color: var(--admin-primary);">
+                ${user.points || 0}
+            </td>
             <td data-label="Actions" style="text-align: right;">
                 <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
                     <button class="action-btn" onclick="editUser(${JSON.stringify(user).replace(/"/g, '&quot;')})" title="Edit User">
@@ -158,6 +162,9 @@ function renderUsers(users) {
                     ${!isSelf ? `
                     <button class="action-btn delete" onclick="deleteUser(${user.id})" title="Delete User">
                         <i class="fa-solid fa-trash"></i>
+                    </button>
+                    <button class="action-btn" onclick="penalizeUser(${JSON.stringify(user).replace(/"/g, '&quot;')})" title="Penalize User" style="color: var(--admin-danger); border-color: var(--admin-danger);">
+                        <i class="fa-solid fa-gavel"></i>
                     </button>
                     ` : ''}
                 </div>
@@ -555,7 +562,46 @@ function closeModal(id) {
 
 // Shared closeModal for onclick
 window.closeModal = closeModal;
-window.editUser = editUser;
-window.deleteUser = deleteUser;
-window.editGroup = editGroup;
-window.deleteGroup = deleteGroup;
+// ==========================================
+// PENALTY FUNCTIONS
+// ==========================================
+
+function penalizeUser(user) {
+    document.getElementById('penalty-form').reset();
+    document.getElementById('penalty-user-id').value = user.id;
+    document.getElementById('penalty-user-name').textContent = user.name || 'User';
+    document.getElementById('penalty-error').style.display = 'none';
+    openModal('penalty-modal');
+}
+
+async function handlePenaltySubmit(e) {
+    e.preventDefault();
+    const id = document.getElementById('penalty-user-id').value;
+    const amount = document.getElementById('penalty-amount').value;
+    const reason = document.getElementById('penalty-reason').value;
+
+    if (!confirm(`Are you sure you want to deduct ${amount} points from this user?`)) return;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin/users/${id}/penalize`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount, reason })
+        });
+
+        if (response.ok) {
+            closeModal('penalty-modal');
+            loadUsers();
+            alert('User penalized successfully.');
+        } else {
+            const err = await response.json();
+            const errorDiv = document.getElementById('penalty-error');
+            errorDiv.textContent = err.message || 'Failed to penalize user';
+            errorDiv.style.display = 'block';
+        }
+    } catch (err) {
+        console.error('Error penalizing user:', err);
+    }
+}
+
+window.penalizeUser = penalizeUser;

@@ -552,6 +552,7 @@
                                     <th>Groups</th>
                                     <th>Status</th>
                                     <th>Joined</th>
+                                    <th>Points</th>
                                     <th style="text-align: right;">Actions</th>
                                 </tr>
                             </thead>
@@ -684,6 +685,35 @@
                 <div style="display: flex; gap: 1rem; margin-top: 2rem;">
                     <button type="submit" class="btn btn-primary" style="flex: 1;">Save Group</button>
                     <button type="button" class="btn btn-secondary" onclick="closeModal('group-modal')">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Penalty Modal -->
+    <div id="penalty-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="penalty-modal-title">Penalize User</h2>
+                <button class="action-btn" onclick="closeModal('penalty-modal')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="penalty-error" style="background: rgba(239, 68, 68, 0.1); color: var(--admin-danger); padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem; display: none;"></div>
+            <form id="penalty-form">
+                <input type="hidden" id="penalty-user-id">
+                <p style="margin-bottom: 1rem; color: var(--admin-text-muted);">
+                    You are ensuring fair play. Deduct points from <span id="penalty-user-name" style="font-weight: 600; color: var(--admin-text);"></span>.
+                </p>
+                <div class="form-group">
+                    <label>Points to Deduct</label>
+                    <input type="number" id="penalty-amount" class="form-control" placeholder="e.g. 10" min="1" required>
+                </div>
+                <div class="form-group">
+                    <label>Reason (Sent to User)</label>
+                    <textarea id="penalty-reason" class="form-control" rows="3" placeholder="e.g. Violation of community guidelines regarding spam." required></textarea>
+                </div>
+                <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1; background: var(--admin-danger);">Confirm Penalty</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('penalty-modal')">Cancel</button>
                 </div>
             </form>
         </div>

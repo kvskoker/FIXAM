@@ -386,11 +386,24 @@ class FixamHandler {
                     await this.sendMessage(fromNumber, "Vote recorded! 👍");
                     await this.sendMainMenu(fromNumber, user.name);
                 } else if (input === '2') {
+                    if (!voteData.downvote_confirmed) {
+                         voteData.downvote_confirmed = true;
+                         await this.fixamDb.updateConversationState(fromNumber, { 
+                            current_step: 'awaiting_vote_confirmation',
+                            data: voteData
+                        });
+                        await this.sendMessage(fromNumber, "⚠️ *Confirm Downvote*\n\nYour downvote will penalize the reporter (-2 Points). Please use this ONLY for:\n\n❌ Spam/Fake Reports\n❌ Abusive Content\n\nAbuse of downvoting may result in penalties to YOUR account.\n\nType *2* again to confirm, or *9* to cancel.");
+                        return;
+                    }
+
                     await this.fixamDb.voteIssue(voteData.issue_id, user.id, 'downvote');
                     await this.sendMessage(fromNumber, "Vote recorded! 👎");
                     await this.sendMainMenu(fromNumber, user.name);
+                } else if (input === '9') {
+                     await this.sendMessage(fromNumber, "Voting cancelled.");
+                     await this.sendMainMenu(fromNumber, user.name);
                 } else {
-                    await this.sendMessage(fromNumber, "Please type 1 or 2.");
+                    await this.sendMessage(fromNumber, "Please type 1 for Upvote, 2 for Downvote.");
                 }
                 break;
 
