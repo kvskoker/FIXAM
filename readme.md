@@ -123,7 +123,7 @@ npx serve frontend
 - **Frontend**: Vanilla JS, Leaflet/Mapbox, Chart.js, CSS
 - **Backend**: Node.js, Express, Socket.io
 - **Database**: PostgreSQL
-- **AI/ML**: Python (FastAPI), Whisper (OpenAI), NudeNet, Google Gemini (Cloud fallback)
+- **AI/ML**: Python (FastAPI), Whisper (OpenAI), NudeNet, Qwen (Local LLM)
 - **Integration**: WhatsApp Business API (Meta), OpenStreetMap Nominatim
 
 ## License
