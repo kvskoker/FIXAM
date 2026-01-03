@@ -910,8 +910,8 @@ router.post('/admin/users/:id/penalize', async (req, res) => {
         const client = await db.connect();
         try {
             await client.query('BEGIN');
-            // Ensure points don't go below 0 (managed by GREATEST logic)
-            await client.query('UPDATE users SET points = GREATEST(0, points - $1) WHERE id = $2', [amount, id]);
+            // Allow points to go negative (no GREATEST check)
+            await client.query('UPDATE users SET points = points - $1 WHERE id = $2', [amount, id]);
             await client.query(
                 'INSERT INTO user_point_logs (user_id, amount, action_type) VALUES ($1, $2, $3)',
                 [id, -amount, 'admin_penalty']

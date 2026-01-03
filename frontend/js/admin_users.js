@@ -149,7 +149,7 @@ function renderUsers(users) {
                 </span>
             </td>
             <td data-label="Joined" style="color: var(--admin-text-muted); font-size: 0.85rem;">
-                ${new Date(user.created_at).toLocaleDateString('en-GB')}
+                ${user.created_at ? new Date(user.created_at).toLocaleDateString('en-GB') : 'N/A'}
             </td>
             <td data-label="Points" style="font-weight: 600; color: var(--admin-primary);">
                 ${user.points || 0}
@@ -566,11 +566,18 @@ window.closeModal = closeModal;
 // PENALTY FUNCTIONS
 // ==========================================
 
+
 function penalizeUser(user) {
     document.getElementById('penalty-form').reset();
     document.getElementById('penalty-user-id').value = user.id;
     document.getElementById('penalty-user-name').textContent = user.name || 'User';
-    document.getElementById('penalty-error').style.display = 'none';
+    
+    // Reset message box style
+    const msgDiv = document.getElementById('penalty-error');
+    msgDiv.style.display = 'none';
+    msgDiv.style.background = 'rgba(239, 68, 68, 0.1)';
+    msgDiv.style.color = 'var(--admin-danger)';
+    
     openModal('penalty-modal');
 }
 
@@ -579,6 +586,8 @@ async function handlePenaltySubmit(e) {
     const id = document.getElementById('penalty-user-id').value;
     const amount = document.getElementById('penalty-amount').value;
     const reason = document.getElementById('penalty-reason').value;
+
+    const msgDiv = document.getElementById('penalty-error');
 
     if (!confirm(`Are you sure you want to deduct ${amount} points from this user?`)) return;
 
@@ -590,14 +599,23 @@ async function handlePenaltySubmit(e) {
         });
 
         if (response.ok) {
-            closeModal('penalty-modal');
-            loadUsers();
-            alert('User penalized successfully.');
+            // Show success message
+            msgDiv.textContent = 'User penalized successfully.';
+            msgDiv.style.background = 'rgba(34, 197, 94, 0.1)'; // Green background
+            msgDiv.style.color = 'var(--admin-success)'; // Green text
+            msgDiv.style.display = 'block';
+
+            // Close modal after delay
+            setTimeout(() => {
+                closeModal('penalty-modal');
+                loadUsers();
+            }, 1500);
         } else {
             const err = await response.json();
-            const errorDiv = document.getElementById('penalty-error');
-            errorDiv.textContent = err.message || 'Failed to penalize user';
-            errorDiv.style.display = 'block';
+            msgDiv.textContent = err.message || 'Failed to penalize user';
+            msgDiv.style.background = 'rgba(239, 68, 68, 0.1)'; // Red background
+            msgDiv.style.color = 'var(--admin-danger)'; // Red text
+            msgDiv.style.display = 'block';
         }
     } catch (err) {
         console.error('Error penalizing user:', err);
