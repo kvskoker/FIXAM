@@ -375,6 +375,52 @@ class FixamDatabase {
             return [];
         }
     }
+
+    // Create Feedback
+    async createFeedback(userId, type, content, mediaUrl = null, transcription = null) {
+        const sql = `
+            INSERT INTO feedback (user_id, type, content, media_url, transcription, status)
+            VALUES ($1, $2, $3, $4, $5, 'pending')
+            RETURNING id
+        `;
+        try {
+            const result = await this.db.query(sql, [userId, type, content, mediaUrl, transcription]);
+            return result.rows[0].id;
+        } catch (error) {
+            this.debugLog('Error creating feedback', error);
+            return null;
+        }
+    }
+
+    // Get All Feedback
+    async getFeedback() {
+        // user_id is integer in DB but we want name/phone. Join users.
+        const sql = `
+            SELECT f.*, u.name as user_name, u.phone_number
+            FROM feedback f
+            JOIN users u ON f.user_id = u.id
+            ORDER BY f.created_at DESC
+        `;
+        try {
+            const result = await this.db.query(sql);
+            return result.rows;
+        } catch (error) {
+            this.debugLog('Error fetching feedback', error);
+            return [];
+        }
+    }
+
+    // Acknowledge Feedback
+    async acknowledgeFeedback(id) {
+        const sql = "UPDATE feedback SET status = 'acknowledged' WHERE id = $1 RETURNING id";
+        try {
+            const result = await this.db.query(sql, [id]);
+            return result.rows.length > 0;
+        } catch (error) {
+            this.debugLog('Error acknowledging feedback', error);
+            return false;
+        }
+    }
 }
 
 module.exports = FixamDatabase;

@@ -160,9 +160,19 @@ class FixamHandler {
                     await this.sendMessage(fromNumber, `🏆 *Your Citizen Score*\n\nYou currently have: *${points} Points* ⭐\n\n*How to earn points:*\n+10 pts: Report an Issue\n+50 pts: Issue Resolved\n+1 pt: Getting Upvoted\n\nKeep participating to unlock future rewards! 🎁`);
                     // Stay in main menu
                     await this.sendMainMenu(fromNumber, user.name);
+                } else if (input === '4' || lowerInput.includes('feedback')) {
+                    await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_feedback', data: {} });
+                    await this.sendMessage(fromNumber, "We value your feedback! 💬\n\nPlease type your feedback or send a *Voice Note*.");
                 } else {
                     await this.sendMainMenu(fromNumber, user.name);
                 }
+                break;
+
+            case 'awaiting_feedback':
+                // Text Feedback
+                await this.fixamDb.createFeedback(user.id, 'text', input);
+                await this.sendMessage(fromNumber, "Thank you for your feedback! 🙏\n\nWe appreciate you helping us improve Fixam.");
+                await this.sendMainMenu(fromNumber, user.name);
                 break;
 
             case 'awaiting_report_evidence':
@@ -648,13 +658,57 @@ class FixamHandler {
                 data: currentData
             });
             await this.sendReportSummary(fromNumber, currentData);
+        } else if (state && state.current_step === 'awaiting_feedback') {
+            const mediaId = message.voice ? message.voice.id : message.audio.id;
+            const downloadResult = await this.whatsAppService.downloadMedia(mediaId);
+            let mediaUrl = '';
+            let transcribedText = '[Transcription Unavailable]';
+
+            if (downloadResult) {
+                const extension = downloadResult.mimeType ? downloadResult.mimeType.split('/')[1].split(';')[0] : 'ogg';
+                const filename = `${crypto.randomUUID()}.${extension}`;
+                const uploadsDir = path.join(process.cwd(), 'frontend', 'uploads', 'feedback', 'audio');
+                const filePath = path.join(uploadsDir, filename);
+                
+                if (!fs.existsSync(uploadsDir)) {
+                    fs.mkdirSync(uploadsDir, { recursive: true });
+                }
+                
+                try {
+                    fs.writeFileSync(filePath, downloadResult.buffer);
+                    mediaUrl = `/uploads/feedback/audio/${filename}`;
+
+                    // Transcribe
+                    await this.sendMessage(fromNumber, "Transcribing your feedback... 🎙️");
+                    const formData = new FormData();
+                    formData.append('file', downloadResult.buffer, { filename: `audio.${extension}`, contentType: downloadResult.mimeType || 'audio/ogg' });
+                    
+                    try {
+                        const aiResponse = await axios.post('http://localhost:8000/transcribe', formData, {
+                            headers: { ...formData.getHeaders() },
+                            maxContentLength: Infinity,
+                            maxBodyLength: Infinity
+                        });
+                        transcribedText = aiResponse.data.text;
+                    } catch (err) {
+                        logger.logError('media_handler', 'Feedback Transcription failed', err.message);
+                    }
+                } catch (writeError) {
+                    logger.logError('media_handler', 'Failed to save feedback audio', writeError);
+                }
+            }
+
+            const user = await this.fixamDb.getUser(fromNumber);
+            await this.fixamDb.createFeedback(user.id, 'audio', transcribedText, mediaUrl, transcribedText);
+            await this.sendMessage(fromNumber, "Thank you for your voice feedback! 🙏\n\nWe appreciate you helping us improve Fixam.");
+            await this.sendMainMenu(fromNumber, user.name);
         } else {
             await this.sendMessage(fromNumber, "I'm not expecting a voice note right now.");
         }
     }
 
     async sendMainMenu(fromNumber, name) {
-        await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today?\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *My Points* 🏆`);
+        await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today?\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *My Points* 🏆\n4️⃣ *Feedback* 💬`);
         await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category' });
     }
 

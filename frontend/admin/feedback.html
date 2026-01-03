@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIXAM - User Feedback</title>
+
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-title" content="Fixam" />
+<link rel="manifest" href="/site.webmanifest" />
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+    <!-- Login Overlay (Shared logic from admin_common.js) -->
+    <div id="login-overlay" class="login-overlay">
+        <div style="background: var(--admin-card-bg); padding: 2.5rem; border-radius: 12px; width: 400px; text-align: center; border: 1px solid var(--admin-border);">
+            <img src="../fixam-logo-blue.svg" alt="FIXAM" height="80" style="margin-bottom: 1rem;">
+            <form id="login-form">
+                <input type="tel" id="admin-phone" placeholder="Phone Number" class="form-control" style="margin-bottom: 1rem;" required>
+                <div class="password-wrapper" style="margin-bottom: 1.5rem;">
+                    <input type="password" id="admin-password" placeholder="Password" class="form-control" style="margin-bottom: 0;" required>
+                    <i class="fa-solid fa-eye password-toggle-icon" id="toggle-password"></i>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Access Portal</button>
+            </form>
+            <p id="login-error" style="color: var(--admin-danger); margin-top: 1rem; display: none;">Invalid credentials</p>
+        </div>
+    </div>
+
+    <div id="admin-container" class="admin-container hidden">
+        <aside class="admin-sidebar">
+            <div class="admin-header-section">
+                <img src="../fixam-logo.svg" alt="FIXAM" height="50" class="logo-full">
+                <img src="../fixam-icon.svg" alt="FIXAM" height="40" class="logo-icon" style="display: none;">
+                <button id="theme-toggle-admin" style="background: rgba(255, 255, 255, 0.2); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer;">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+            </div>
+            <nav class="admin-nav">
+                <a href="/admin/overview" id="nav-overview" class="admin-nav-item">
+                    <i class="fa-solid fa-chart-line"></i> <span>Overview</span>
+                </a>
+                <a href="/admin/issues" id="nav-issues" class="admin-nav-item">
+                    <i class="fa-solid fa-triangle-exclamation"></i> <span>Issues</span>
+                </a>
+                <a href="/admin/users" id="nav-users" class="admin-nav-item">
+                    <i class="fa-solid fa-users"></i> <span>Users & Groups</span>
+                </a>
+                <a href="/admin/feedback" id="nav-feedback" class="admin-nav-item active">
+                    <i class="fa-solid fa-comments"></i> <span>Feedback</span>
+                </a>
+                <div style="flex-grow: 1;"></div>
+                <a href="#" id="logout-btn" class="admin-nav-item">
+                    <i class="fa-solid fa-right-from-bracket"></i> <span>Logout</span>
+                </a>
+            </nav>
+        </aside>
+
+        <main class="admin-main">
+            <div class="admin-header">
+                <div>
+                    <h1>User Feedback</h1>
+                    <p style="color: var(--admin-text-muted);">Review and acknowledge user feedback and suggestions</p>
+                </div>
+                <div class="admin-user-display"></div>
+            </div>
+
+            <div class="content-card">
+                <div style="display: flex; margin-bottom: 1.5rem; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                    <div style="position: relative; width: 300px;">
+                        <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--admin-text-muted);"></i>
+                        <input type="text" id="feedback-search" placeholder="Search feedback..." class="filter-input" style="padding-left: 36px; width: 100%;">
+                    </div>
+                    <select id="filter-type" class="filter-input" style="width: auto;">
+                        <option value="all">All Types</option>
+                        <option value="text">Text</option>
+                        <option value="audio">Audio</option>
+                    </select>
+                    <select id="filter-status" class="filter-input" style="width: auto;">
+                        <option value="all">All Status</option>
+                        <option value="pending">Pending</option>
+                        <option value="acknowledged">Acknowledged</option>
+                    </select>
+                </div>
+
+                <div class="admin-table-container">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Type</th>
+                                <th>Feedback / Transcription</th>
+                                <th>Audio</th>
+                                <th>Date</th>
+                                <th>Status</th>
+                                <th style="text-align: right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="feedback-list">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div id="feedback-pagination" style="margin-top: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                    <span id="pagination-info" style="font-size: 0.9rem; color: var(--admin-text-muted);">Showing all results</span>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="action-btn" id="prev-page" title="Previous" disabled><i class="fa-solid fa-chevron-left"></i></button>
+                        <button class="action-btn" id="next-page" title="Next" disabled><i class="fa-solid fa-chevron-right"></i></button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="../js/theme.js"></script>
+    <script src="../js/admin_common.js"></script>
+    <script src="../js/admin_feedback.js"></script>
+</body>
+</html>

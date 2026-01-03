@@ -98,7 +98,7 @@ function renderHeatmap(issues) {
     const isDarkMode = document.body.classList.contains('dark-mode');
     
     if (!map) {
-        map = L.map('map-heatmap').setView([8.417, -11.841], 8); 
+        map = L.map('map-heatmap').setView([8.417, -11.841], 7); 
         
         const tileUrl = isDarkMode 
             ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
@@ -130,7 +130,7 @@ function renderHeatmap(issues) {
 
                 button.onclick = function(e) {
                     e.preventDefault();
-                    map.flyTo([8.417, -11.841], 8);
+                    map.flyTo([8.417, -11.841], 7);
                 };
                 return container;
             }

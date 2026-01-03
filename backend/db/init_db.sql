@@ -213,6 +213,18 @@ LEFT JOIN (
     GROUP BY COALESCE(i2.duplicate_of, i2.id)
 ) v_agg ON i.id = v_agg.effective_issue_id;
 
+-- Feedback Table
+CREATE TABLE IF NOT EXISTS feedback (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    type VARCHAR(20) NOT NULL CHECK (type IN ('text', 'audio')),
+    content TEXT,
+    media_url TEXT,
+    transcription TEXT,
+    status VARCHAR(20) DEFAULT 'white',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Seed Category-Group mappings (Simplified for key categories)
 DO $$
 DECLARE

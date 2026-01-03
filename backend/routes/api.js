@@ -1195,5 +1195,36 @@ router.delete('/admin/groups/:id', async (req, res) => {
     }
 });
 
+// ==========================================
+// FEEDBACK ROUTES
+// ==========================================
+
+// GET /api/admin/feedback
+router.get('/admin/feedback', async (req, res) => {
+    try {
+        const feedback = await fixamHandler.fixamDb.getFeedback();
+        res.json(feedback);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// POST /api/admin/feedback/:id/acknowledge
+router.post('/admin/feedback/:id/acknowledge', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const success = await fixamHandler.fixamDb.acknowledgeFeedback(id);
+        if (success) {
+            res.json({ success: true });
+        } else {
+            res.status(400).json({ success: false, message: 'Failed to acknowledge feedback' });
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 module.exports = router;
 

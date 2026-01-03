@@ -25,321 +25,6 @@
 
     <!-- Custom CSS -->
     <link rel="stylesheet" href="../css/style.css">
-    <style>
-        :root {
-            /* Light Theme (Default) */
-            --admin-bg: #f8fafc;
-            --admin-card-bg: #ffffff;
-            --admin-text: #1e293b;
-            --admin-text-muted: #64748b;
-            --admin-primary: #2563eb;
-            --admin-success: #22c55e;
-            --admin-warning: #f59e0b;
-            --admin-danger: #ef4444;
-            --admin-border: #e2e8f0;
-        }
-
-        body.dark-mode {
-            --admin-bg: #0f172a;
-            --admin-card-bg: #1e293b;
-            --admin-text: #f8fafc;
-            --admin-text-muted: #94a3b8;
-            --admin-primary: #3b82f6;
-            --admin-success: #10b981;
-            --admin-border: #334155;
-        }
-
-        body {
-            background-color: var(--admin-bg);
-            color: var(--admin-text);
-            font-family: 'Inter', sans-serif;
-        }
-
-        .login-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: var(--admin-bg);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 9999;
-        }
-
-        .login-card {
-            background: var(--admin-card-bg);
-            padding: 2rem;
-            border-radius: 12px;
-            width: 100%;
-            max-width: 400px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            border: 1px solid var(--admin-border);
-            text-align: center;
-        }
-
-        .login-card h2 {
-            margin-bottom: 1.5rem;
-            font-family: 'Outfit', sans-serif;
-            color: var(--admin-text);
-        }
-
-        .login-form input {
-            width: 100%;
-            padding: 0.75rem;
-            margin-bottom: 1rem;
-            background: var(--admin-bg);
-            border: 1px solid var(--admin-border);
-            border-radius: 6px;
-            color: var(--admin-text);
-            font-size: 1rem;
-        }
-
-        .login-form button {
-            width: 100%;
-            padding: 0.75rem;
-            background: var(--admin-primary);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .login-form button:hover {
-            background: #2563eb;
-        }
-
-        .filter-input {
-            background: var(--admin-card-bg);
-            border: 1px solid var(--admin-border);
-            color: var(--admin-text);
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 0.9rem;
-            outline: none;
-        }
-
-        .admin-container {
-            display: grid;
-            grid-template-columns: 250px 1fr;
-            height: 100vh;
-            overflow: hidden;
-        }
-
-
-        .admin-sidebar {
-            background: var(--admin-card-bg);
-            border-right: 1px solid var(--admin-border);
-            padding: 1.5rem;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .admin-logo {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 2rem;
-            font-family: 'Outfit', sans-serif;
-            font-weight: 700;
-            font-size: 1.25rem;
-            color: var(--admin-text);
-        }
-
-        .admin-header-section {
-            background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
-            padding: 1.5rem;
-            margin: -1.5rem -1.5rem 1.5rem -1.5rem;
-            border-bottom: 1px solid var(--admin-border);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        body.dark-mode .admin-header-section {
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-            border-bottom: 1px solid #334155;
-        }
-
-        .admin-header-section img {
-            height: 50px;
-        }
-
-        .admin-nav {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        .admin-nav-item {
-            padding: 0.75rem 1rem;
-            border-radius: 6px;
-            color: var(--admin-text-muted);
-            text-decoration: none;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            transition: all 0.2s;
-        }
-
-        .admin-nav-item:hover, .admin-nav-item.active {
-            background: rgba(59, 130, 246, 0.1);
-            color: var(--admin-primary);
-        }
-
-        .admin-main {
-            padding: 2rem;
-            overflow-y: auto;
-        }
-
-        .admin-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-        }
-
-        .admin-header h1 {
-            font-family: 'Outfit', sans-serif;
-            font-size: 1.875rem;
-            font-weight: 700;
-        }
-
-        .chart-card {
-            background: var(--admin-card-bg);
-            border: 1px solid var(--admin-border);
-            border-radius: 12px;
-            padding: 1.5rem;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .hidden { display: none !important; }
-
-        @media (max-width: 1024px) {
-            .admin-container {
-                grid-template-columns: 80px 1fr;
-            }
-            .admin-sidebar span, .logo-text { display: none; }
-        }
-
-        @media (max-width: 768px) {
-            .admin-container {
-                grid-template-columns: 1fr;
-                grid-template-rows: auto 1fr;
-                height: 100vh;
-                overflow: hidden;
-            }
-            .admin-sidebar {
-                flex-direction: row;
-                height: auto;
-                padding: 1rem;
-                justify-content: space-between;
-                border-bottom: 1px solid var(--admin-border);
-                border-right: none;
-            }
-            .admin-nav {
-                flex-direction: row;
-                gap: 1rem;
-                align-items: center;
-                width: 100%;
-                justify-content: space-around;
-            }
-            .admin-nav-item {
-                padding: 0.5rem;
-            }
-            .admin-nav-item span { display: none; }
-            .admin-header-section { 
-                margin: 0; 
-                padding: 0; 
-                background: none; 
-                border: none; 
-                width: auto;
-            }
-            .admin-header-section img { height: 32px; }
-            #theme-toggle-admin { width: 32px; height: 32px; }
-            
-            .admin-main { 
-                padding: 1rem; 
-                height: calc(100vh - 70px); 
-                overflow-y: auto;
-            }
-            .admin-header { 
-                flex-direction: column; 
-                align-items: flex-start; 
-                gap: 1rem; 
-                margin-bottom: 1.5rem;
-            }
-            .admin-header h1 { font-size: 1.5rem; }
-
-            .issues-toolbar {
-                flex-direction: column;
-                align-items: stretch !important;
-                gap: 0.75rem !important;
-            }
-            .issues-toolbar input, .issues-toolbar select {
-                width: 100% !important;
-            }
-            
-            /* Table responsiveness */
-            .chart-card table thead { display: none; }
-            .chart-card table tr { 
-                display: block; 
-                margin-bottom: 1rem; 
-                border: 1px solid var(--admin-border); 
-                border-radius: 8px;
-                padding: 0.5rem;
-                background: var(--admin-card-bg);
-            }
-            .chart-card table td { 
-                display: flex; 
-                justify-content: space-between; 
-                align-items: center; 
-                text-align: right;
-                padding: 0.6rem 0.5rem !important;
-                border: none !important;
-            }
-            .chart-card table td::before { 
-                content: attr(data-label); 
-                font-weight: 600; 
-                text-align: left;
-                color: var(--admin-text-muted);
-                font-size: 0.85rem;
-            }
-
-            .pagination-controls {
-                flex-wrap: wrap;
-                gap: 0.5rem;
-                padding: 1rem 0;
-            }
-            #page-info {
-                position: static !important;
-                width: 100%;
-                text-align: center;
-                order: -1;
-            }
-
-            /* Modal grid to stack */
-            #issue-modal .login-card {
-                width: 95% !important;
-                margin: 10px;
-                padding: 1.5rem !important;
-            }
-            #issue-modal .login-card > div[style*="grid-template-columns"] {
-                grid-template-columns: 1fr !important;
-                gap: 1.5rem !important;
-            }
-            #issue-modal div[style*="border-left"] {
-                border-left: none !important;
-                padding-left: 0 !important;
-                border-top: 1px solid var(--admin-border);
-                padding-top: 1.5rem;
-            }
-        }
-    </style>
 </head>
 <body>
 
@@ -366,7 +51,8 @@
     <div id="admin-container" class="admin-container hidden">
         <aside class="admin-sidebar">
             <div class="admin-header-section">
-                <img src="../fixam-logo.svg" alt="FIXAM" height="50">
+                <img src="../fixam-logo.svg" alt="FIXAM" height="50" class="logo-full">
+                <img src="../fixam-icon.svg" alt="FIXAM" height="40" class="logo-icon" style="display: none;">
                 <button id="theme-toggle-admin" style="background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.3); color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
                     <i class="fa-solid fa-moon"></i>
                 </button>
@@ -380,6 +66,9 @@
                 </a>
                 <a href="/admin/users" id="nav-users" class="admin-nav-item">
                     <i class="fa-solid fa-users"></i> <span>Users & Groups</span>
+                </a>
+                <a href="/admin/feedback" id="nav-feedback" class="admin-nav-item">
+                    <i class="fa-solid fa-comments"></i> <span>Feedback</span>
                 </a>
                 <div style="flex-grow: 1;"></div>
                 <a href="#" id="logout-btn" class="admin-nav-item">
@@ -403,10 +92,11 @@
                 </div>
 
                 <!-- Issues Toolbar -->
+                <!-- Issues Toolbar -->
                 <div class="issues-toolbar" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center;">
-                    <input type="text" id="issue-search" placeholder="Search..." style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 6px 12px; border-radius: 6px; width: 300px;">
+                    <input type="text" id="issue-search" class="filter-input" placeholder="Search..." style="width: 300px;">
 
-                    <select id="issue-filter-category" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 6px 12px; border-radius: 6px;">
+                    <select id="issue-filter-category" class="filter-input">
                         <option value="">All Categories</option>
                         <option value="Water">Water</option>
                         <option value="Road">Road</option>
@@ -416,7 +106,7 @@
                         <option value="Other">Other</option>
                     </select>
 
-                    <select id="issue-filter-status" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 6px 12px; border-radius: 6px;">
+                    <select id="issue-filter-status" class="filter-input">
                         <option value="">All Statuses</option>
                         <option value="critical">Critical</option>
                         <option value="progress">In Progress</option>
@@ -427,14 +117,14 @@
                         <input class="filter-input form-control" type="date" id="issue-filter-start" placeholder="Start">
                         <span style="color: var(--admin-text-muted);">-</span>
                         <input class="filter-input form-control" type="date" id="issue-filter-end" placeholder="End">
-                        <button id="reset-issues-filters" title="Reset Filters" style="background: none; border: 1px solid var(--admin-border); color: var(--admin-text-muted); padding: 0.4rem 0.75rem; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">
+                        <button id="reset-issues-filters" title="Reset Filters" class="filter-btn">
                             <i class="fa-solid fa-rotate-left"></i>
                         </button>
                     </div>
 
                     <div style="flex-grow: 1;"></div>
 
-                    <select id="issue-sort" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 6px 12px; border-radius: 6px;">
+                    <select id="issue-sort" class="filter-input">
                         <option value="newest">Newest First</option>
                         <option value="oldest">Oldest First</option>
                         <option value="most_votes">Most Votes</option>
