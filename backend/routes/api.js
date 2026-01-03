@@ -802,7 +802,7 @@ router.post('/admin/issues/:id/unlink-duplicate', async (req, res) => {
 // ==========================================
 
 // GET /api/admin/users - List users with roles and groups
-router.get('/api/admin/users', async (req, res) => {
+router.get('/admin/users', async (req, res) => {
     try {
         const { search, role, group, sort, page = 1, limit = 8 } = req.query;
         const pageNum = parseInt(page);
@@ -898,7 +898,7 @@ router.get('/api/admin/users', async (req, res) => {
 });
 
 // POST /api/admin/users/:id/penalize - Admin Penalty Route
-router.post('/api/admin/users/:id/penalize', async (req, res) => {
+router.post('/admin/users/:id/penalize', async (req, res) => {
     try {
         const { id } = req.params;
         const { amount, reason } = req.body;
