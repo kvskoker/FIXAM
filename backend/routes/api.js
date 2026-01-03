@@ -419,11 +419,10 @@ router.post('/webhook', async (req, res) => {
     const body = req.body;
 
     if (body.object) {
-        try {
-            await fixamHandler.processIncomingMessage(body);
-        } catch (err) {
-            console.error("Error processing message:", err);
-        }
+        // Process in background to avoid timeout
+        fixamHandler.processIncomingMessage(body)
+            .catch(err => console.error("Error processing message:", err));
+            
         res.sendStatus(200);
     } else {
         res.sendStatus(404);
