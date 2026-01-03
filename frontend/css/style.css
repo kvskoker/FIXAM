@@ -329,6 +329,7 @@ body.dark-mode .sidebar .header {
 .citizen-main {
     padding: 2rem;
     overflow-y: auto;
+    box-sizing: border-box;
 }
 
 .citizen-grid {
@@ -351,7 +352,7 @@ body.dark-mode .sidebar .header {
 }
 
 .citizen-chart-container {
-    height: 270px;
+    height: 260px;
     width: 100%;
     position: relative;
 }
@@ -401,6 +402,112 @@ body.dark-mode .sidebar .header {
 
 .chat-now-btn:hover {
     background: #20bd5a;
+}
+
+/* Mobile Responsiveness */
+
+/* Portrait Mode (Phones & Tablets) */
+@media (max-width: 768px) and (orientation: portrait) {
+    .app-container {
+        flex-direction: column;
+        height: 100vh; /* Fallback */
+        height: 100dvh;
+        overflow: hidden;
+    }
+
+    /* Map / Main Content at Top */
+    .map-container {
+        order: 1;
+        width: 100%;
+        height: 40vh; 
+        height: 40dvh;
+        flex: none;
+        border-bottom: 1px solid var(--admin-border);
+    }
+
+    /* Sidebar at Bottom */
+    .sidebar {
+        order: 2;
+        width: 100%;
+        height: 60vh;
+        height: 60dvh;
+        flex: none;
+        border-right: none;
+        border-top: 1px solid var(--admin-border);
+        box-shadow: 0 -4px 12px rgba(0,0,0,0.05);
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto; /* ENTIRE Sidebar scrolls */
+    }
+
+    .issue-list {
+        flex: none; /* Let it grow naturally */
+        height: auto;
+        overflow: visible;
+        padding-bottom: 2rem;
+    }
+
+    .sidebar .header {
+        padding: 1rem;
+    }
+
+    .logo img {
+        height: 36px;
+    }
+
+    /* Dashboard: Allow main content more space */
+    .map-container.citizen-main {
+         height: 65vh;
+         height: 65dvh;
+         padding: 1rem;
+    }
+
+    .app-container:has(.citizen-main) .sidebar {
+        height: 35vh;
+        height: 35dvh;
+    }
+
+    .citizen-chart-container {
+        height: 200px;
+    }
+}
+
+/* Landscape Mode (Mobile Landscape) */
+@media (max-width: 1100px) and (orientation: landscape) {
+    .app-container {
+        flex-direction: row;
+        height: 100vh;
+        height: 100dvh;
+    }
+
+    .sidebar {
+        width: 320px;
+        min-width: 320px;
+        height: 100%;
+        order: 0; /* Left */
+        border-right: 1px solid var(--admin-border);
+        border-top: none;
+        display: block; /* Use block to ensure simple document flow for scrolling */
+        overflow-y: auto; /* ENTIRE Sidebar scrolls */
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .issue-list {
+        flex: none;
+        height: auto;
+        overflow: visible;
+    }
+    
+    .nav-item {
+        white-space: nowrap;
+    }
+
+    .map-container {
+        flex: 1;
+        height: 100%;
+        order: 1; /* Right */
+    }
 }
 
 .dashboard-grid {
