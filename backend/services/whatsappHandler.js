@@ -370,18 +370,18 @@ class FixamHandler {
                 const existingVote = await this.fixamDb.checkUserVote(voteData.issue_id, user.id);
                 if (existingVote) {
                     await this.sendMessage(fromNumber, `⚠️ You have already voted (${existingVote.vote_type}) on this issue.`);
-                    await this.fixamDb.resetConversationState(fromNumber);
+                    await this.sendMainMenu(fromNumber, user.name);
                     return;
                 }
 
                 if (input === '1') {
                     await this.fixamDb.voteIssue(voteData.issue_id, user.id, 'upvote');
-                    await this.sendMessage(fromNumber, "Vote recorded! 👍\n\nType 'Hi' for main menu.");
-                    await this.fixamDb.resetConversationState(fromNumber);
+                    await this.sendMessage(fromNumber, "Vote recorded! 👍");
+                    await this.sendMainMenu(fromNumber, user.name);
                 } else if (input === '2') {
                     await this.fixamDb.voteIssue(voteData.issue_id, user.id, 'downvote');
-                    await this.sendMessage(fromNumber, "Vote recorded! 👎\n\nType 'Hi' for main menu.");
-                    await this.fixamDb.resetConversationState(fromNumber);
+                    await this.sendMessage(fromNumber, "Vote recorded! 👎");
+                    await this.sendMainMenu(fromNumber, user.name);
                 } else {
                     await this.sendMessage(fromNumber, "Please type 1 or 2.");
                 }
