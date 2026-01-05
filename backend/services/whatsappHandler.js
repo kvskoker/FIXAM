@@ -211,7 +211,7 @@ class FixamHandler {
                         data: currentData
                     });
 
-                    let msg = `I found ${locations.length} locations. Please reply with the number (1-${locations.length}) to select, or type *9* to cancel:\n\n`;
+                    let msg = `I found ${locations.length} locations. Please reply with the number (e.g. 1) to select, or type *9* to cancel:\n\n`;
                     locations.forEach((loc, i) => {
                         msg += `${i + 1}. ${loc.display_name}\n`;
                     });
@@ -282,7 +282,7 @@ class FixamHandler {
                         msg += `📍 *${dup.title}* (${dup.ticket_id})\n`;
                         msg += `   Status: ${dup.status}\n`;
                     });
-                    msg += `\nIt seems this might have been reported already. What would you like to do?\n\n`;
+                    msg += `\nIt seems this might have been reported already. What would you like to do? (Reply with the number)\n\n`;
                     msg += `1️⃣ *View more details* of these issues\n`;
                     msg += `2️⃣ *Report as a new* separate issue\n`;
                     msg += `3️⃣ *Vote/Support* an existing issue\n\n`;
@@ -320,7 +320,7 @@ class FixamHandler {
                 } else if (input === '3') {
                     // Vote
                     const dups = state.data.potential_duplicates;
-                    let msg = `Which issue would you like to support? Reply with the number:\n\n`;
+                    let msg = `Which issue would you like to support? Reply with the number (e.g. 1):\n\n`;
                     dups.forEach((dup, i) => {
                         msg += `${i + 1}. *${dup.title}* (${dup.ticket_id})\n`;
                     });
@@ -363,7 +363,7 @@ class FixamHandler {
                     await this.sendMessage(fromNumber, "Report cancelled. Type 'Hi' to start over.");
                     await this.fixamDb.resetConversationState(fromNumber);
                 } else {
-                    await this.sendMessage(fromNumber, "Please type *1* to confirm or *9* to cancel.");
+                    await this.sendMessage(fromNumber, "Please type the number *1* to confirm or *9* to cancel.");
                 }
                 break;
 
@@ -413,7 +413,7 @@ class FixamHandler {
                      await this.sendMessage(fromNumber, "Voting cancelled.");
                      await this.sendMainMenu(fromNumber, user.name);
                 } else {
-                    await this.sendMessage(fromNumber, "Please type 1 for Upvote, 2 for Downvote.");
+                    await this.sendMessage(fromNumber, "Please type the number 1 for Upvote, 2 for Downvote.");
                 }
                 break;
 
@@ -708,7 +708,7 @@ class FixamHandler {
     }
 
     async sendMainMenu(fromNumber, name) {
-        await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today?\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *My Points* 🏆\n4️⃣ *Feedback* 💬`);
+        await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today? (Reply with the number)\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *My Points* 🏆\n4️⃣ *Feedback* 💬`);
         await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category' });
     }
 
@@ -728,7 +728,7 @@ class FixamHandler {
             `${urgencyEmoji[data.urgency] || '🟡'} *Urgency*: ${(data.urgency || 'medium').toUpperCase()}\n` +
             `📝 *Description*: ${data.description}\n` +
             `📸 *Evidence*: ${data.image_url ? 'Attached' : 'None'}\n\n` +
-            `Type *1* to confirm or *9* to cancel.`
+            `Type the number *1* to confirm or *9* to cancel.`
         );
     }
 
