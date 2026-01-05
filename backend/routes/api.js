@@ -707,24 +707,27 @@ router.put('/admin/issues/:id/status', async (req, res) => {
                 const message = `🔔 *Issue Update*\n\nThe status of your report *${row.title}* (#${row.ticket_id}) has been updated to: *${friendlyStatus}*.\n\nThank you for helping us make our community better! 🌟`;
                 await whatsappService.sendMessage(row.phone_number, message);
                 
-                // Gamification: Award 50 points to reporter for resolution
+                // Gamification: Award 50 points to reporter for resolution (if not already awarded)
                 if (status === 'fixed') {
-                     // Get user ID from phone number (since we have phone_number in row, we need user ID)
-                     // Actually `reportersResult` joins users table, let's fetch user ID there too.
-                     // But wait, the SELECT above only fetches ticket_id, title, phone_number.
-                     // I should fix the SELECT query first to include user_id.
-                     // HOWEVER, `reported_by` in issues table is the user ID.
-                     // Doing a separate query for cleaniness.
                      const reporterRes = await db.query('SELECT reported_by FROM issues WHERE id = $1', [id]);
                      if (reporterRes.rows.length > 0 && reporterRes.rows[0].reported_by) {
                          const userId = reporterRes.rows[0].reported_by;
-                         // Add points
-                         await db.query('UPDATE users SET points = points + 50 WHERE id = $1', [userId]);
-                         // Log
-                         await db.query(`INSERT INTO user_point_logs (user_id, amount, action_type, related_issue_id) VALUES ($1, 50, 'issue_resolved', $2)`, [userId, id]);
                          
-                         // Notify user about points
-                         await whatsappService.sendMessage(row.phone_number, `🎉 *Bonus Points Earned!* 🎉\n\nYou received *50 points* because your reported issue was RESOLVED! Keep up the great work citizen! 👏`);
+                         // Check if points were already awarded for this issue
+                         const pointsCheck = await db.query(
+                             "SELECT id FROM user_point_logs WHERE user_id = $1 AND related_issue_id = $2 AND action_type = 'issue_resolved'",
+                             [userId, id]
+                         );
+
+                         if (pointsCheck.rows.length === 0) {
+                             // Add points
+                             await db.query('UPDATE users SET points = points + 50 WHERE id = $1', [userId]);
+                             // Log
+                             await db.query(`INSERT INTO user_point_logs (user_id, amount, action_type, related_issue_id) VALUES ($1, 50, 'issue_resolved', $2)`, [userId, id]);
+                             
+                             // Notify user about points
+                             await whatsappService.sendMessage(row.phone_number, `🎉 *Bonus Points Earned!* 🎉\n\nYou received *50 points* because your reported issue was RESOLVED! Keep up the great work citizen! 👏`);
+                         }
                      }
                 }
             }
