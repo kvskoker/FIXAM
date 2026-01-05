@@ -269,7 +269,7 @@ function renderIssuesTable(issues) {
             <td data-label="Issue ID" style="padding: 1rem; font-family: monospace;">${issue.ticket_id || 'N/A'}</td>
             <td data-label="Category" style="padding: 1rem;">${issue.category}</td>
             <td data-label="Title" style="padding: 1rem; font-weight: 500;">${issue.title}</td>
-            <td data-label="Location" style="padding: 1rem; color: var(--admin-text-muted);">${parseFloat(issue.lat).toFixed(4)}, ${parseFloat(issue.lng).toFixed(4)}</td>
+            <td data-label="Location" style="padding: 1rem; color: var(--admin-text-muted);">${issue.address || `${parseFloat(issue.lat).toFixed(4)}, ${parseFloat(issue.lng).toFixed(4)}`}</td>
             <td data-label="Votes" style="padding: 1rem;">${issue.upvotes || 0}</td>
             <td data-label="Status" style="padding: 1rem;"><span style="color: ${statusColors[issue.status] || 'white'}; font-weight: 600; text-transform: capitalize;">${issue.status}</span></td>
             <td data-label="Date" style="padding: 1rem; color: var(--admin-text-muted); font-size: 0.9rem;">${new Date(issue.created_at).toLocaleDateString('en-GB')}</td>
@@ -297,7 +297,7 @@ async function openIssueDetails(id) {
             document.getElementById('modal-status').textContent = issue.status;
             document.getElementById('modal-title').textContent = issue.title;
             document.getElementById('modal-desc').textContent = issue.description;
-            document.getElementById('modal-location').textContent = `${issue.lat}, ${issue.lng}`;
+            document.getElementById('modal-location').textContent = issue.address || `${issue.lat}, ${issue.lng}`;
             
             // Audio Player
             const descContainer = document.getElementById('modal-desc');
@@ -316,15 +316,17 @@ async function openIssueDetails(id) {
             textDiv.textContent = issue.description;
             descContainer.appendChild(textDiv);
             
-            // Reverse geocode to get address
-            fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${issue.lat}&lon=${issue.lng}`)
-                .then(res => res.json())
-                .then(data => {
-                    if (data && data.display_name) {
-                        document.getElementById('modal-location').textContent = data.display_name;
-                    }
-                })
-                .catch(err => console.error('Geocoding error:', err));
+            // Reverse geocode to get address (if not already present)
+            if (!issue.address) {
+                fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${issue.lat}&lon=${issue.lng}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data && data.display_name) {
+                            document.getElementById('modal-location').textContent = data.display_name;
+                        }
+                    })
+                    .catch(err => console.error('Geocoding error:', err));
+            }
             document.getElementById('modal-image').src = issue.image_url || 'https://via.placeholder.com/400x200?text=No+Image';
 
             const statusEl = document.getElementById('modal-status');

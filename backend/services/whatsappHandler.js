@@ -745,7 +745,8 @@ class FixamHandler {
             image_url: data.image_url,
             audio_url: data.audio_url || null,
             reported_by: userId,
-            urgency: data.urgency || 'medium'
+            urgency: data.urgency || 'medium',
+            address: data.address
         };
 
         const issue = await this.fixamDb.createIssue(issueData);

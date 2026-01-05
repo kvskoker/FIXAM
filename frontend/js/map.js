@@ -184,6 +184,16 @@ window.expandVideo = function(container, event) {
     }
 };
 
+// Helper: Format address (Max 3 levels)
+function formatAddress(address) {
+    if (!address) return null;
+    const parts = address.split(',').map(p => p.trim());
+    if (parts.length > 3) {
+        return parts.slice(0, 3).join(', ');
+    }
+    return address;
+}
+
 function renderIssues(issues) {
     // Clear existing
     if (clusterGroup) {
@@ -304,8 +314,8 @@ function renderIssues(issues) {
                     <div style="font-weight: 500;">By:</div>
                     <div style="color: var(--text-primary);">${issue.reported_by_name || 'Anonymous citizen'}</div>
                     
-                    <div style="font-weight: 500;">Location:</div>
-                    <div style="color: var(--text-primary); font-size: 0.8rem;"><i class="fa-solid fa-location-dot" style="margin-right: 4px; opacity: 0.7;"></i>Freetown, SL (${parseFloat(issue.lat).toFixed(4)}, ${parseFloat(issue.lng).toFixed(4)})</div>
+                    <div style="font-weight: 500;">Location:</div>                    
+                    <div style="color: var(--text-primary); font-size: 0.8rem;"><i class="fa-solid fa-location-dot" style="margin-right: 4px; opacity: 0.7;"></i>${formatAddress(issue.address) || `Freetown, SL (${parseFloat(issue.lat).toFixed(4)}, ${parseFloat(issue.lng).toFixed(4)})`}</div>
                 </div>
 
                 <div class="popup-desc" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 15px; line-height: 1.4; border-top: 1px solid var(--border-color); padding-top: 8px;">${issue.description}</div>
@@ -346,8 +356,8 @@ function renderIssues(issues) {
             <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.25rem;">#${issue.ticket_id}</div>
             <div class="issue-title" style="font-weight: 600;">${issue.title}</div>
             <div class="issue-location">
-                <i class="fa-solid fa-location-dot"></i> Freetown, SL
-            </div>
+                <i class="fa-solid fa-location-dot"></i> ${formatAddress(issue.address) || 'Freetown, SL'}
+            </div>            
             <div class="issue-meta">
                 <span>${new Date(issue.reported_on || issue.created_at).toLocaleDateString('en-GB')}</span>
                 <div class="vote-count">

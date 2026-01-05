@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS issues (
     urgency VARCHAR(20) DEFAULT 'medium',
     duplicate_of INTEGER REFERENCES issues(id) ON DELETE SET NULL,
     resolution_note TEXT,
+    address TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -141,6 +142,9 @@ CREATE TABLE IF NOT EXISTS issues (
 CREATE INDEX IF NOT EXISTS idx_issues_lat_lng ON issues (lat, lng);
 CREATE INDEX IF NOT EXISTS idx_issues_status ON issues (status);
 CREATE INDEX IF NOT EXISTS idx_issues_reported_by ON issues (reported_by);
+
+-- Ensure columns exist if table was already created
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS address TEXT;
 
 -- 9. Votes Table
 CREATE TABLE IF NOT EXISTS votes (

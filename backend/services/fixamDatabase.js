@@ -120,8 +120,8 @@ class FixamDatabase {
     // Create Issue
     async createIssue(issueData) {
         const sql = `
-            INSERT INTO issues (ticket_id, title, category, lat, lng, description, image_url, audio_url, reported_by, status, duplicate_of, urgency)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            INSERT INTO issues (ticket_id, title, category, lat, lng, description, image_url, audio_url, reported_by, status, duplicate_of, urgency, address)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING *
         `;
         const values = [
@@ -136,7 +136,8 @@ class FixamDatabase {
             issueData.reported_by,
             issueData.status || 'critical',
             issueData.duplicate_of || null,
-            issueData.urgency || 'medium'
+            issueData.urgency || 'medium',
+            issueData.address || null
         ];
 
         try {
