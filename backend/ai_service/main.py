@@ -114,7 +114,6 @@ async def lifespan(app: FastAPI):
             torch_dtype=torch_dtype,
             device=device,
             generate_kwargs={
-                "language": "en",  # Explicitly set to English to avoid deprecation warning
                 "task": "transcribe"  # Explicitly set task
             }
         )
