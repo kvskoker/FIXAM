@@ -327,7 +327,26 @@ async function openIssueDetails(id) {
                     })
                     .catch(err => console.error('Geocoding error:', err));
             }
-            document.getElementById('modal-image').src = issue.image_url || 'https://via.placeholder.com/400x200?text=No+Image';
+            // Media Display Logic
+            const imgEl = document.getElementById('modal-image');
+            const videoEl = document.getElementById('modal-video');
+            const mediaUrl = issue.image_url;
+            
+            const isVideo = (url) => {
+                if (!url) return false;
+                return ['.mp4', '.mov', '.webm', '.ogg', '.avi'].some(ext => url.toLowerCase().endsWith(ext));
+            };
+
+            if (mediaUrl && isVideo(mediaUrl)) {
+                imgEl.style.display = 'none';
+                videoEl.src = mediaUrl;
+                videoEl.style.display = 'block';
+            } else {
+                videoEl.style.display = 'none';
+                if (videoEl.src) videoEl.pause();
+                imgEl.src = mediaUrl || 'https://via.placeholder.com/400x200?text=No+Image';
+                imgEl.style.display = 'block';
+            }
 
             const statusEl = document.getElementById('modal-status');
             const statusColors = { 'critical': 'var(--admin-danger)', 'progress': 'var(--admin-warning)', 'fixed': 'var(--admin-success)', 'duplicate': 'var(--admin-warning)' };
