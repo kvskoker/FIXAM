@@ -107,6 +107,34 @@ class FixamHandler {
         }
 
         // 1. User Registration
+        // 2. Global: Check for direct Vote Code (FIX-XXXXXX)
+        const voteCodeMatch = input.toUpperCase().match(/^FIX-[A-Z0-9]{6}$/);
+        if (voteCodeMatch) {
+             const ticketId = voteCodeMatch[0];
+             const issue = await this.fixamDb.getIssueByTicketId(ticketId);
+             if (issue) {
+                 if (!user) {
+                     // New user: Start registration but save intent
+                     await this.fixamDb.initializeConversationState(fromNumber);
+                     await this.fixamDb.updateConversationState(fromNumber, { 
+                        current_step: 'awaiting_name',
+                        data: { pending_vote_ticket: ticketId }
+                     });
+                     await this.sendMessage(fromNumber, `Welcome to Fixam! 👋\n\nTo vote on *${issue.title}*, please first tell us your name.`);
+                     return;
+                 } else {
+                     // Registered user: Proceed to vote
+                     await this.fixamDb.updateConversationState(fromNumber, { 
+                        current_step: 'awaiting_vote_confirmation',
+                        data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
+                    });
+                    await this.sendMessage(fromNumber, `🗳️ *Vote Request Detected*\n\nFound Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                    return;
+                 }
+             }
+             // If not found, fall through
+        }
+
         if (!user) {
             // Check if we are already asking for name
             let state = await this.fixamDb.getConversationState(fromNumber);
@@ -147,33 +175,7 @@ class FixamHandler {
             return;
         }
 
-        // 2. Global: Check for direct Vote Code (FIX-XXXXXX)
-        const voteCodeMatch = input.toUpperCase().match(/^FIX-[A-Z0-9]{6}$/);
-        if (voteCodeMatch) {
-             const ticketId = voteCodeMatch[0];
-             const issue = await this.fixamDb.getIssueByTicketId(ticketId);
-             if (issue) {
-                 if (!user) {
-                     // New user: Start registration but save intent
-                     await this.fixamDb.initializeConversationState(fromNumber);
-                     await this.fixamDb.updateConversationState(fromNumber, { 
-                        current_step: 'awaiting_name',
-                        data: { pending_vote_ticket: ticketId }
-                     });
-                     await this.sendMessage(fromNumber, `Welcome to Fixam! 👋\n\nTo vote on *${issue.title}*, please first tell us your name.`);
-                     return;
-                 } else {
-                     // Registered user: Proceed to vote
-                     await this.fixamDb.updateConversationState(fromNumber, { 
-                        current_step: 'awaiting_vote_confirmation',
-                        data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
-                    });
-                    await this.sendMessage(fromNumber, `🗳️ *Vote Request Detected*\n\nFound Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
-                    return;
-                 }
-             }
-             // If not found, fall through
-        }
+
 
         // 3. Get State
         let state = await this.fixamDb.getConversationState(fromNumber);
