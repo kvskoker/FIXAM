@@ -645,8 +645,8 @@ class FixamHandler {
                     });
                     
                     const duration = durationRes.data.duration;
-                    if (duration > 60) {
-                        await this.sendMessage(fromNumber, "⚠️ Voice note too long! Please keep it under 1 minute.");
+                    if (duration > 300) {
+                        await this.sendMessage(fromNumber, "⚠️ Voice note too long! Please keep it under 5 minutes.");
                         return; // Stop processing, do not save
                     }
                 } catch (error) {

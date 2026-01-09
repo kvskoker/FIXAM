@@ -137,6 +137,14 @@ pm2 delete fixam-frontend 2>/dev/null || true
 # Start serve using PM2 with the startup script
 pm2 start ./start-frontend.sh --name "fixam-frontend"
 
+# AI Service Setup
+echo -e "${GREEN}Setting up AI Service...${NC}"
+cd backend/ai_service
+pip install -r requirements.txt
+cd ../..
+pm2 delete fixam-ai 2>/dev/null || true
+pm2 start backend/ai_service/main.py --name "fixam-ai" --interpreter python3
+
 # Save PM2 list
 pm2 save
 
