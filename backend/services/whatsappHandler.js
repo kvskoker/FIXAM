@@ -130,7 +130,23 @@ class FixamHandler {
             return;
         }
 
-        // 2. Get State
+        // 2. Global: Check for direct Vote Code (FIX-XXXXXX)
+        const voteCodeMatch = input.toUpperCase().match(/^FIX-[A-Z0-9]{6}$/);
+        if (voteCodeMatch) {
+             const ticketId = voteCodeMatch[0];
+             const issue = await this.fixamDb.getIssueByTicketId(ticketId);
+             if (issue) {
+                 await this.fixamDb.updateConversationState(fromNumber, { 
+                    current_step: 'awaiting_vote_confirmation',
+                    data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
+                });
+                await this.sendMessage(fromNumber, `🗳️ *Vote Request Detected*\n\nFound Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                return;
+             }
+             // If not found, fall through (e.g. invalid command)
+        }
+
+        // 3. Get State
         let state = await this.fixamDb.getConversationState(fromNumber);
         if (!state) {
             await this.fixamDb.initializeConversationState(fromNumber);
@@ -187,7 +203,7 @@ class FixamHandler {
                 }
                 break;
 
-            case 'awaiting_report_location':
+            case 'awaiting_report_location': {
                 // Handle text address
                 const locations = await this.helpers.geocodeAddress(input);
                 if (locations.length === 0) {
@@ -221,6 +237,7 @@ class FixamHandler {
                     await this.sendMessage(fromNumber, msg);
                 }
                 break;
+            }
 
             case 'awaiting_address_selection':
                 const selection = parseInt(input);
@@ -824,7 +841,13 @@ class FixamHandler {
             // 2. Alert Operational Team if necessary
             await this.alertOperationalTeam(issue, data.address);
 
-            // 3. Reset to Menu automatically
+            // 3. Send Sharing Link
+            const botNumber = process.env.BOT_PHONE_NUMBER || '23274598229'; 
+            const shareLink = `https://wa.me/${botNumber}?text=${ticketId}`;
+            const shareMsg = `📢 *Share to Compile Votes!*\n\nForward this message to your community to help prioritize this issue:\n\n"Help fix this issue! Click the link below to vote:"\n${shareLink}`;
+            await this.sendMessage(fromNumber, shareMsg);
+
+            // 4. Reset to Menu automatically
             const user = await this.fixamDb.getUser(fromNumber);
             await this.sendMainMenu(fromNumber, user ? user.name : 'there');
         } else {
