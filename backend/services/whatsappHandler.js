@@ -213,6 +213,19 @@ class FixamHandler {
                 } else if (input === '5' || lowerInput.includes('feedback')) {
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_feedback', data: {} });
                     await this.sendMessage(fromNumber, "We value your feedback! 💬\n\nPlease type your feedback or send a *Voice Note*.");
+                } else if (input === '6' || lowerInput.includes('help')) {
+                    const helpMsg = `ℹ️ *Fixam Help Guide*\n\n` +
+                                    `*1. Report an Issue*: Tell us about problems like potholes, water leaks, or trash. Share location and a photo!\n` +
+                                    `*2. Vote*: Support issues reported by others using their Issue ID.\n` +
+                                    `*3. Trending*: Find popular issues in your area (e.g. 'Freetown') to support.\n` +
+                                    `*4. Points*: Earn points for being an active citizen!\n` +
+                                    `*5. Feedback*: Share your thoughts with the Fixam team.\n\n` +
+                                    `*Useful Commands:*\n` +
+                                    `- Type *9* to Cancel any action.\n` +
+                                    `- Type *Reset* to start over.\n\n` +
+                                    `For more support, contact: fixam@maxcit.com`;
+                    await this.sendMessage(fromNumber, helpMsg);
+                    await this.sendMainMenu(fromNumber, user.name);
                 } else {
                     await this.sendMainMenu(fromNumber, user.name);
                 }
@@ -823,7 +836,7 @@ class FixamHandler {
     }
 
     async sendMainMenu(fromNumber, name) {
-        await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today? (Reply with the number)\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *Trending Issues* 🔥\n4️⃣ *My Points* 🏆\n5️⃣ *Feedback* 💬`);
+        await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today? (Reply with the number)\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *Trending Issues* 🔥\n4️⃣ *My Points* 🏆\n5️⃣ *Feedback* 💬\n6️⃣ *Help & Info* ℹ️`);
         await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category' });
     }
 
