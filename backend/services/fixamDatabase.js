@@ -214,6 +214,37 @@ class FixamDatabase {
         }
     }
 
+    // Get Trending Issues within radius
+    async getTrendingIssues(lat, lng, radiusMeters = 5000, limit = 5) {
+        // Find issues within radius, sort by upvotes (desc) then distance (asc)
+        // We look effectively for "popular nearby issues"
+        const sql = `
+            SELECT i.*, 
+                   (6371000 * acos(cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2)) + sin(radians($1)) * sin(radians(lat)))) AS distance,
+                   COALESCE(vote_counts.upvotes, 0) as upvote_count
+            FROM issues i
+            LEFT JOIN (
+                SELECT issue_id, COUNT(*) as upvotes 
+                FROM votes 
+                WHERE vote_type = 'upvote' 
+                GROUP BY issue_id
+            ) vote_counts ON i.id = vote_counts.issue_id
+            WHERE i.status != 'fixed'
+            AND i.duplicate_of IS NULL
+            AND (6371000 * acos(cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2)) + sin(radians($1)) * sin(radians(lat)))) <= $3
+            ORDER BY upvote_count DESC, distance ASC
+            LIMIT $4
+        `;
+
+        try {
+            const result = await this.db.query(sql, [lat, lng, radiusMeters, limit]);
+            return result.rows;
+        } catch (error) {
+            this.debugLog('Error fetching trending issues', { error: error.message, lat, lng });
+            return [];
+        }
+    }
+
     // Mark issue as duplicate
     async markIssueAsDuplicate(issueId, duplicateOfId) {
         const sql = "UPDATE issues SET duplicate_of = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2";
