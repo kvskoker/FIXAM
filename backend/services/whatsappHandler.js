@@ -119,6 +119,23 @@ class FixamHandler {
                     return;
                 }
                 await this.fixamDb.registerUser(fromNumber, name);
+                
+                // Check if they had a pending vote
+                const pendingTicket = state.data && state.data.pending_vote_ticket;
+                if (pendingTicket) {
+                    const issue = await this.fixamDb.getIssueByTicketId(pendingTicket);
+                    if (issue) {
+                        const newUser = await this.fixamDb.getUser(fromNumber); // Re-fetch to get ID
+                        await this.fixamDb.updateConversationState(fromNumber, { 
+                            current_step: 'awaiting_vote_confirmation',
+                            data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
+                        });
+                        await this.sendMessage(fromNumber, `Thanks ${name}! ✅\n\nNow back to your vote:\n\n🗳️ *${issue.title}*\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                        return;
+                    }
+                }
+
+                // Normal flow
                 await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
                 await this.sendMainMenu(fromNumber, name);
             } else {
@@ -136,14 +153,26 @@ class FixamHandler {
              const ticketId = voteCodeMatch[0];
              const issue = await this.fixamDb.getIssueByTicketId(ticketId);
              if (issue) {
-                 await this.fixamDb.updateConversationState(fromNumber, { 
-                    current_step: 'awaiting_vote_confirmation',
-                    data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
-                });
-                await this.sendMessage(fromNumber, `🗳️ *Vote Request Detected*\n\nFound Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
-                return;
+                 if (!user) {
+                     // New user: Start registration but save intent
+                     await this.fixamDb.initializeConversationState(fromNumber);
+                     await this.fixamDb.updateConversationState(fromNumber, { 
+                        current_step: 'awaiting_name',
+                        data: { pending_vote_ticket: ticketId }
+                     });
+                     await this.sendMessage(fromNumber, `Welcome to Fixam! 👋\n\nTo vote on *${issue.title}*, please first tell us your name.`);
+                     return;
+                 } else {
+                     // Registered user: Proceed to vote
+                     await this.fixamDb.updateConversationState(fromNumber, { 
+                        current_step: 'awaiting_vote_confirmation',
+                        data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
+                    });
+                    await this.sendMessage(fromNumber, `🗳️ *Vote Request Detected*\n\nFound Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                    return;
+                 }
              }
-             // If not found, fall through (e.g. invalid command)
+             // If not found, fall through
         }
 
         // 3. Get State
@@ -844,7 +873,7 @@ class FixamHandler {
             // 3. Send Sharing Link
             const botNumber = process.env.BOT_PHONE_NUMBER || '23274598229'; 
             const shareLink = `https://wa.me/${botNumber}?text=${ticketId}`;
-            const shareMsg = `📢 *Share to Compile Votes!*\n\nForward this message to your community to help prioritize this issue:\n\n"Help fix this issue! Click the link below to vote:"\n${shareLink}`;
+            const shareMsg = `📢 *Share to Compile Votes!*\n\n*Issue:* ${data.title}\n*Location:* ${data.address}\n\nForward this message to your community to help prioritize this issue:\n\n"Help fix this issue! Click the link below to vote:"\n${shareLink}`;
             await this.sendMessage(fromNumber, shareMsg);
 
             // 4. Reset to Menu automatically
