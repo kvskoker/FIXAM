@@ -33,6 +33,11 @@ Codebase/
 │   └── ...
 ```
 
+
+## System Architecture
+
+![System Architecture](docs/fixam_system_architecture.png)
+
 ## Key Features
 
 ### 1. 🤖 Intelligent WhatsApp Bot
