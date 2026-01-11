@@ -16,6 +16,24 @@ class FixamDatabase {
         }
     }
 
+    // Get User Roles
+    async getUserRoles(phoneNumber) {
+        const sql = `
+            SELECT r.name 
+            FROM roles r
+            JOIN user_roles ur ON r.id = ur.role_id
+            JOIN users u ON ur.user_id = u.id
+            WHERE u.phone_number = $1
+        `;
+        try {
+            const result = await this.db.query(sql, [phoneNumber]);
+            return result.rows.map(row => row.name);
+        } catch (error) {
+            this.debugLog('Error fetching user roles', { error: error.message, phoneNumber });
+            return [];
+        }
+    }
+
     // Register user
     async registerUser(phoneNumber, name) {
         const sql = "INSERT INTO users (phone_number, name) VALUES ($1, $2) ON CONFLICT (phone_number) DO UPDATE SET name = COALESCE(EXCLUDED.name, users.name) RETURNING id";

@@ -2,6 +2,19 @@ const API_BASE_URL = window.location.port === '3000'
     ? `http://${window.location.hostname}:5000/api`
     : '/api';
 
+// Override fetch to include X-Admin-Access header for Admin Panel
+const originalFetch = window.fetch;
+window.fetch = function(url, options = {}) {
+    options.headers = options.headers || {};
+    // Handle both Headers object and plain object
+    if (options.headers instanceof Headers) {
+        options.headers.append('X-Admin-Access', 'true');
+    } else {
+        options.headers['X-Admin-Access'] = 'true';
+    }
+    return originalFetch(url, options);
+};
+
 function checkAuth(callback) {
     const adminUser = localStorage.getItem('fixam_admin_user');
     if (adminUser) {

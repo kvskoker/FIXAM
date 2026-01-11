@@ -45,6 +45,16 @@ class FixamHandler {
                 return;
             }
 
+            // DEV MODE BLOCK
+            if (process.env.DEV_MODE === 'true') {
+                const roles = await this.fixamDb.getUserRoles(fromNumber);
+                if (!roles.includes('Admin')) {
+                    logger.log('webhook', `Blocked non-admin user in DEV_MODE: ${fromNumber}`);
+                    await this.sendMessage(fromNumber, "🚧 *Maintenance Mode* 🚧\n\nThe application has been closed to public use for now until the final Hackathon event day. Only admins are allowed to access the platform.");
+                    return;
+                }
+            }
+
             logger.log('webhook', `Message from: ${fromNumber}, Type: ${message.type}`);
             logger.logObject('webhook', 'Message object', message);
 

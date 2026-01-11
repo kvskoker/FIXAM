@@ -24,6 +24,36 @@ function generateTicketId() {
     return result;
 } 
 
+// GET /api/config - Public configuration
+router.get('/config', (req, res) => {
+    res.json({ 
+        dev_mode: process.env.DEV_MODE === 'true',
+        maintenance_message: "The application has been closed to public use for now until the final Hackathon event day. Only admins are allowed to access the platform."
+    });
+});
+
+// Middleware for DEV_MODE blocking
+router.use((req, res, next) => {
+    if (process.env.DEV_MODE === 'true') {
+        // Safe paths
+        if (req.path === '/config' || req.path === '/webhook' || req.path.startsWith('/admin/login')) {
+            return next();
+        }
+        
+        // Check for Admin Access Header (set by Admin Portal)
+        if (req.headers['x-admin-access'] === 'true') {
+            return next();
+        }
+
+        // Return 503 Service Unavailable
+        return res.status(503).json({ 
+            error: 'Maintenance Mode', 
+            message: "The application has been closed to public use for now until the final Hackathon event day. Only admins are allowed to access the platform."
+        });
+    }
+    next();
+}); 
+
 // GET /api/issues - Fetch all issues from DB with vote counts, search, filter, and sort
 router.get('/issues', async (req, res) => {
     try {
