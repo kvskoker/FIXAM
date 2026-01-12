@@ -303,9 +303,11 @@ class FixamHandler {
                             return;
 
                         } else if (analysis.intent === 'vote_issue') {
+                             console.log("DEBUG_HANDLER: Vote intent detected. Analysis:", JSON.stringify(analysis));
                              const entities = analysis.entities || {};
                              const ticketId = entities.ticket_id ? entities.ticket_id.toUpperCase() : null;
                              const voteType = entities.vote_type ? entities.vote_type.toLowerCase() : null;
+                             console.log(`DEBUG_HANDLER: Extracted Ticket: ${ticketId}, VoteType: ${voteType}`);
 
                              if (ticketId) {
                                  // Verify ticket
