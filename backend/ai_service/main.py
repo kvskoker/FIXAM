@@ -435,11 +435,32 @@ Output (JSON only):'''
                 result = json.loads(json_match.group())
             else:
                 result = json.loads(content)
-                
-            return result
         except Exception:
             # Fallback
-            return {"intent": "unknown", "entities": {}}
+            result = {"intent": "unknown", "entities": {}}
+        
+        # --- Hybrid Fallback: Regex for structured entities ---
+        # The small model might miss specific formats. We enforce them here.
+        if "entities" not in result:
+            result["entities"] = {}
+            
+        # 1. Ticket ID fallback (FIX-XXXXXX)
+        ticket_match = re.search(r'(FIX-[A-Z0-9]{6})', user_text.upper())
+        if ticket_match:
+            result["entities"]["ticket_id"] = ticket_match.group(1)
+            # If we found a ticket ID, the intent is likely vote_issue if not already set successfully
+            if result.get("intent") in ["unknown", "chat", None]:
+                result["intent"] = "vote_issue"
+
+        # 2. Vote Type fallback
+        if result.get("intent") == "vote_issue":
+            lower_text = user_text.lower()
+            if "upvote" in lower_text or "up vote" in lower_text:
+                result["entities"]["vote_type"] = "upvote"
+            elif "downvote" in lower_text or "down vote" in lower_text:
+                result["entities"]["vote_type"] = "downvote"
+
+        return result
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
