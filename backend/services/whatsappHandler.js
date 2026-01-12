@@ -213,30 +213,42 @@ class FixamHandler {
             state = await this.fixamDb.getConversationState(fromNumber);
         }
 
+        // --- GLOBAL NATIVE LOGIC START ---
+        // 1. Greetings & Small Talk
+        const greetings = ['hi', 'hello', 'hey', 'start', 'fixam', 'good morning', 'good afternoon', 'good evening', 'wotoko', 'greeting'];
+        const appreciation = ['thanks', 'thank you', 'thx', 'appreciate', 'tenki', 'na wa', 'good job', 'bravo'];
+        const acknowledgement = ['ok', 'okay', 'k', 'cool', 'alright', 'fine', 'done', 'yes', 'sure', 'noted', 'no problem'];
+
+        if (greetings.includes(lowerInput) || greetings.some(g => lowerInput.startsWith(g + ' '))) {
+            await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
+            await this.sendMainMenu(fromNumber, user.name);
+            return;
+        }
+
+        if (appreciation.some(a => lowerInput.includes(a))) {
+            await this.sendMessage(fromNumber, "You're very welcome! Happy to help. 😊");
+            await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
+            await this.sendMainMenu(fromNumber, user.name);
+            return;
+        }
+
+        if (acknowledgement.includes(lowerInput)) {
+            // Exception: If we are in location confirmation, 'yes' implies we want to proceed, not reset.
+            // We pass it through to the state machine handler.
+            if (state.current_step === 'awaiting_report_location' && (lowerInput === 'yes')) {
+                logger.log('webhook', 'Passing "yes" to awaiting_report_location handler');
+            } else {
+                await this.sendMessage(fromNumber, "Great! Let me know if you need anything else.");
+                await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
+                await this.sendMainMenu(fromNumber, user.name);
+                return;
+            }
+        }
+        // --- GLOBAL NATIVE LOGIC END ---
+
         // 3. State Machine
         switch (state.current_step) {
             case 'awaiting_category':
-                // --- NATIVE LOGIC START ---
-                // 1. Greetings & Small Talk
-                const greetings = ['hi', 'hello', 'hey', 'start', 'fixam', 'good morning', 'good afternoon', 'good evening', 'wotoko', 'greeting'];
-                const appreciation = ['thanks', 'thank you', 'thx', 'appreciate', 'tenki', 'na wa', 'good job', 'bravo'];
-                const acknowledgement = ['ok', 'okay', 'k', 'cool', 'alright', 'fine', 'done', 'yes', 'sure', 'noted', 'no problem'];
-
-                if (greetings.includes(lowerInput) || greetings.some(g => lowerInput.startsWith(g + ' '))) {
-                    await this.sendMainMenu(fromNumber, user.name);
-                    return;                    
-                }
-                if (appreciation.some(a => lowerInput.includes(a))) {
-                     await this.sendMessage(fromNumber, "You're very welcome! Happy to help. 😊");
-                     await this.sendMainMenu(fromNumber, user.name);
-                     return;
-                }
-                if (acknowledgement.includes(lowerInput)) {
-                    await this.sendMessage(fromNumber, "Great! Let me know if you need anything else.");
-                    await this.sendMainMenu(fromNumber, user.name);
-                    return;
-                }
-                // --- NATIVE LOGIC END ---
                 // 1. Try AI Intent Analysis First
                 let analysis = null;
                 // Only use AI if input is long enough to be a sentence, otherwise it might just be a menu number or keyword
