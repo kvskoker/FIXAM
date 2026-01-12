@@ -62,6 +62,15 @@ class IntentClassifier:
                 "show commands",
                 "guide me",
                 "how do i start?"
+            ],
+            "greeting": [
+                "hi", "hello", "hey", "good morning", "good afternoon", "hola", "hi there"
+            ],
+            "appreciation": [
+                "thanks", "thank you", "tnx", "nice work", "good job", "thanks a lot"
+            ],
+            "agreement": [
+                "ok", "okay", "agreed", "sure", "no problem", "yes", "alright"
             ]
         }
         

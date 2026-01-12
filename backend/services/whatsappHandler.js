@@ -375,6 +375,20 @@ class FixamHandler {
                             await this.sendMessage(fromNumber, helpMsg);
                             await this.sendMainMenu(fromNumber, user.name);
                             return;
+
+                        } else if (analysis.intent === 'greeting') {
+                            await this.sendMainMenu(fromNumber, user.name);
+                            return;
+
+                        } else if (analysis.intent === 'appreciation') {
+                            await this.sendMessage(fromNumber, "You're very welcome! Happy to help. 😊");
+                            await this.sendMainMenu(fromNumber, user.name);
+                            return;
+
+                        } else if (analysis.intent === 'agreement') {
+                            await this.sendMessage(fromNumber, "Great! Let me know if you need anything else.");
+                            await this.sendMainMenu(fromNumber, user.name);
+                            return;
                         }
                 }
 
