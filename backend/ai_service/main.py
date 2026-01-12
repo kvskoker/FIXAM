@@ -1,5 +1,5 @@
 import torch
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline, AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 import json
 import re
 import psycopg2
+import google.generativeai as genai
 
 # Load environment variables from backend/.env
 # Get the directory of the current script
@@ -24,11 +25,12 @@ load_dotenv(env_path)
 # Global variables
 transcription_pipe = None
 nude_detector = None
-qwen_model = None
-qwen_tokenizer = None
+gemini_model = None
 categories_list = []
 
-QWEN_MODEL_ID = "Qwen/Qwen3-0.6B"
+# Model Configuration
+# Using Gemini 1.5 Flash as requested (fast, cheap)
+GEMINI_MODEL_ID = "gemini-1.5-flash"
 
 class AnalysisRequest(BaseModel):
     input_text: str
@@ -51,7 +53,7 @@ async def lifespan(app: FastAPI):
     """
     Load models when the server starts.
     """
-    global transcription_pipe, nude_detector, qwen_model, qwen_tokenizer, categories_list
+    global transcription_pipe, nude_detector, gemini_model, categories_list
     
     # --- Load Categories from DB ---
     print("Loading categories from database...")
@@ -83,10 +85,6 @@ async def lifespan(app: FastAPI):
     device = "cuda:0" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     
-    # Allow model selection via environment variable for resource-constrained servers
-    # Options: "openai/whisper-large-v3-turbo" (better quality, more memory)
-    #          "openai/whisper-base" (faster, less memory)
-    #          "openai/whisper-small" (balanced)
     model_id = os.environ.get("WHISPER_MODEL", "openai/whisper-base")
     
     print(f"Loading Whisper model '{model_id}' on {device} ({torch_dtype})...")
@@ -109,19 +107,17 @@ async def lifespan(app: FastAPI):
             feature_extractor=processor.feature_extractor,
             max_new_tokens=128,
             chunk_length_s=30,
-            batch_size=1,  # Reduced from 16 to minimize memory usage
+            batch_size=1,
             return_timestamps=True,
             torch_dtype=torch_dtype,
             device=device,
             generate_kwargs={
-                "task": "transcribe"  # Explicitly set task
+                "task": "transcribe"
             }
         )
         print("Whisper model loaded successfully!")
     except Exception as e:
         print(f"Failed to load Whisper model: {e}")
-        # We don't raise here to allow the app to start even if one model fails, 
-        # but endpoints will fail if accessed.
     
     # --- Load NudeNet ---
     print("Loading NudeNet detector...")
@@ -131,37 +127,25 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Failed to load NudeNet detector: {e}")
 
-    # --- Load Qwen Model ---
-    print(f"Loading Qwen Model: {QWEN_MODEL_ID}...")
+    # --- Load Gemini ---
+    print(f"Configuring Gemini Model ({GEMINI_MODEL_ID})...")
     try:
-        # Get token from environment if needed
-        token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_API_KEY")
-        
-        if not token:
-            print("Warning: HF_TOKEN or HUGGINGFACE_API_KEY not found in environment. Model loading may fail if it is gated.")
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            print("ERROR: GEMINI_API_KEY not found in environment variables!")
         else:
-            print("HF_TOKEN found in environment.")
-
-        qwen_tokenizer = AutoTokenizer.from_pretrained(QWEN_MODEL_ID, token=token)
-        qwen_model = AutoModelForCausalLM.from_pretrained(
-            QWEN_MODEL_ID,
-            torch_dtype="auto",
-            device_map="cpu",  # Force CPU to avoid VRAM issues with Whisper
-            token=token
-        )
-        print("Qwen model loaded successfully on CPU!")
+            genai.configure(api_key=api_key)
+            gemini_model = genai.GenerativeModel(GEMINI_MODEL_ID)
+            print("Gemini model configured successfully!")
     except Exception as e:
-        print(f"Failed to load Qwen model: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"Failed to configure Gemini: {e}")
 
     yield
     
     # Cleanup
     del transcription_pipe
     del nude_detector
-    del qwen_model
-    del qwen_tokenizer
+    del gemini_model
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
@@ -251,16 +235,16 @@ def transcribe_audio(file: UploadFile = File(...)):
 @app.post("/analyze-issue")
 def analyze_issue(request: AnalyzeIssueRequest):
     """
-    Analyze an issue description using Qwen model.
+    Analyze an issue description using Gemini model.
     Returns: {
         "summary": "5 word max summary",
         "category": "detected category",
         "urgency": "low|medium|high|critical"
     }
     """
-    global qwen_model, qwen_tokenizer, categories_list
-    if qwen_model is None or qwen_tokenizer is None:
-        raise HTTPException(status_code=503, detail="Qwen model is not loaded.")
+    global gemini_model, categories_list
+    if gemini_model is None:
+        raise HTTPException(status_code=503, detail="Gemini model is not configured.")
 
     try:
         # Prepare the prompt
@@ -281,54 +265,19 @@ Output should be a json format with the following keys: summary, category, urgen
 Urgency should be one of: low, medium, high, critical.
 No extra comments.'''
         
-        messages = [
-            {"role": "user", "content": prompt}
-        ]
+        response = gemini_model.generate_content(prompt)
+        content = response.text.strip()
         
-        text = qwen_tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False  # Switches between thinking and non-thinking modes
-        )
-        
-        model_inputs = qwen_tokenizer([text], return_tensors="pt").to(qwen_model.device)
-        
-        # Generate response
-        generated_ids = qwen_model.generate(
-            **model_inputs,
-            max_new_tokens=512,  # Reduced from 32768 for faster response
-            temperature=0.7,
-            do_sample=True
-        )
-        
-        output_ids = generated_ids[0][len(model_inputs.input_ids[0]):].tolist()
-        
-        # Parse thinking content (if any)
+        # Cleaner logic for Gemini code blocks
+        content = content.replace("```json", "").replace("```", "").strip()
+
         try:
-            # rindex finding 151668 (</think>)
-            index = len(output_ids) - output_ids[::-1].index(151668)
-        except ValueError:
-            index = 0
-        
-        content = qwen_tokenizer.decode(output_ids[index:], skip_special_tokens=True).strip("\n")
-        
-        # Try to extract JSON from the response
-        try:
-            # Look for JSON pattern in the response
-            json_match = re.search(r'\{[^}]+\}', content)
-            if json_match:
-                result = json.loads(json_match.group())
-            else:
-                # If no JSON found, try to parse the entire content
-                result = json.loads(content)
+            result = json.loads(content)
             
-            # Validate and normalize the response
             summary = result.get("summary", user_description[:30])
             category = result.get("category", "Uncategorized")
             urgency = result.get("urgency", "medium").lower()
             
-            # Ensure urgency is valid
             if urgency not in ["low", "medium", "high", "critical"]:
                 urgency = "medium"
             
@@ -338,13 +287,11 @@ No extra comments.'''
                 "urgency": urgency
             }
         except json.JSONDecodeError:
-            # Fallback if JSON parsing fails
-            return {
+             return {
                 "summary": user_description[:30] + ("..." if len(user_description) > 30 else ""),
                 "category": "Uncategorized",
                 "urgency": "medium"
             }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -354,19 +301,11 @@ class AnalyzeIntentRequest(BaseModel):
 @app.post("/analyze-intent")
 def analyze_intent(request: AnalyzeIntentRequest):
     """
-    Analyze user text to determine intent and extract entities.
-    Intents: registration, report_issue, vote_issue, view_trending, view_points, provide_feedback, get_help
-    Entities: 
-        - registration: name
-        - report_issue: description, location
-        - vote_issue: ticket_id (format FIX-XXXXXX), vote_type (upvote/downvote)
-        - view_trending: location
-        - provide_feedback: feedback_text
-        - get_help: topic
+    Analyze user text to determine intent and extract entities using Gemini.
     """
-    global qwen_model, qwen_tokenizer
-    if qwen_model is None or qwen_tokenizer is None:
-        raise HTTPException(status_code=503, detail="Qwen model is not loaded.")
+    global gemini_model
+    if gemini_model is None:
+        raise HTTPException(status_code=503, detail="Gemini model is not configured.")
 
     try:
         user_text = request.text
@@ -398,49 +337,20 @@ Return null for missing entities.
 User Text: "{user_text}"
 Output (JSON only):'''
         
-        messages = [
-            {"role": "user", "content": prompt}
-        ]
+        response = gemini_model.generate_content(prompt)
+        content = response.text.strip()
         
-        text = qwen_tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False
-        )
+        # Cleanup Markdown
+        content = content.replace("```json", "").replace("```", "").strip()
         
-        model_inputs = qwen_tokenizer([text], return_tensors="pt").to(qwen_model.device)
-        
-        generated_ids = qwen_model.generate(
-            **model_inputs,
-            max_new_tokens=256,
-            temperature=0.3, # Lower temperature for consistency
-            do_sample=True
-        )
-        
-        output_ids = generated_ids[0][len(model_inputs.input_ids[0]):].tolist()
-        
-        # Parse thinking content (if any)
         try:
-            index = len(output_ids) - output_ids[::-1].index(151668) # </think>
-        except ValueError:
-            index = 0
-            
-        content = qwen_tokenizer.decode(output_ids[index:], skip_special_tokens=True).strip("\n")
-        
-        # JSON extraction
-        try:
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
-            if json_match:
-                result = json.loads(json_match.group())
-            else:
-                result = json.loads(content)
+            result = json.loads(content)
         except Exception:
             # Fallback
             result = {"intent": "unknown", "entities": {}}
         
         # --- Hybrid Fallback: Regex for structured entities ---
-        # The small model might miss specific formats. We enforce them here.
+        # Even with Gemini, we keep this for guarantee
         if "entities" not in result:
             result["entities"] = {}
             
@@ -448,7 +358,7 @@ Output (JSON only):'''
         ticket_match = re.search(r'(FIX-[A-Z0-9]{6})', user_text.upper())
         if ticket_match:
             result["entities"]["ticket_id"] = ticket_match.group(1)
-            # If we found a ticket ID, the intent is likely vote_issue if not already set successfully
+            # If we found a ticket ID, the intent is likely vote_issue
             if result.get("intent") in ["unknown", "chat", None]:
                 result["intent"] = "vote_issue"
 

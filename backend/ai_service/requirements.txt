@@ -8,3 +8,4 @@ accelerate
 scipy
 python-dotenv
 psycopg2-binary
+google-generativeai
