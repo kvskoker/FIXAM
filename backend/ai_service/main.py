@@ -14,6 +14,7 @@ import json
 import re
 import psycopg2
 import subprocess
+from intent_classifier import IntentClassifier
 
 # Load environment variables from backend/.env
 # Get the directory of the current script
@@ -27,6 +28,7 @@ transcription_pipe = None
 nude_detector = None
 qwen_model = None
 qwen_tokenizer = None
+intent_classifier = None
 categories_list = []
 
 QWEN_MODEL_ID = "Qwen/Qwen3-0.6B"
@@ -38,7 +40,8 @@ class AnalyzeIssueRequest(BaseModel):
     description: str
     categories: Optional[str] = None
 
-
+class AnalyzeIntentRequest(BaseModel):
+    text: str
 
 UNSAFE_LABELS = [
     "BUTTOCKS_EXPOSED",
@@ -54,7 +57,14 @@ async def lifespan(app: FastAPI):
     """
     Load models when the server starts.
     """
-    global transcription_pipe, nude_detector, qwen_model, qwen_tokenizer, categories_list
+    global transcription_pipe, nude_detector, qwen_model, qwen_tokenizer, categories_list, intent_classifier
+    
+    # --- Load Intent Classifier ---
+    print("Loading Intent Classifier...")
+    try:
+        intent_classifier = IntentClassifier()
+    except Exception as e:
+        print(f"Failed to load Intent Classifier: {e}")
     
     # --- Load Categories from DB ---
     print("Loading categories from database...")
@@ -330,7 +340,62 @@ No extra comments.'''
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/analyze-intent")
+def analyze_intent(request: AnalyzeIntentRequest):
+    """
+    Analyze user text to determine intent and extract entities using Embedding Model + Regex.
+    """
+    global intent_classifier
+    
+    if intent_classifier is None:
+        raise HTTPException(status_code=503, detail="Intent Classifier is not loaded.")
 
+    try:
+        user_text = request.text.strip()
+        print(f"DEBUG: Analyzing intent for text: {user_text}")
+        
+        # 1. Use Embedding Model to find best matching intent
+        intent, score = intent_classifier.predict(user_text)
+        print(f"DEBUG: Embedding Prediction: Intent='{intent}', Score={score:.4f}")
+        
+        result = {
+            "intent": intent, 
+            "entities": {}
+        }
+        
+        # 2. Extract Entities (Rule-based / Regex)
+        # Ticket ID (Strongest Entity)
+        ticket_pattern = r'(FIX-[A-Z0-9]{6})'
+        ticket_match = re.search(ticket_pattern, user_text.upper())
+        if ticket_match:
+            ticket_id = ticket_match.group(1)
+            print(f"DEBUG: Found Ticket ID: {ticket_id}")
+            result["entities"]["ticket_id"] = ticket_id
+            
+            # If ticket found, highly likely 'vote_issue' or 'status'
+            # If embedding said unknown or report, override to vote if context implies
+            if result["intent"] == 'unknown':
+                 result["intent"] = 'vote_issue'
+        
+        # Vote Type (Simple keywords)
+        lower_text = user_text.lower()
+        if "upvote" in lower_text or "up vote" in lower_text or "support" in lower_text:
+             result["entities"]["vote_type"] = "upvote"
+        elif "downvote" in lower_text or "down vote" in lower_text or "reject" in lower_text:
+             result["entities"]["vote_type"] = "downvote"
+
+        # Location extraction (Simple heuristics for now)
+        # "trending in Freetown"
+        loc_match = re.search(r'\b(?:in|at|near|around)\s+([a-zA-Z\s]+)', user_text, re.IGNORECASE)
+        if loc_match:
+            result["entities"]["location"] = loc_match.group(1).strip()
+            
+        print(f"DEBUG: Final Result: {result}")
+        return result
+
+    except Exception as e:
+        print(f"DEBUG: Exception in analyze_intent: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

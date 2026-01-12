@@ -57,17 +57,32 @@ async function analyzeIssue(text) {
     }
 }
 
-const { analyzeIntentLocal } = require('./intentAnalyzer');
+const LOCAL_AI_INTENT_URL = 'http://localhost:8000/analyze-intent';
 
 /**
- * Analyze text to determine intent.
- * REPLACED AI IMPLEMENTATION WITH ROBUST LOCAL REGEX LOGIC.
+ * Analyze text using Python AI Service (Embeddings) to determine intent.
  * @param {string} text - The user's input text.
  * @returns {Promise<Object>} - { intent, entities }
  */
 async function analyzeIntent(text) {
-    logger.log('ai_debug', `Analyzing intent LOCALLY. Text: ${text}`);
-    return analyzeIntentLocal(text);
+    logger.log('ai_debug', `Analyzing intent via Python Service. Text length: ${text.length}`);
+
+    try {
+        const requestBody = {
+            text: text
+        };
+
+        const response = await axios.post(LOCAL_AI_INTENT_URL, requestBody, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 5000 // Fast timeout
+        });
+
+        logger.logObject('ai_debug', 'AI Intent Response', response.data);
+        return response.data;
+    } catch (error) {
+        logger.logError('ai_debug', 'AI Intent Error', error);
+        return { intent: "unknown", entities: {} };
+    }
 }
 
 module.exports = { analyzeIssue, analyzeIntent };
