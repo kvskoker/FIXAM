@@ -216,55 +216,18 @@ class FixamHandler {
         // 3. State Machine
         switch (state.current_step) {
             case 'awaiting_category':
-                if (input === '1' || lowerInput.includes('report')) {
-                    // Check rate limit
-                    const dailyCount = await this.fixamDb.getDailyIssueCount(user.id);
-                    if (dailyCount >= 20) {
-                        await this.sendMessage(fromNumber, "🚫 Daily Limit Reached\n\nYou have reported 20 issues today. To prevent spam, we have a daily limit. Please try again tomorrow.\n\nThank you for helping improve our community! 🌟");
-                        return;
-                    }
-
-                    await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_report_evidence', data: {} });
-                    await this.sendMessage(fromNumber, "Great! Let's report an issue.\n\nPlease send a *Photo* or *Video* of the issue as evidence, or type *9* to cancel.");
-                } else if (input === '2' || lowerInput.includes('vote')) {
-                    await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_vote_ticket_id', data: {} });
-                    await this.sendMessage(fromNumber, "Okay! Please enter the *Issue ID* of the issue you want to vote on, or type *9* to cancel.");
-                } else if (input === '3' || lowerInput.includes('trending')) {
-                    await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_trending_community', data: {} });
-                    await this.sendMessage(fromNumber, "Please enter the name of the community or area you want to check (e.g. 'Lumley', 'Kissy'), or type *9* to cancel.");
-                } else if (input === '4' || lowerInput.includes('point')) {
-                    const points = user.points || 0;
-                    // Mock leaderboard rank for now or fetch it
-                    // Simple message
-                    await this.sendMessage(fromNumber, `🏆 *Your Citizen Score*\n\nYou currently have: *${points} Points* ⭐\n\n*How to earn points:*\n+10 pts: Report an Issue\n+50 pts: Issue Resolved\n+1 pt: Getting Upvoted\n\nKeep participating to unlock future rewards! 🎁`);
-                    // Stay in main menu
-                    await this.sendMainMenu(fromNumber, user.name);
-                } else if (input === '5' || lowerInput.includes('feedback')) {
-                    await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_feedback', data: {} });
-                    await this.sendMessage(fromNumber, "We value your feedback! 💬\n\nPlease type your feedback or send a *Voice Note*.");
-                } else if (input === '6' || lowerInput.includes('help')) {
-                    const helpMsg = `ℹ️ *Fixam Help Guide*\n\n` +
-                                    `*1. Report an Issue*: Tell us about problems like potholes, water leaks, or trash. Share location and a photo!\n` +
-                                    `*2. Vote*: Support issues reported by others using their Issue ID.\n` +
-                                    `*3. Trending*: Find popular issues in your area (e.g. 'Freetown') to support.\n` +
-                                    `*4. Points*: Earn points for being an active citizen!\n` +
-                                    `*5. Feedback*: Share your thoughts with the Fixam team.\n\n` +
-                                    `*Useful Commands:*\n` +
-                                    `- Type *9* to Cancel any action.\n` +
-                                    `- Type *Reset* to start over.\n\n` +
-                                    `For more support, contact: fixam@maxcit.com`;
-                    await this.sendMessage(fromNumber, helpMsg);
-                    await this.sendMainMenu(fromNumber, user.name);
-                } else {
-                    // AI Intent Analysis
-                    let analysis = null;
+                // 1. Try AI Intent Analysis First
+                let analysis = null;
+                // Only use AI if input is long enough to be a sentence, otherwise it might just be a menu number or keyword
+                if (input.length > 2) { 
                     try {
                         analysis = await analyzeIntent(input);
                     } catch (e) {
                          logger.logError('ai_debug', 'Intent analysis failed', e);
                     }
+                }
 
-                    if (analysis && analysis.intent && analysis.intent !== 'unknown') {
+                if (analysis && analysis.intent && analysis.intent !== 'unknown') {
                         logger.log('ai_debug', `Detected intent: ${analysis.intent}`);
                         
                         if (analysis.intent === 'report_issue') {
@@ -399,20 +362,64 @@ class FixamHandler {
                              return;
 
                         } else if (analysis.intent === 'get_help') {
-                             const helpMsg = `ℹ️ *Fixam Help Guide*\n\n` +
+                            const helpMsg = `ℹ️ *Fixam Help Guide*\n\n` +
                                             `*1. Report an Issue*: Tell us about problems like potholes, water leaks, or trash. Share location and a photo!\n` +
-                                            `2. *Use natural language*: You can say "Report a leaking pipe at X" or "Register me as John".\n` +
-                                            `*3. Vote*: Support issues reported by others using their Issue ID.\n` +
-                                            `*4. Trending*: Find popular issues in your area.\n` +
-                                            `*5. Points*: Earn points for being an active citizen!\n` +
-                                            `*6. Feedback*: Share your thoughts.\n\n` +
+                                            `*2. Vote*: Support issues reported by others using their Issue ID.\n` +
+                                            `*3. Trending*: Find popular issues in your area (e.g. 'Freetown') to support.\n` +
+                                            `*4. Points*: Earn points for being an active citizen!\n` +
+                                            `*5. Feedback*: Share your thoughts with the Fixam team.\n\n` +
+                                            `*Useful Commands:*\n` +
+                                            `- Type *9* to Cancel any action.\n` +
+                                            `- Type *Reset* to start over.\n\n` +
                                             `For more support, contact: fixam@maxcit.com`;
                             await this.sendMessage(fromNumber, helpMsg);
                             await this.sendMainMenu(fromNumber, user.name);
                             return;
                         }
+                }
+
+                // 2. Fallback to Menu logic if AI didn't catch it
+                if (input === '1' || lowerInput.includes('report')) {
+                    // Check rate limit
+                    const dailyCount = await this.fixamDb.getDailyIssueCount(user.id);
+                    if (dailyCount >= 20) {
+                        await this.sendMessage(fromNumber, "🚫 Daily Limit Reached\n\nYou have reported 20 issues today. To prevent spam, we have a daily limit. Please try again tomorrow.\n\nThank you for helping improve our community! 🌟");
+                        return;
                     }
 
+                    await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_report_evidence', data: {} });
+                    await this.sendMessage(fromNumber, "Great! Let's report an issue.\n\nPlease send a *Photo* or *Video* of the issue as evidence, or type *9* to cancel.");
+                } else if (input === '2' || lowerInput.includes('vote')) {
+                    await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_vote_ticket_id', data: {} });
+                    await this.sendMessage(fromNumber, "Okay! Please enter the *Issue ID* of the issue you want to vote on, or type *9* to cancel.");
+                } else if (input === '3' || lowerInput.includes('trending')) {
+                    await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_trending_community', data: {} });
+                    await this.sendMessage(fromNumber, "Please enter the name of the community or area you want to check (e.g. 'Lumley', 'Kissy'), or type *9* to cancel.");
+                } else if (input === '4' || lowerInput.includes('point')) {
+                    const points = user.points || 0;
+                    // Mock leaderboard rank for now or fetch it
+                    // Simple message
+                    await this.sendMessage(fromNumber, `🏆 *Your Citizen Score*\n\nYou currently have: *${points} Points* ⭐\n\n*How to earn points:*\n+10 pts: Report an Issue\n+50 pts: Issue Resolved\n+1 pt: Getting Upvoted\n\nKeep participating to unlock future rewards! 🎁`);
+                    // Stay in main menu
+                    await this.sendMainMenu(fromNumber, user.name);
+                } else if (input === '5' || lowerInput.includes('feedback')) {
+                    await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_feedback', data: {} });
+                    await this.sendMessage(fromNumber, "We value your feedback! 💬\n\nPlease type your feedback or send a *Voice Note*.");
+                } else if (input === '6' || lowerInput.includes('help')) {
+                    const helpMsg = `ℹ️ *Fixam Help Guide*\n\n` +
+                                    `*1. Report an Issue*: Tell us about problems like potholes, water leaks, or trash. Share location and a photo!\n` +
+                                    `*2. Vote*: Support issues reported by others using their Issue ID.\n` +
+                                    `*3. Trending*: Find popular issues in your area (e.g. 'Freetown') to support.\n` +
+                                    `*4. Points*: Earn points for being an active citizen!\n` +
+                                    `*5. Feedback*: Share your thoughts with the Fixam team.\n\n` +
+                                    `*Useful Commands:*\n` +
+                                    `- Type *9* to Cancel any action.\n` +
+                                    `- Type *Reset* to start over.\n\n` +
+                                    `For more support, contact: fixam@maxcit.com`;
+                    await this.sendMessage(fromNumber, helpMsg);
+                    await this.sendMainMenu(fromNumber, user.name);
+                } else {
+                    await this.sendMessage(fromNumber, "I'm not sure what you mean. Please select an option from the menu (1-6) or try describing what you want to do.");
                     await this.sendMainMenu(fromNumber, user.name);
                 }
                 break;
