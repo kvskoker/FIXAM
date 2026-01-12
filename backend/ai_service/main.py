@@ -1,5 +1,5 @@
 import torch
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline, AutoTokenizer, AutoModelForCausalLM
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
@@ -13,7 +13,6 @@ from dotenv import load_dotenv
 import json
 import re
 import psycopg2
-import google.generativeai as genai
 import subprocess
 
 # Load environment variables from backend/.env
@@ -26,11 +25,11 @@ load_dotenv(env_path)
 # Global variables
 transcription_pipe = None
 nude_detector = None
-gemini_model = None
+qwen_model = None
+qwen_tokenizer = None
 categories_list = []
 
-# Model Configuration
-GEMINI_MODEL_ID = "gemini-2.5-flash-lite"
+QWEN_MODEL_ID = "Qwen/Qwen3-0.6B"
 
 class AnalysisRequest(BaseModel):
     input_text: str
@@ -56,7 +55,7 @@ async def lifespan(app: FastAPI):
     """
     Load models when the server starts.
     """
-    global transcription_pipe, nude_detector, gemini_model, categories_list
+    global transcription_pipe, nude_detector, qwen_model, qwen_tokenizer, categories_list
     
     # --- Load Categories from DB ---
     print("Loading categories from database...")
@@ -130,25 +129,37 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Failed to load NudeNet detector: {e}")
 
-    # --- Load Gemini ---
-    print(f"Configuring Gemini Model ({GEMINI_MODEL_ID})...")
+    # --- Load Qwen Model ---
+    print(f"Loading Qwen Model: {QWEN_MODEL_ID}...")
     try:
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            print("ERROR: GEMINI_API_KEY not found in environment variables!")
+        # Get token from environment if needed
+        token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_API_KEY")
+        
+        if not token:
+            print("Warning: HF_TOKEN or HUGGINGFACE_API_KEY not found in environment. Model loading may fail if it is gated.")
         else:
-            genai.configure(api_key=api_key)
-            gemini_model = genai.GenerativeModel(GEMINI_MODEL_ID)
-            print("Gemini model configured successfully!")
+            print("HF_TOKEN found in environment.")
+
+        qwen_tokenizer = AutoTokenizer.from_pretrained(QWEN_MODEL_ID, token=token)
+        qwen_model = AutoModelForCausalLM.from_pretrained(
+            QWEN_MODEL_ID,
+            torch_dtype="auto",
+            device_map="cpu",  # Force CPU to avoid VRAM issues with Whisper
+            token=token
+        )
+        print("Qwen model loaded successfully on CPU!")
     except Exception as e:
-        print(f"Failed to configure Gemini: {e}")
+        print(f"Failed to load Qwen model: {e}")
+        import traceback
+        traceback.print_exc()
 
     yield
     
     # Cleanup
     del transcription_pipe
     del nude_detector
-    del gemini_model
+    del qwen_model
+    del qwen_tokenizer
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
@@ -236,11 +247,11 @@ def transcribe_audio(file: UploadFile = File(...)):
 @app.post("/analyze-issue")
 def analyze_issue(request: AnalyzeIssueRequest):
     """
-    Analyze an issue description using Gemini model.
+    Analyze an issue description using Qwen model.
     """
-    global gemini_model, categories_list
-    if gemini_model is None:
-        raise HTTPException(status_code=503, detail="Gemini model is not configured.")
+    global qwen_model, qwen_tokenizer, categories_list
+    if qwen_model is None or qwen_tokenizer is None:
+        raise HTTPException(status_code=503, detail="Qwen model is not loaded.")
 
     try:
         # Prepare the prompt
@@ -261,14 +272,43 @@ Output should be a json format with the following keys: summary, category, urgen
 Urgency should be one of: low, medium, high, critical.
 No extra comments.'''
         
-        response = gemini_model.generate_content(prompt)
-        content = response.text.strip()
+        messages = [
+            {"role": "user", "content": prompt}
+        ]
         
-        # Cleaner logic for Gemini code blocks
-        content = content.replace("```json", "").replace("```", "").strip()
-
+        text = qwen_tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False
+        )
+        
+        model_inputs = qwen_tokenizer([text], return_tensors="pt").to(qwen_model.device)
+        
+        # Generate response
+        generated_ids = qwen_model.generate(
+            **model_inputs,
+            max_new_tokens=512,
+            temperature=0.7,
+            do_sample=True
+        )
+        
+        output_ids = generated_ids[0][len(model_inputs.input_ids[0]):].tolist()
+        
+        # Parse thinking content (if any)
         try:
-            result = json.loads(content)
+            index = len(output_ids) - output_ids[::-1].index(151668)
+        except ValueError:
+            index = 0
+        
+        content = qwen_tokenizer.decode(output_ids[index:], skip_special_tokens=True).strip("\n")
+        
+        try:
+            json_match = re.search(r'\{[^}]+\}', content)
+            if json_match:
+                result = json.loads(json_match.group())
+            else:
+                result = json.loads(content)
             
             summary = result.get("summary", user_description[:30])
             category = result.get("category", "Uncategorized")
@@ -283,7 +323,7 @@ No extra comments.'''
                 "urgency": urgency
             }
         except json.JSONDecodeError:
-             return {
+            return {
                 "summary": user_description[:30] + ("..." if len(user_description) > 30 else ""),
                 "category": "Uncategorized",
                 "urgency": "medium"
@@ -294,11 +334,11 @@ No extra comments.'''
 @app.post("/analyze-intent")
 def analyze_intent(request: AnalyzeIntentRequest):
     """
-    Analyze user text to determine intent and extract entities using Gemini.
+    Analyze user text to determine intent and extract entities using Qwen.
     """
-    global gemini_model
-    if gemini_model is None:
-        raise HTTPException(status_code=503, detail="Gemini model is not configured.")
+    global qwen_model, qwen_tokenizer
+    if qwen_model is None or qwen_tokenizer is None:
+        raise HTTPException(status_code=503, detail="Qwen model is not loaded.")
 
     try:
         user_text = request.text
@@ -331,15 +371,44 @@ Return null for missing entities.
 User Text: "{user_text}"
 Output (JSON only):'''
         
-        response = gemini_model.generate_content(prompt)
-        content = response.text.strip()
-        print(f"DEBUG: Gemini Raw Response: {content}")
+        messages = [
+            {"role": "user", "content": prompt}
+        ]
         
-        # Cleanup Markdown
-        content = content.replace("```json", "").replace("```", "").strip()
+        text = qwen_tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False
+        )
         
+        model_inputs = qwen_tokenizer([text], return_tensors="pt").to(qwen_model.device)
+        
+        generated_ids = qwen_model.generate(
+            **model_inputs,
+            max_new_tokens=256,
+            temperature=0.3, # Lower temperature for consistency
+            do_sample=True
+        )
+        
+        output_ids = generated_ids[0][len(model_inputs.input_ids[0]):].tolist()
+        
+        # Parse thinking content (if any)
         try:
-            result = json.loads(content)
+            index = len(output_ids) - output_ids[::-1].index(151668) # </think>
+        except ValueError:
+            index = 0
+            
+        content = qwen_tokenizer.decode(output_ids[index:], skip_special_tokens=True).strip("\n")
+        print(f"DEBUG: Qwen Raw Response: {content}")
+        
+        # JSON extraction
+        try:
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group())
+            else:
+                result = json.loads(content)
         except Exception as e:
             print(f"DEBUG: JSON Parse Error: {e}")
             # Fallback
@@ -350,7 +419,7 @@ Output (JSON only):'''
              result["entities"] = {}
         
         # --- Hybrid Fallback: Regex for structured entities ---
-        # Even with Gemini, we keep this for guarantee
+        # Even with Qwen, we keep this for guarantee
         
         # 1. Ticket ID fallback (FIX-XXXXXX)
         # Search anywhere in string, case insensitive for input but ensuring format
