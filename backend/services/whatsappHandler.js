@@ -216,6 +216,27 @@ class FixamHandler {
         // 3. State Machine
         switch (state.current_step) {
             case 'awaiting_category':
+                // --- NATIVE LOGIC START ---
+                // 1. Greetings & Small Talk
+                const greetings = ['hi', 'hello', 'hey', 'start', 'fixam', 'good morning', 'good afternoon', 'good evening', 'wotoko', 'greeting'];
+                const appreciation = ['thanks', 'thank you', 'thx', 'appreciate', 'tenki', 'na wa', 'good job', 'bravo'];
+                const acknowledgement = ['ok', 'okay', 'k', 'cool', 'alright', 'fine', 'done', 'yes', 'sure', 'noted', 'no problem'];
+
+                if (greetings.includes(lowerInput) || greetings.some(g => lowerInput.startsWith(g + ' '))) {
+                    await this.sendMainMenu(fromNumber, user.name);
+                    return;                    
+                }
+                if (appreciation.some(a => lowerInput.includes(a))) {
+                     await this.sendMessage(fromNumber, "You're very welcome! Happy to help. 😊");
+                     await this.sendMainMenu(fromNumber, user.name);
+                     return;
+                }
+                if (acknowledgement.includes(lowerInput)) {
+                    await this.sendMessage(fromNumber, "Great! Let me know if you need anything else.");
+                    await this.sendMainMenu(fromNumber, user.name);
+                    return;
+                }
+                // --- NATIVE LOGIC END ---
                 // 1. Try AI Intent Analysis First
                 let analysis = null;
                 // Only use AI if input is long enough to be a sentence, otherwise it might just be a menu number or keyword
