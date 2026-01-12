@@ -38,8 +38,7 @@ class AnalyzeIssueRequest(BaseModel):
     description: str
     categories: Optional[str] = None
 
-class AnalyzeIntentRequest(BaseModel):
-    text: str
+
 
 UNSAFE_LABELS = [
     "BUTTOCKS_EXPOSED",
@@ -331,125 +330,7 @@ No extra comments.'''
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/analyze-intent")
-def analyze_intent(request: AnalyzeIntentRequest):
-    """
-    Analyze user text to determine intent and extract entities using Qwen.
-    """
-    global qwen_model, qwen_tokenizer
-    if qwen_model is None or qwen_tokenizer is None:
-        raise HTTPException(status_code=503, detail="Qwen model is not loaded.")
 
-    try:
-        user_text = request.text
-        print(f"DEBUG: Analyzing intent for text: {user_text}")
-        
-        prompt = f'''Analyze the text from a user interacting with a civic issue reporting bot. 
-Determine the user's intent and extract relevant entities based on the guide below.
-
-Intents & Entities:
-1. registration
-   - Entities: name (User's name)
-2. report_issue
-   - Entities: description (Issue details), location (Address or landmark)
-3. vote_issue
-   - Entities: ticket_id (Look for pattern FIX-XXXXXX), vote_type (upvote/downvote)
-4. view_trending
-   - Entities: location (Community or area name)
-5. view_points
-   - Entities: None
-6. provide_feedback
-   - Entities: feedback_text (The actual feedback content)
-7. get_help
-   - Entities: topic (What they need help with)
-8. unknown
-   - Entities: None
-
-Output JSON with keys: 'intent' (string), 'entities' (object).
-Return null for missing entities.
-
-User Text: "{user_text}"
-Output (JSON only):'''
-        
-        messages = [
-            {"role": "user", "content": prompt}
-        ]
-        
-        text = qwen_tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False
-        )
-        
-        model_inputs = qwen_tokenizer([text], return_tensors="pt").to(qwen_model.device)
-        
-        generated_ids = qwen_model.generate(
-            **model_inputs,
-            max_new_tokens=256,
-            temperature=0.3, # Lower temperature for consistency
-            do_sample=True
-        )
-        
-        output_ids = generated_ids[0][len(model_inputs.input_ids[0]):].tolist()
-        
-        # Parse thinking content (if any)
-        try:
-            index = len(output_ids) - output_ids[::-1].index(151668) # </think>
-        except ValueError:
-            index = 0
-            
-        content = qwen_tokenizer.decode(output_ids[index:], skip_special_tokens=True).strip("\n")
-        print(f"DEBUG: Qwen Raw Response: {content}")
-        
-        # JSON extraction
-        try:
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
-            if json_match:
-                result = json.loads(json_match.group())
-            else:
-                result = json.loads(content)
-        except Exception as e:
-            print(f"DEBUG: JSON Parse Error: {e}")
-            # Fallback
-            result = {"intent": "unknown", "entities": {}}
-        
-        # Ensure entities is a dict (handle None from JSON)
-        if result.get("entities") is None:
-             result["entities"] = {}
-        
-        # --- Hybrid Fallback: Regex for structured entities ---
-        # Even with Qwen, we keep this for guarantee
-        
-        # 1. Ticket ID fallback (FIX-XXXXXX)
-        # Search anywhere in string, case insensitive for input but ensuring format
-        ticket_pattern = r'(FIX-[A-Z0-9]{6})'
-        ticket_match = re.search(ticket_pattern, user_text.upper())
-        if ticket_match:
-            ticket_id = ticket_match.group(1)
-            print(f"DEBUG: Regex found Ticket ID: {ticket_id}")
-            result["entities"]["ticket_id"] = ticket_id
-            
-            # If we found a ticket ID, the intent is likely vote_issue
-            # We override if intent is unknown, chat, or even 'report_issue' if it lacks description but has ID
-            current_intent = result.get("intent")
-            if current_intent in ["unknown", "chat", None] or (current_intent == 'report_issue' and not result['entities'].get('description')):
-                result["intent"] = "vote_issue"
-
-        # 2. Vote Type fallback
-        if result.get("intent") == "vote_issue":
-            lower_text = user_text.lower()
-            if "upvote" in lower_text or "up vote" in lower_text or "support" in lower_text:
-                result["entities"]["vote_type"] = "upvote"
-            elif "downvote" in lower_text or "down vote" in lower_text:
-                result["entities"]["vote_type"] = "downvote"
-        
-        print(f"DEBUG: Final Analysis Result: {result}")
-        return result
-
-    except Exception as e:
-        print(f"DEBUG: Exception in analyze_intent: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
