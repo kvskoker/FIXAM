@@ -1057,7 +1057,7 @@ class FixamHandler {
     }
 
     async sendMainMenu(fromNumber, name) {
-        await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today? (Reply with the number)\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *Trending Issues* 🔥\n4️⃣ *My Points* 🏆\n5️⃣ *Feedback* 💬\n6️⃣ *Help & Info* ℹ️`);
+        await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today? (Reply with a number [1-6] or text keywords!)\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *Trending Issues* 🔥\n4️⃣ *My Points* 🏆\n5️⃣ *Feedback* 💬\n6️⃣ *Help & Info* ℹ️`);
         await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category' });
     }
 
