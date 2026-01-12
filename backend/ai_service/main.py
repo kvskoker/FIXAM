@@ -344,8 +344,91 @@ No extra comments.'''
                 "category": "Uncategorized",
                 "urgency": "medium"
             }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class AnalyzeIntentRequest(BaseModel):
+    text: str
+
+@app.post("/analyze-intent")
+def analyze_intent(request: AnalyzeIntentRequest):
+    """
+    Analyze user text to determine intent and extract entities.
+    Intents: registration, report_issue, vote_issue, view_trending, view_points, provide_feedback, get_help
+    Entities: name (for registration), description, location (for report_issue)
+    """
+    global qwen_model, qwen_tokenizer
+    if qwen_model is None or qwen_tokenizer is None:
+        raise HTTPException(status_code=503, detail="Qwen model is not loaded.")
+
+    try:
+        user_text = request.text
+        
+        prompt = f'''Analyze the following text from a user interacting with a civic issue reporting bot. 
+Determine the user's intent from the following list:
+- registration: User wants to register. Look for a name.
+- report_issue: User wants to report a problem. Look for issue description and location.
+- vote_issue: User wants to vote on an issue.
+- view_trending: User wants to see trending issues.
+- view_points: User wants to check their points/rewards.
+- provide_feedback: User wants to give feedback on the bot/service.
+- get_help: User wants help or information.
+- unknown: If none match.
+
+Output JSON with keys: 'intent' (string), 'entities' (object).
+Entities should have keys based on intent (e.g., 'name' for registration; 'description', 'location' for report_issue). 
+Return null for missing entities.
+
+User Text: "{user_text}"
+Output (JSON only):'''
+        
+        messages = [
+            {"role": "user", "content": prompt}
+        ]
+        
+        text = qwen_tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False
+        )
+        
+        model_inputs = qwen_tokenizer([text], return_tensors="pt").to(qwen_model.device)
+        
+        generated_ids = qwen_model.generate(
+            **model_inputs,
+            max_new_tokens=256,
+            temperature=0.3, # Lower temperature for more deterministic output
+            do_sample=True
+        )
+        
+        output_ids = generated_ids[0][len(model_inputs.input_ids[0]):].tolist()
+        
+        # Parse thinking content (if any)
+        try:
+            index = len(output_ids) - output_ids[::-1].index(151668) # </think>
+        except ValueError:
+            index = 0
+            
+        content = qwen_tokenizer.decode(output_ids[index:], skip_special_tokens=True).strip("\n")
+        
+        # JSON extraction
+        try:
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group())
+            else:
+                result = json.loads(content)
+                
+            return result
+        except Exception:
+            # Fallback
+            return {"intent": "unknown", "entities": {}}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

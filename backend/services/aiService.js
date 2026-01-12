@@ -57,5 +57,33 @@ async function analyzeIssue(text) {
     }
 }
 
-module.exports = { analyzeIssue };
+const LOCAL_AI_INTENT_URL = 'http://localhost:8000/analyze-intent';
+
+/**
+ * Analyze text using Qwen AI to determine intent.
+ * @param {string} text - The user's input text.
+ * @returns {Promise<Object>} - { intent, entities }
+ */
+async function analyzeIntent(text) {
+    logger.log('ai_debug', `Analyzing intent with Qwen AI. Text length: ${text.length}`);
+
+    try {
+        const requestBody = {
+            text: text
+        };
+
+        const response = await axios.post(LOCAL_AI_INTENT_URL, requestBody, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 10000 // 10 second timeout for intent analysis (should be faster)
+        });
+
+        logger.logObject('ai_debug', 'AI Intent Response', response.data);
+        return response.data;
+    } catch (error) {
+        logger.logError('ai_debug', 'Qwen AI Intent Error', error);
+        return { intent: "unknown", entities: {} };
+    }
+}
+
+module.exports = { analyzeIssue, analyzeIntent };
 

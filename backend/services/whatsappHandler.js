@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const FixamDatabase = require('./fixamDatabase');
 const FixamHelpers = require('./fixamHelpers');
 const logger = require('./logger');
-const { analyzeIssue } = require('./aiService');
+const { analyzeIssue, analyzeIntent } = require('./aiService');
 const axios = require('axios');
 const FormData = require('form-data');
 
@@ -177,6 +177,25 @@ class FixamHandler {
                 await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
                 await this.sendMainMenu(fromNumber, name);
             } else {
+                // Check if user provided name in this message via AI
+                try {
+                    const analysis = await analyzeIntent(input);
+                    if (analysis && analysis.intent === 'registration' && analysis.entities && analysis.entities.name) {
+                        const name = this.extractName(analysis.entities.name);
+                        if (name.length >= 2) {
+                             await this.fixamDb.registerUser(fromNumber, name);
+                             await this.fixamDb.initializeConversationState(fromNumber);
+                             await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
+                             
+                             await this.sendMessage(fromNumber, `Welcome to Fixam, ${name}! 👋`);
+                             await this.sendMainMenu(fromNumber, name);
+                             return;
+                        }
+                    }
+                } catch (e) {
+                    logger.logError('ai_debug', 'Registration Intent analysis failed', e);
+                }
+
                 // Start registration
                 await this.fixamDb.initializeConversationState(fromNumber);
                 await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_name' });
@@ -237,6 +256,88 @@ class FixamHandler {
                     await this.sendMessage(fromNumber, helpMsg);
                     await this.sendMainMenu(fromNumber, user.name);
                 } else {
+                    // AI Intent Analysis
+                    let analysis = null;
+                    try {
+                        analysis = await analyzeIntent(input);
+                    } catch (e) {
+                         logger.logError('ai_debug', 'Intent analysis failed', e);
+                    }
+
+                    if (analysis && analysis.intent && analysis.intent !== 'unknown') {
+                        logger.log('ai_debug', `Detected intent: ${analysis.intent}`);
+                        
+                        if (analysis.intent === 'report_issue') {
+                            // Check rate limit
+                            const dailyCount = await this.fixamDb.getDailyIssueCount(user.id);
+                            if (dailyCount >= 20) {
+                                await this.sendMessage(fromNumber, "🚫 Daily Limit Reached\n\nYou have reported 20 issues today. To prevent spam, we have a daily limit. Please try again tomorrow.");
+                                return;
+                            }
+                            
+                            const newData = {};
+                            const entities = analysis.entities || {};
+                            if (entities.description) newData.description = entities.description;
+                            if (entities.location) {
+                                // Try to geocode
+                                try {
+                                    const locs = await this.helpers.geocodeAddress(entities.location + ", Sierra Leone");
+                                    if (locs.length > 0) {
+                                        newData.lat = locs[0].latitude;
+                                        newData.lng = locs[0].longitude;
+                                        newData.address = locs[0].display_name;
+                                    } else {
+                                        newData.address = entities.location;
+                                    }
+                                } catch(e) { newData.address = entities.location; }
+                            }
+
+                            await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_report_evidence', data: newData });
+                            
+                            let msg = "Great! Let's report an issue.";
+                            if(newData.description) msg += `\n\n📝 I noted the description: "${newData.description}"`;
+                            if(newData.address) msg += `\n📍 I noted the location: "${newData.address}"`;
+                            msg += "\n\nPlease send a *Photo* or *Video* of the issue as evidence, or type *9* to cancel.";
+                            
+                            await this.sendMessage(fromNumber, msg);
+                            return;
+
+                        } else if (analysis.intent === 'vote_issue') {
+                             await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_vote_ticket_id', data: {} });
+                             await this.sendMessage(fromNumber, "Okay! Please enter the *Issue ID* of the issue you want to vote on, or type *9* to cancel.");
+                             return;
+
+                        } else if (analysis.intent === 'view_trending') {
+                             await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_trending_community', data: {} });
+                             await this.sendMessage(fromNumber, "Please enter the name of the community or area you want to check (e.g. 'Lumley', 'Kissy'), or type *9* to cancel.");
+                             return;
+
+                        } else if (analysis.intent === 'view_points') {
+                             const points = user.points || 0;
+                             await this.sendMessage(fromNumber, `🏆 *Your Citizen Score*\n\nYou currently have: *${points} Points* ⭐\n\n*How to earn points:*\n+10 pts: Report an Issue\n+50 pts: Issue Resolved\n+1 pt: Getting Upvoted\n\nKeep participating to unlock future rewards! 🎁`);
+                             await this.sendMainMenu(fromNumber, user.name);
+                             return;
+
+                        } else if (analysis.intent === 'provide_feedback') {
+                             await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_feedback', data: {} });
+                             await this.sendMessage(fromNumber, "We value your feedback! 💬\n\nPlease type your feedback or send a *Voice Note*.");
+                             return;
+
+                        } else if (analysis.intent === 'get_help') {
+                             const helpMsg = `ℹ️ *Fixam Help Guide*\n\n` +
+                                            `*1. Report an Issue*: Tell us about problems like potholes, water leaks, or trash. Share location and a photo!\n` +
+                                            `2. *Use natural language*: You can say "Report a leaking pipe at X" or "Register me as John".\n` +
+                                            `*3. Vote*: Support issues reported by others using their Issue ID.\n` +
+                                            `*4. Trending*: Find popular issues in your area.\n` +
+                                            `*5. Points*: Earn points for being an active citizen!\n` +
+                                            `*6. Feedback*: Share your thoughts.\n\n` +
+                                            `For more support, contact: fixam@maxcit.com`;
+                            await this.sendMessage(fromNumber, helpMsg);
+                            await this.sendMainMenu(fromNumber, user.name);
+                            return;
+                        }
+                    }
+
                     await this.sendMainMenu(fromNumber, user.name);
                 }
                 break;
@@ -258,6 +359,22 @@ class FixamHandler {
                 break;
 
             case 'awaiting_report_location': {
+                if (input.toLowerCase() === 'yes' && state.data && state.data.address) {
+                    await this.fixamDb.updateConversationState(fromNumber, { 
+                        current_step: 'awaiting_report_description',
+                        data: state.data
+                    });
+                    
+                    let msg = `Location confirmed: ${state.data.address}\n\nPlease describe the issue (Text or Voice Note)`;
+                    if (state.data.description) {
+                        msg += `\n(💡 I noted: "${state.data.description}". Type *Use* to keep this description)`;
+                    } else {
+                        msg += `, or type *9* to cancel.`;
+                    }
+                    await this.sendMessage(fromNumber, msg);
+                    break;
+                }
+
                 // Handle text address
                 const locations = await this.helpers.geocodeAddress(input);
                 if (locations.length === 0) {
@@ -317,16 +434,23 @@ class FixamHandler {
 
             case 'awaiting_report_description':
                 const currentData = state.data || {};
-                currentData.description = input;
+                
+                let descriptionToUse = input;
+                if (input.toLowerCase() === 'use' && currentData.description) {
+                     descriptionToUse = currentData.description;
+                } else {
+                     currentData.description = input;
+                     descriptionToUse = input;
+                }
                 
                 // Analyze with AI
                 await this.sendMessage(fromNumber, "Analyzing your report");
                 let category = 'Uncategorized';
-                let title = input.substring(0, 30) + (input.length > 30 ? '...' : '');
+                let title = descriptionToUse.substring(0, 30) + (descriptionToUse.length > 30 ? '...' : '');
                 let urgency = 'medium';
                 
                 try {
-                    const analysis = await analyzeIssue(input);
+                    const analysis = await analyzeIssue(descriptionToUse);
                     logger.logObject('ai_debug', 'AI Analysis Result (Handler)', analysis);
                     if (analysis) {
                         category = analysis.category || 'Uncategorized';
@@ -685,7 +809,12 @@ class FixamHandler {
                 data: currentData
             });
             logger.log('media_handler', 'Updated state to awaiting_report_location');
-            await this.sendMessage(fromNumber, "Evidence received! 📸\n\nNow, please share the *Location* of the issue.\n\n📍 Use the attachment icon > Location\n✏️ Or type the address");
+
+            if (currentData.address) {
+                await this.sendMessage(fromNumber, `Evidence received! 📸\n\nI previously noted the location: *${currentData.address}*.\n\nIs this correct?\nType *Yes* to confirm, or share a new location/type address.`);
+            } else {
+                await this.sendMessage(fromNumber, "Evidence received! 📸\n\nNow, please share the *Location* of the issue.\n\n📍 Use the attachment icon > Location\n✏️ Or type the address");
+            }
         } else {
             logger.log('media_handler', `User not in correct state. Current: ${state?.current_step || 'null'}, Expected: awaiting_report_evidence`);
             await this.sendMessage(fromNumber, "I'm not expecting media right now.");
