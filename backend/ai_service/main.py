@@ -29,274 +29,10 @@ gemini_model = None
 categories_list = []
 
 # Model Configuration
-# Using Gemini 1.5 Flash as requested (fast, cheap)
+# Model Configuration
 GEMINI_MODEL_ID = "gemini-1.5-flash"
 
-class AnalysisRequest(BaseModel):
-    input_text: str
-
-class AnalyzeIssueRequest(BaseModel):
-    description: str
-    categories: Optional[str] = None
-
-UNSAFE_LABELS = [
-    "BUTTOCKS_EXPOSED",
-    "FEMALE_BREAST_EXPOSED",
-    "FEMALE_GENITALIA_EXPOSED",
-    "MALE_BREAST_EXPOSED",
-    "ANUS_EXPOSED",
-    "MALE_GENITALIA_EXPOSED"
-]
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Load models when the server starts.
-    """
-    global transcription_pipe, nude_detector, gemini_model, categories_list
-    
-    # --- Load Categories from DB ---
-    print("Loading categories from database...")
-    try:
-        conn = psycopg2.connect(
-            host=os.environ.get("DB_HOST", "localhost"),
-            database=os.environ.get("DB_NAME", "fixam"),
-            user=os.environ.get("DB_USER", "postgres"),
-            password=os.environ.get("DB_PASSWORD", "password"),
-            port=os.environ.get("DB_PORT", "5432")
-        )
-        cur = conn.cursor()
-        cur.execute("SELECT name FROM categories;")
-        rows = cur.fetchall()
-        categories_list = [row[0] for row in rows]
-        print(f"Loaded {len(categories_list)} categories from database.")
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print(f"Failed to fetch categories from DB: {e}")
-        # Fallback
-        categories_list = [
-            "Electricity", "Water", "Road", "Transportation", "Drainage", "Waste", 
-            "Housing", "Telecommunications", "Health", "Education", "Security"
-        ]
-        print("Using fallback categories.")
-
-    # --- Load Whisper ---
-    device = "cuda:0" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-    
-    model_id = os.environ.get("WHISPER_MODEL", "openai/whisper-base")
-    
-    print(f"Loading Whisper model '{model_id}' on {device} ({torch_dtype})...")
-
-    try:
-        model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            model_id, 
-            torch_dtype=torch_dtype, 
-            low_cpu_mem_usage=True, 
-            use_safetensors=True
-        )
-        model.to(device)
-        
-        processor = AutoProcessor.from_pretrained(model_id)
-
-        transcription_pipe = pipeline(
-            "automatic-speech-recognition",
-            model=model,
-            tokenizer=processor.tokenizer,
-            feature_extractor=processor.feature_extractor,
-            max_new_tokens=128,
-            chunk_length_s=30,
-            batch_size=1,
-            return_timestamps=True,
-            torch_dtype=torch_dtype,
-            device=device,
-            generate_kwargs={
-                "task": "transcribe"
-            }
-        )
-        print("Whisper model loaded successfully!")
-    except Exception as e:
-        print(f"Failed to load Whisper model: {e}")
-    
-    # --- Load NudeNet ---
-    print("Loading NudeNet detector...")
-    try:
-        nude_detector = NudeDetector()
-        print("NudeNet detector loaded successfully!")
-    except Exception as e:
-        print(f"Failed to load NudeNet detector: {e}")
-
-    # --- Load Gemini ---
-    print(f"Configuring Gemini Model ({GEMINI_MODEL_ID})...")
-    try:
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            print("ERROR: GEMINI_API_KEY not found in environment variables!")
-        else:
-            genai.configure(api_key=api_key)
-            gemini_model = genai.GenerativeModel(GEMINI_MODEL_ID)
-            print("Gemini model configured successfully!")
-    except Exception as e:
-        print(f"Failed to configure Gemini: {e}")
-
-    yield
-    
-    # Cleanup
-    del transcription_pipe
-    del nude_detector
-    del gemini_model
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-import subprocess
-
-app = FastAPI(lifespan=lifespan)
-
-def get_media_duration(file_path):
-    try:
-        result = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        return float(result.stdout)
-    except Exception as e:
-        print(f"Error checking duration: {e}")
-        return 0.0
-
-@app.post("/check-duration")
-def check_duration(file: UploadFile = File(...)):
-    suffix = f".{file.filename.split('.')[-1]}" if '.' in file.filename else ".tmp"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        shutil.copyfileobj(file.file, tmp)
-        tmp_path = tmp.name
-
-    try:
-        duration = get_media_duration(tmp_path)
-        return {"duration": duration}
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-
-@app.post("/classify-image")
-def classify_image(image: UploadFile = File(...)):
-    if not nude_detector:
-        raise HTTPException(status_code=500, detail="NudeNet detector is not loaded.")
-
-    # Save to temp file
-    suffix = f".{image.filename.split('.')[-1]}" if '.' in image.filename else ".jpg"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        shutil.copyfileobj(image.file, tmp)
-        tmp_path = tmp.name
-
-    try:
-        detections = nude_detector.detect(tmp_path)
-        is_nude = False
-        
-        for detection in detections:
-            if detection['class'] in UNSAFE_LABELS and detection['score'] > 0.5:
-                is_nude = True
-                break
-
-        status = "nude" if is_nude else "safe"
-        return {
-            "status": status,
-            "detections": detections
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-
-@app.post("/transcribe")
-def transcribe_audio(file: UploadFile = File(...)):
-    if not transcription_pipe:
-        raise HTTPException(status_code=500, detail="Whisper model is not loaded.")
-
-    suffix = f".{file.filename.split('.')[-1]}" if '.' in file.filename else ".ogg"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        shutil.copyfileobj(file.file, tmp)
-        tmp_path = tmp.name
-
-    try:
-        result = transcription_pipe(tmp_path)
-        return {
-            "filename": file.filename,
-            "text": result["text"].strip()
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-
-@app.post("/analyze-issue")
-def analyze_issue(request: AnalyzeIssueRequest):
-    """
-    Analyze an issue description using Gemini model.
-    Returns: {
-        "summary": "5 word max summary",
-        "category": "detected category",
-        "urgency": "low|medium|high|critical"
-    }
-    """
-    global gemini_model, categories_list
-    if gemini_model is None:
-        raise HTTPException(status_code=503, detail="Gemini model is not configured.")
-
-    try:
-        # Prepare the prompt
-        user_description = request.description
-        categories = request.categories
-        
-        # Use DB categories if not provided in request
-        if not categories:
-            if categories_list:
-                categories = ", ".join(categories_list)
-            else:
-                categories = "Electricity, Water, Road, General"
-        
-        prompt = f'''Summarize the following description in 5 words max and determine which category the description belongs. 
-Description: {user_description}
-Categories: {categories}. 
-Output should be a json format with the following keys: summary, category, urgency. 
-Urgency should be one of: low, medium, high, critical.
-No extra comments.'''
-        
-        response = gemini_model.generate_content(prompt)
-        content = response.text.strip()
-        
-        # Cleaner logic for Gemini code blocks
-        content = content.replace("```json", "").replace("```", "").strip()
-
-        try:
-            result = json.loads(content)
-            
-            summary = result.get("summary", user_description[:30])
-            category = result.get("category", "Uncategorized")
-            urgency = result.get("urgency", "medium").lower()
-            
-            if urgency not in ["low", "medium", "high", "critical"]:
-                urgency = "medium"
-            
-            return {
-                "summary": summary,
-                "category": category,
-                "urgency": urgency
-            }
-        except json.JSONDecodeError:
-             return {
-                "summary": user_description[:30] + ("..." if len(user_description) > 30 else ""),
-                "category": "Uncategorized",
-                "urgency": "medium"
-            }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-class AnalyzeIntentRequest(BaseModel):
-    text: str
+# ... (rest of code)
 
 @app.post("/analyze-intent")
 def analyze_intent(request: AnalyzeIntentRequest):
@@ -309,6 +45,7 @@ def analyze_intent(request: AnalyzeIntentRequest):
 
     try:
         user_text = request.text
+        print(f"DEBUG: Analyzing intent for text: {user_text}")
         
         prompt = f'''Analyze the text from a user interacting with a civic issue reporting bot. 
 Determine the user's intent and extract relevant entities based on the guide below.
@@ -339,40 +76,53 @@ Output (JSON only):'''
         
         response = gemini_model.generate_content(prompt)
         content = response.text.strip()
+        print(f"DEBUG: Gemini Raw Response: {content}")
         
         # Cleanup Markdown
         content = content.replace("```json", "").replace("```", "").strip()
         
         try:
             result = json.loads(content)
-        except Exception:
+        except Exception as e:
+            print(f"DEBUG: JSON Parse Error: {e}")
             # Fallback
             result = {"intent": "unknown", "entities": {}}
         
+        # Ensure entities is a dict (handle None from JSON)
+        if result.get("entities") is None:
+             result["entities"] = {}
+        
         # --- Hybrid Fallback: Regex for structured entities ---
         # Even with Gemini, we keep this for guarantee
-        if "entities" not in result:
-            result["entities"] = {}
-            
+        
         # 1. Ticket ID fallback (FIX-XXXXXX)
-        ticket_match = re.search(r'(FIX-[A-Z0-9]{6})', user_text.upper())
+        # Search anywhere in string, case insensitive for input but ensuring format
+        ticket_pattern = r'(FIX-[A-Z0-9]{6})'
+        ticket_match = re.search(ticket_pattern, user_text.upper())
         if ticket_match:
-            result["entities"]["ticket_id"] = ticket_match.group(1)
+            ticket_id = ticket_match.group(1)
+            print(f"DEBUG: Regex found Ticket ID: {ticket_id}")
+            result["entities"]["ticket_id"] = ticket_id
+            
             # If we found a ticket ID, the intent is likely vote_issue
-            if result.get("intent") in ["unknown", "chat", None]:
+            # We override if intent is unknown, chat, or even 'report_issue' if it lacks description but has ID
+            current_intent = result.get("intent")
+            if current_intent in ["unknown", "chat", None] or (current_intent == 'report_issue' and not result['entities'].get('description')):
                 result["intent"] = "vote_issue"
 
         # 2. Vote Type fallback
         if result.get("intent") == "vote_issue":
             lower_text = user_text.lower()
-            if "upvote" in lower_text or "up vote" in lower_text:
+            if "upvote" in lower_text or "up vote" in lower_text or "support" in lower_text:
                 result["entities"]["vote_type"] = "upvote"
             elif "downvote" in lower_text or "down vote" in lower_text:
                 result["entities"]["vote_type"] = "downvote"
-
+        
+        print(f"DEBUG: Final Analysis Result: {result}")
         return result
 
     except Exception as e:
+        print(f"DEBUG: Exception in analyze_intent: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
