@@ -5,11 +5,7 @@ import numpy as np
 class IntentClassifier:
     def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2"):
         """
-        Initialize the intent classifier with a lightweight embedding model.
-        The user suggested google/embeddinggemma-300m, but all-MiniLM-L6-v2 is the 
-        standard for efficient local intent classification. 
-        We can switch to 'google/embeddinggemma-300m' if available in SentenceTransformers,
-        but for stability we use the proven MiniLM for now.
+        Initialize the intent classifier with a lightweight embedding model all-MiniLM-L6-v2.
         """
         print(f"Loading embedding model: {model_name}...")
         self.model = SentenceTransformer(model_name)
@@ -22,8 +18,11 @@ class IntentClassifier:
                 "support this report",
                 "downvote the issue",
                 "cast my vote for FIX-999AX1",
-                "vote for issue"
-                
+                "vote for issue",
+                "a wan vote",
+                "support dis matter",
+                "put hand pan dis",
+                "vote gim am"
             ],
             "report_issue": [
                 "I want to report an issue",
@@ -32,28 +31,47 @@ class IntentClassifier:
                 "report a problem",
                 "complain about trash",
                 "bad road condition",
-                "water leak detected"
+                "water leak detected",
+                "tin don spoil",
+                "road don bad",
+                "dirty water dey ya",
+                "light nor dey",
+                "light pole don fall",
+                "manhole open",
+                "pile of rubbish",
+                "problem dey na mi area"
             ],
             "view_trending": [
                 "show me trending issues",
                 "what is popular in Freetown?",
                 "top issues in my area",
                 "view trending",
-                "what's happening in Lumley?"
+                "what's happening in Lumley?",
+                "wetin dey happen?",
+                "usai di problem dem dey?",
+                "wetin pipul dey talk?",
+                "hot topics"
             ],
             "view_points": [
                 "check my points",
                 "how many points do I have?",
                 "show my score",
                 "leaderboard",
-                "my rank"
+                "my rank",
+                "u much point a get?",
+                "show mi mark",
+                "wetin a don win?"
             ],
             "provide_feedback": [
                 "I have a suggestion",
                 "provide feedback",
                 "my opinion on the app",
                 "leave a comment",
-                "review the service"
+                "review the service",
+                "a get word for una",
+                "dis app fine",
+                "una try",
+                "una need for fix dis"
             ],
             "get_help": [
                 "help me",
@@ -61,16 +79,23 @@ class IntentClassifier:
                 "what can you do?",
                 "show commands",
                 "guide me",
-                "how do i start?"
+                "how do i start?",
+                "wetin for do?",
+                "a nor sabi use am",
+                "show mi da road",
+                "help"
             ],
             "greeting": [
-                "hi", "hello", "hey", "good morning", "good afternoon", "hola", "hi there"
+                "hi", "hello", "hey", "good morning", "good afternoon", "hola", "hi there",
+                "kush", "aw di body?", "how de body?", "usai", "hello boss", "boss", "chief"
             ],
             "appreciation": [
-                "thanks", "thank you", "tnx", "nice work", "good job", "thanks a lot"
+                "thanks", "thank you", "tnx", "nice work", "good job", "thanks a lot",
+                "tenki", "una do well", "god bless una", "i gladi", "bravo"
             ],
             "agreement": [
-                "ok", "okay", "agreed", "sure", "no problem", "yes", "alright"
+                "ok", "okay", "agreed", "sure", "no problem", "yes", "alright",
+                "na so", "no wahala", "i good", "sharp", "correct"
             ]
         }
         
