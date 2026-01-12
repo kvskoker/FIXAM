@@ -356,7 +356,13 @@ def analyze_intent(request: AnalyzeIntentRequest):
     """
     Analyze user text to determine intent and extract entities.
     Intents: registration, report_issue, vote_issue, view_trending, view_points, provide_feedback, get_help
-    Entities: name (for registration), description, location (for report_issue)
+    Entities: 
+        - registration: name
+        - report_issue: description, location
+        - vote_issue: ticket_id (format FIX-XXXXXX), vote_type (upvote/downvote)
+        - view_trending: location
+        - provide_feedback: feedback_text
+        - get_help: topic
     """
     global qwen_model, qwen_tokenizer
     if qwen_model is None or qwen_tokenizer is None:
@@ -365,19 +371,28 @@ def analyze_intent(request: AnalyzeIntentRequest):
     try:
         user_text = request.text
         
-        prompt = f'''Analyze the following text from a user interacting with a civic issue reporting bot. 
-Determine the user's intent from the following list:
-- registration: User wants to register. Look for a name.
-- report_issue: User wants to report a problem. Look for issue description and location.
-- vote_issue: User wants to vote on an issue.
-- view_trending: User wants to see trending issues.
-- view_points: User wants to check their points/rewards.
-- provide_feedback: User wants to give feedback on the bot/service.
-- get_help: User wants help or information.
-- unknown: If none match.
+        prompt = f'''Analyze the text from a user interacting with a civic issue reporting bot. 
+Determine the user's intent and extract relevant entities based on the guide below.
+
+Intents & Entities:
+1. registration
+   - Entities: name (User's name)
+2. report_issue
+   - Entities: description (Issue details), location (Address or landmark)
+3. vote_issue
+   - Entities: ticket_id (Look for pattern FIX-XXXXXX), vote_type (upvote/downvote)
+4. view_trending
+   - Entities: location (Community or area name)
+5. view_points
+   - Entities: None
+6. provide_feedback
+   - Entities: feedback_text (The actual feedback content)
+7. get_help
+   - Entities: topic (What they need help with)
+8. unknown
+   - Entities: None
 
 Output JSON with keys: 'intent' (string), 'entities' (object).
-Entities should have keys based on intent (e.g., 'name' for registration; 'description', 'location' for report_issue). 
 Return null for missing entities.
 
 User Text: "{user_text}"
@@ -399,7 +414,7 @@ Output (JSON only):'''
         generated_ids = qwen_model.generate(
             **model_inputs,
             max_new_tokens=256,
-            temperature=0.3, # Lower temperature for more deterministic output
+            temperature=0.3, # Lower temperature for consistency
             do_sample=True
         )
         

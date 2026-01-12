@@ -303,13 +303,77 @@ class FixamHandler {
                             return;
 
                         } else if (analysis.intent === 'vote_issue') {
-                             await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_vote_ticket_id', data: {} });
-                             await this.sendMessage(fromNumber, "Okay! Please enter the *Issue ID* of the issue you want to vote on, or type *9* to cancel.");
+                             const entities = analysis.entities || {};
+                             const ticketId = entities.ticket_id ? entities.ticket_id.toUpperCase() : null;
+                             const voteType = entities.vote_type ? entities.vote_type.toLowerCase() : null;
+
+                             if (ticketId) {
+                                 // Verify ticket
+                                 const issue = await this.fixamDb.getIssueByTicketId(ticketId);
+                                 if (issue) {
+                                     // Check if they want to upvote directly
+                                     if (voteType && (voteType.includes('up') || voteType.includes('down'))) {
+                                         // If intent is strong and clear (e.g. "Upvote FIX-123"), maybe just do it?
+                                         // For safety, let's confirm.
+                                         await this.fixamDb.updateConversationState(fromNumber, { 
+                                            current_step: 'awaiting_vote_confirmation',
+                                            data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title, pre_vote: voteType }
+                                         });
+                                         await this.sendMessage(fromNumber, `Found Issue: *${issue.title}* (${issue.ticket_id})\n\nI see you want to *${voteType}*.\n\nType *1* to Confirm Upvote 👍\nType *2* to Confirm Downvote 👎\nType *9* to cancel.`);
+                                     } else {
+                                         await this.fixamDb.updateConversationState(fromNumber, { 
+                                            current_step: 'awaiting_vote_confirmation',
+                                            data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
+                                        });
+                                        await this.sendMessage(fromNumber, `Found Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                                     }
+                                 } else {
+                                     await this.sendMessage(fromNumber, `Could not find issue with ID: ${ticketId}. Please check and try again.`);
+                                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_vote_ticket_id', data: {} });
+                                 }
+                             } else {
+                                await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_vote_ticket_id', data: {} });
+                                await this.sendMessage(fromNumber, "Okay! Please enter the *Issue ID* of the issue you want to vote on, or type *9* to cancel.");
+                             }
                              return;
 
                         } else if (analysis.intent === 'view_trending') {
-                             await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_trending_community', data: {} });
-                             await this.sendMessage(fromNumber, "Please enter the name of the community or area you want to check (e.g. 'Lumley', 'Kissy'), or type *9* to cancel.");
+                             const entities = analysis.entities || {};
+                             const community = entities.location;
+
+                             if (community) {
+                                 // Trigger trending logic directly
+                                 const locations = await this.helpers.geocodeAddress(community + ", Sierra Leone");
+                                 if (locations.length > 0) {
+                                     const loc = locations[0];
+                                     const trendingIssues = await this.fixamDb.getTrendingIssues(loc.latitude, loc.longitude, 5000, 5);
+                                    
+                                     if (trendingIssues.length === 0) {
+                                         await this.sendMessage(fromNumber, `No trending issues found in *${loc.display_name}*.`);
+                                         await this.sendMainMenu(fromNumber, user.name);
+                                     } else {
+                                         let msg = `🔥 *Trending in ${loc.name || loc.display_name}*\n\n`;
+                                         trendingIssues.forEach((issue, i) => {
+                                            msg += `${i+1}. *${issue.title}*\n`;
+                                            msg += `   📍 ${issue.address || 'Location N/A'}\n`;
+                                            msg += `   👍 ${issue.upvote_count} Upvotes\n\n`;
+                                         });
+                                         msg += `Reply with the number (e.g. *1*) to view details and vote, or *9* to cancel.`;
+
+                                         await this.fixamDb.updateConversationState(fromNumber, { 
+                                            current_step: 'awaiting_trending_selection',
+                                            data: { trending_issues: trendingIssues }
+                                        });
+                                        await this.sendMessage(fromNumber, msg);
+                                     }
+                                 } else {
+                                    await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_trending_community', data: {} });
+                                    await this.sendMessage(fromNumber, `I couldn't find "${community}". Please enter the name of the community again (e.g. 'Lumley'), or type *9* to cancel.`);
+                                 }
+                             } else {
+                                await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_trending_community', data: {} });
+                                await this.sendMessage(fromNumber, "Please enter the name of the community or area you want to check (e.g. 'Lumley', 'Kissy'), or type *9* to cancel.");
+                             }
                              return;
 
                         } else if (analysis.intent === 'view_points') {
@@ -319,8 +383,17 @@ class FixamHandler {
                              return;
 
                         } else if (analysis.intent === 'provide_feedback') {
-                             await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_feedback', data: {} });
-                             await this.sendMessage(fromNumber, "We value your feedback! 💬\n\nPlease type your feedback or send a *Voice Note*.");
+                             const entities = analysis.entities || {};
+                             const feedback = entities.feedback_text;
+
+                             if (feedback) {
+                                 await this.fixamDb.createFeedback(user.id, 'text', feedback);
+                                 await this.sendMessage(fromNumber, "Thank you for your feedback! 🙏\n\nI've saved it.");
+                                 await this.sendMainMenu(fromNumber, user.name);
+                             } else {
+                                await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_feedback', data: {} });
+                                await this.sendMessage(fromNumber, "We value your feedback! 💬\n\nPlease type your feedback or send a *Voice Note*.");
+                             }
                              return;
 
                         } else if (analysis.intent === 'get_help') {
