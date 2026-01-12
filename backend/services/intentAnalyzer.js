@@ -16,15 +16,15 @@ const PATTERNS = {
 
     // 2. Report Issue
     report_issue: {
-        keywords: ['report', 'complain', 'bad', 'broken', 'leak', 'hole', 'dirty', 'trash', 'pothole', 'damage', 'fix'],
-        regex: /\b(report|complain|fix|issue|problem)\b/i
+        keywords: ['report', 'complain', 'bad', 'broken', 'leak', 'hole', 'dirty', 'trash', 'pothole', 'damage', 'fix', 'issue', 'problem'],
+        regex: /\b(report|complain|bad|broken|leak|pothole)\b/i // generic 'issue'/'problem' removed from strong regex
     },
 
     // 3. View Trending
     view_trending: {
         keywords: ['trending', 'trend', 'popular', 'hot', 'top', 'happening'],
-        regex: /\b(trending|popular|hot\s+issue|top\s+issue)\b/i,
-        regex_location: /\b(?:in|at|near|around)\s+([a-zA-Z\s]+)/i // Simple location extraction "trending in Freetown"
+        regex: /\b(trending|popular)\b/i,
+        regex_location: /\b(?:in|at|near|around)\s+([a-zA-Z\s]+)/i 
     },
 
     // 4. View Points
@@ -36,18 +36,19 @@ const PATTERNS = {
     // 5. Provide Feedback
     provide_feedback: {
         keywords: ['feedback', 'suggest', 'comment', 'opinion', 'idea', 'review'],
-        regex: /\b(feedback|suggestion|comment)\b/i
+        regex: /\b(feedback|suggestion)\b/i
     },
 
     // 6. Get Help
     get_help: {
-        keywords: ['help', 'support', 'guide', 'info', 'what', 'how', 'assist'],
-        regex: /\b(help|support|guide|assist)\b/i
+        keywords: ['help', 'support', 'guide', 'info', 'what', 'how', 'assist', 'queries'],
+        regex: /\b(help|support|guide|assist)\b/i,
+        regex_question: /^(how|what|where|can i|do i|please)\b/i
     },
 
     // 7. Cancel
     cancel: {
-        keywords: ['cancel', 'stop', 'quit', 'exit', 'menu', 'reset'], // Reset might be handled globally but good to catch here
+        keywords: ['cancel', 'stop', 'quit', 'exit', 'menu', 'reset'],
         regex: /\b(cancel|stop|quit|exit)\b/i
     }
 };
@@ -63,7 +64,6 @@ function analyzeIntentLocal(text) {
     }
 
     const cleanText = text.trim();
-    const upperText = cleanText.toUpperCase();
     
     // Default result
     let result = {
@@ -72,10 +72,7 @@ function analyzeIntentLocal(text) {
     };
 
     // --- Priority 1: Check for Ticket ID (Strong Indicator of Voting) ---
-    // If text contains a Ticket ID (FIX-XXXXXX), it's almost certainly a vote or status check.
-    // For this bot, we assume it's a vote context if they mention a ticket ID.
     const ticketMatch = cleanText.match(PATTERNS.vote_issue.regex_ticket);
-    const hasVoteKeyword = PATTERNS.vote_issue.keywords.some(k => cleanText.toLowerCase().includes(k));
     
     if (ticketMatch) {
         result.intent = 'vote_issue';
@@ -92,7 +89,6 @@ function analyzeIntentLocal(text) {
     }
 
     // --- Priority 2: Check for Keywords if no Ticket ID found ---
-    // We score intents based on keyword matches
     let highestScore = 0;
     let bestIntent = 'unknown';
 
@@ -103,6 +99,11 @@ function analyzeIntentLocal(text) {
         // Check regex (Higher weight)
         if (pattern.regex && pattern.regex.test(cleanText)) {
             score += 10;
+        }
+
+        // Check question form for get_help (Medium High weight)
+        if (intentKey === 'get_help' && pattern.regex_question && pattern.regex_question.test(cleanText)) {
+             score += 15; // Questions are usually asking for help/info
         }
 
         // Check keywords (Lower weight)
