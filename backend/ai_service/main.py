@@ -30,7 +30,7 @@ gemini_model = None
 categories_list = []
 
 # Model Configuration
-GEMINI_MODEL_ID = "gemini-1.5-flash"
+GEMINI_MODEL_ID = "gemini-2.5-flash-lite"
 
 class AnalysisRequest(BaseModel):
     input_text: str
