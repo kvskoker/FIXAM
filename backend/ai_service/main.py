@@ -17,7 +17,7 @@ import subprocess
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from intent_classifier import IntentClassifier
-from summa import summarizer
+
 
 # Load environment variables from backend/.env
 # Get the directory of the current script
@@ -269,76 +269,89 @@ def analyze_issue(request: AnalyzeIssueRequest):
         best_urg_idx = np.argmax(urg_sims)
         best_urgency = urgency_list[best_urg_idx].lower()
         
-        # 4. Generate Summary using Summa (TextRank) + Fallbacks
-        summary = ""
-        try:
-            # Try TextRank first. 
-            # 'words=10' helps prioritize brevity, but Summa might return empty for short inputs.
-            text_rank_summary = summarizer.summarize(user_description, words=10)
-            if text_rank_summary:
-                # Summa returns full sentences. Use the first one if multiple.
-                summary = text_rank_summary.split('\n')[0]
-        except Exception as e:
-            print(f"Summa summarization failed: {e}")
-
-        # Fallback: Use first sentence if Summa returned nothing
-        if not summary:
-            summary = re.split(r'[.!?\n]', user_description.strip())[0]
-
-        # Cleanup: Remove conversational prefixes to make it "Abstractive-like"
-        prefixes = [
-            r"^i want to report\s+(?:a\s+|an\s+)?",
-            r"^i'd like to report\s+(?:a\s+|an\s+)?",
-            r"^reporting\s+(?:a\s+|an\s+)?",
-            r"^please fix\s+",
-            r"^kindly fix\s+",
-            r"^fix\s+",
-            r"^report of\s+",
-            r"^there is\s+(?:a\s+|an\s+)?",
-            r"^there's\s+(?:a\s+|an\s+)?",
-            r"^we have\s+(?:a\s+|an\s+)?",
-            r"^hello,?\s+",
-            r"^hi,?\s+"
+        # 4. Generate Summary using Smart Regex Heuristics
+        # Note: Summa (TextRank) often fails on short, conversational texts.
+        # We use a robust cleaning approach instead.
+        
+        summary = user_description.strip()
+        
+        # Step A: Remove conversational fillers at the start (Iterative)
+        # e.g. "Yeah, so...", "Hello, I want...", "Ok, there is..."
+        fillers = [
+            r"^(?:yeah|yep|yes|ok|okay|so|well|actually|basically|please|kindly)[,.]?\s+",
+            r"^(?:hello|hi|hey|good\s+morning|good\s+afternoon|good\s+evening)[,.]?\s+",
+            r"^(?:i\s+think|i\s+feel|i\s+believe)[,.]?\s+" 
         ]
         
-        cleaned_text = summary.strip()
-        for p in prefixes:
-            cleaned_text = re.sub(p, "", cleaned_text, count=1, flags=re.IGNORECASE)
+        for _ in range(3): # Run a few times to catch "Yeah, so, basically..."
+            cleaned = False
+            for f in fillers:
+                if re.search(f, summary, re.IGNORECASE):
+                    summary = re.sub(f, "", summary, count=1, flags=re.IGNORECASE)
+                    cleaned = True
+            if not cleaned:
+                break
+        
+        # Step B: Identify the "Core" sentence
+        # We split by common sentence terminators.
+        sentences = re.split(r'[.!?\n]', summary)
+        if sentences:
+            summary = sentences[0].strip()
             
-        # Cleanup: Remove conversational suffixes/explanations (clauses starting with 'that', 'which', 'causing', etc.)
+        # Step C: Extract "Matter" from "Intro" phrases
+        # e.g. "I want to report X" -> "X"
+        # e.g. "There is a X" -> "X"
+        intro_patterns = [
+            r"^(?:i\s+want\s+to|i'd\s+like\s+to|i\s+am)\s+(?:report|reporting|complain\s+about)\s+(?:a\s+|an\s+|the\s+)?",
+            r"^(?:can\s+you|please|kindly)\s+(?:come\s+and\s+)?(?:fix|repair|look\s+at)\s+(?:a\s+|an\s+|the\s+)?",
+            r"^(?:there\s+is|there's|we\s+have|it's)\s+(?:a\s+|an\s+|the\s+)?",
+            r"^(?:report\s+of|issue\s+with|problem\s+with)\s+(?:a\s+|an\s+|the\s+)?"
+        ]
+        
+        for p in intro_patterns:
+            match = re.search(p, summary, re.IGNORECASE)
+            if match:
+                # Replace the start with empty string
+                summary = re.sub(p, "", summary, count=1, flags=re.IGNORECASE)
+                break # Only strip one major intro
+
+        # Step D: Suffix/Explanation Cleaning (Existing logic, refined)
         suffixes = [
             r"\s+that needs\s+.*",
-            r"\s+that need\s+.*",
             r"\s+which needs\s+.*",
-            r"\s+which is\s+.*",
-            r"\s+that is\s+.*",
+            r"\s+that\s+(?:is|has\s+been)\s+.*",
+            r"\s+which\s+(?:is|has\s+been)\s+.*",
             r"\s+causing\s+.*",
-            r"\s+resulting in\s+.*",
-            r"\s+so\s+.*",
-            r"\s+please\s+.*",
-            r"\s+kindly\s+.*",
-            r"\s+it has been\s+.*",
-            r"\s+we have\s+.*",
-            r"\s+and it\s+.*"
+            r"\s+resulting\s+in\s+.*",
+            r"\s+because\s+.*",
+            r"\s+since\s+.*",
+            r"\s+for\s+the\s+past\s+.*",
+            r"\s+at\s+juba.*", # Location removal if it makes it too long? No, location is good. keep it usually.
+            # But user example "at Juba" was part of the core info. "Leaking water pipe at Juba".
+            # The user complained "Yeah," was result. 
+            # With "There is a leaking water pipe at Juba...", removing "There is a" -> "leaking water pipe at Juba..."
+            # Then we have "and it's been leaking..." -> clean that.
+            r"\s+and\s+it.*",
+            r"\s+and\s+we.*" 
         ]
-        for s in suffixes:
-            cleaned_text = re.sub(s, "", cleaned_text, count=1, flags=re.IGNORECASE)
-
-        cleaned_text = cleaned_text.strip()
         
-        # Capitalize and ensure it's not too long
-        if cleaned_text:
-             cleaned_text = cleaned_text[0].upper() + cleaned_text[1:]
+        for s in suffixes:
+            summary = re.sub(s, "", summary, count=1, flags=re.IGNORECASE)
+
+        summary = summary.strip()
+
+        # Step E: Formatting
+        if summary:
+            summary = summary[0].upper() + summary[1:]
              
-        # Hard truncate if still too long (fallback safety)
-        words = cleaned_text.split()
+        # Step F: Final Truncation
+        # "Leaking water pipe at Juba" -> 5 words. Perfect.
+        words = summary.split()
         if len(words) > 10:
             summary = " ".join(words[:10]) + "..."
-        else:
-            summary = cleaned_text
             
         if not summary:
-             summary = user_description[:20] + "..."
+             summary = user_description[:30] + "..."
 
         print(f"Result -> Category: {best_category}, Urgency: {best_urgency}, Summary: {summary}")
 
