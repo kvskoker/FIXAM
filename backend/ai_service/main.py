@@ -244,8 +244,7 @@ def transcribe_audio(file: UploadFile = File(...)):
 @app.post("/analyze-issue")
 def analyze_issue(request: AnalyzeIssueRequest):
     """
-    Analyze an issue description using Embeddings (Semantic Similarity).
-    Replaces the heavy Qwen model with efficient embedding comparison.
+    Analyze an issue description using Embeddings (Semantic Similarity).   
     """
     global intent_classifier, category_embeddings, urgency_embeddings, categories_list, urgency_list
     
@@ -325,12 +324,7 @@ def analyze_issue(request: AnalyzeIssueRequest):
             r"\s+resulting\s+in\s+.*",
             r"\s+because\s+.*",
             r"\s+since\s+.*",
-            r"\s+for\s+the\s+past\s+.*",
-            r"\s+at\s+juba.*", # Location removal if it makes it too long? No, location is good. keep it usually.
-            # But user example "at Juba" was part of the core info. "Leaking water pipe at Juba".
-            # The user complained "Yeah," was result. 
-            # With "There is a leaking water pipe at Juba...", removing "There is a" -> "leaking water pipe at Juba..."
-            # Then we have "and it's been leaking..." -> clean that.
+            r"\s+for\s+the\s+past\s+.*",            
             r"\s+and\s+it.*",
             r"\s+and\s+we.*" 
         ]
