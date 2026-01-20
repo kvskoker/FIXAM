@@ -8,4 +8,6 @@ accelerate
 scipy
 python-dotenv
 psycopg2-binary
-google-generativeai
+sentence-transformers
+scikit-learn
+summa

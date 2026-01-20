@@ -14,7 +14,10 @@ import json
 import re
 import psycopg2
 import subprocess
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 from intent_classifier import IntentClassifier
+from summa import summarizer
 
 # Load environment variables from backend/.env
 # Get the directory of the current script
@@ -26,12 +29,11 @@ load_dotenv(env_path)
 # Global variables
 transcription_pipe = None
 nude_detector = None
-qwen_model = None
-qwen_tokenizer = None
 intent_classifier = None
 categories_list = []
-
-QWEN_MODEL_ID = "Qwen/Qwen3-0.6B"
+category_embeddings = None
+urgency_list = ["Low", "Medium", "High", "Critical"]
+urgency_embeddings = None
 
 class AnalysisRequest(BaseModel):
     input_text: str
@@ -57,7 +59,8 @@ async def lifespan(app: FastAPI):
     """
     Load models when the server starts.
     """
-    global transcription_pipe, nude_detector, qwen_model, qwen_tokenizer, categories_list, intent_classifier
+    global transcription_pipe, nude_detector, categories_list, intent_classifier
+    global category_embeddings, urgency_embeddings, urgency_list
     
     # --- Load Intent Classifier ---
     print("Loading Intent Classifier...")
@@ -65,6 +68,7 @@ async def lifespan(app: FastAPI):
         intent_classifier = IntentClassifier()
     except Exception as e:
         print(f"Failed to load Intent Classifier: {e}")
+        intent_classifier = None
     
     # --- Load Categories from DB ---
     print("Loading categories from database...")
@@ -91,6 +95,16 @@ async def lifespan(app: FastAPI):
             "Housing", "Telecommunications", "Health", "Education", "Security"
         ]
         print("Using fallback categories.")
+
+    # --- Pre-compute Embeddings for Categories & Urgency ---
+    if intent_classifier and intent_classifier.model:
+        print("Pre-computing Category and Urgency embeddings...")
+        try:
+            category_embeddings = intent_classifier.model.encode(categories_list)
+            urgency_embeddings = intent_classifier.model.encode(urgency_list)
+            print("Embeddings computed successfully.")
+        except Exception as e:
+            print(f"Failed to compute embeddings: {e}")
 
     # --- Load Whisper ---
     device = "cuda:0" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
@@ -138,37 +152,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Failed to load NudeNet detector: {e}")
 
-    # --- Load Qwen Model ---
-    print(f"Loading Qwen Model: {QWEN_MODEL_ID}...")
-    try:
-        # Get token from environment if needed
-        token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_API_KEY")
-        
-        if not token:
-            print("Warning: HF_TOKEN or HUGGINGFACE_API_KEY not found in environment. Model loading may fail if it is gated.")
-        else:
-            print("HF_TOKEN found in environment.")
-
-        qwen_tokenizer = AutoTokenizer.from_pretrained(QWEN_MODEL_ID, token=token)
-        qwen_model = AutoModelForCausalLM.from_pretrained(
-            QWEN_MODEL_ID,
-            torch_dtype="auto",
-            device_map="cpu",  # Force CPU to avoid VRAM issues with Whisper
-            token=token
-        )
-        print("Qwen model loaded successfully on CPU!")
-    except Exception as e:
-        print(f"Failed to load Qwen model: {e}")
-        import traceback
-        traceback.print_exc()
-
     yield
     
     # Cleanup
     del transcription_pipe
     del nude_detector
-    del qwen_model
-    del qwen_tokenizer
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
@@ -256,88 +244,112 @@ def transcribe_audio(file: UploadFile = File(...)):
 @app.post("/analyze-issue")
 def analyze_issue(request: AnalyzeIssueRequest):
     """
-    Analyze an issue description using Qwen model.
+    Analyze an issue description using Embeddings (Semantic Similarity).
+    Replaces the heavy Qwen model with efficient embedding comparison.
     """
-    global qwen_model, qwen_tokenizer, categories_list
-    if qwen_model is None or qwen_tokenizer is None:
-        raise HTTPException(status_code=503, detail="Qwen model is not loaded.")
+    global intent_classifier, category_embeddings, urgency_embeddings, categories_list, urgency_list
+    
+    if intent_classifier is None or category_embeddings is None:
+        raise HTTPException(status_code=503, detail="AI models (Embeddings) are not loaded.")
 
     try:
-        # Prepare the prompt
-        user_description = request.description
-        categories = request.categories
+        user_description = request.description.strip()
+        print(f"Analyzing Issue: {user_description}")
         
-        # Use DB categories if not provided in request
-        if not categories:
-            if categories_list:
-                categories = ", ".join(categories_list)
-            else:
-                categories = "Electricity, Water, Road, General"
+        # 1. Compute Embedding for User Description
+        desc_embedding = intent_classifier.model.encode([user_description])
         
-        prompt = f'''Summarize the following description in 5 words max and determine which category the description belongs. 
-Description: {user_description}
-Categories: {categories}. 
-Output should be a json format with the following keys: summary, category, urgency. 
-Urgency should be one of: low, medium, high, critical.
-No extra comments.'''
+        # 2. Find Best Category
+        cat_sims = cosine_similarity(desc_embedding, category_embeddings)[0]
+        best_cat_idx = np.argmax(cat_sims)
+        best_category = categories_list[best_cat_idx]
         
-        messages = [
-            {"role": "user", "content": prompt}
+        # 3. Find Urgency
+        urg_sims = cosine_similarity(desc_embedding, urgency_embeddings)[0]
+        best_urg_idx = np.argmax(urg_sims)
+        best_urgency = urgency_list[best_urg_idx].lower()
+        
+        # 4. Generate Summary using Summa (TextRank) + Fallbacks
+        summary = ""
+        try:
+            # Try TextRank first. 
+            # 'words=10' helps prioritize brevity, but Summa might return empty for short inputs.
+            text_rank_summary = summarizer.summarize(user_description, words=10)
+            if text_rank_summary:
+                # Summa returns full sentences. Use the first one if multiple.
+                summary = text_rank_summary.split('\n')[0]
+        except Exception as e:
+            print(f"Summa summarization failed: {e}")
+
+        # Fallback: Use first sentence if Summa returned nothing
+        if not summary:
+            summary = re.split(r'[.!?\n]', user_description.strip())[0]
+
+        # Cleanup: Remove conversational prefixes to make it "Abstractive-like"
+        prefixes = [
+            r"^i want to report\s+(?:a\s+|an\s+)?",
+            r"^i'd like to report\s+(?:a\s+|an\s+)?",
+            r"^reporting\s+(?:a\s+|an\s+)?",
+            r"^please fix\s+",
+            r"^kindly fix\s+",
+            r"^fix\s+",
+            r"^report of\s+",
+            r"^there is\s+(?:a\s+|an\s+)?",
+            r"^there's\s+(?:a\s+|an\s+)?",
+            r"^we have\s+(?:a\s+|an\s+)?",
+            r"^hello,?\s+",
+            r"^hi,?\s+"
         ]
         
-        text = qwen_tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False
-        )
-        
-        model_inputs = qwen_tokenizer([text], return_tensors="pt").to(qwen_model.device)
-        
-        # Generate response
-        generated_ids = qwen_model.generate(
-            **model_inputs,
-            max_new_tokens=512,
-            temperature=0.7,
-            do_sample=True
-        )
-        
-        output_ids = generated_ids[0][len(model_inputs.input_ids[0]):].tolist()
-        
-        # Parse thinking content (if any)
-        try:
-            index = len(output_ids) - output_ids[::-1].index(151668)
-        except ValueError:
-            index = 0
-        
-        content = qwen_tokenizer.decode(output_ids[index:], skip_special_tokens=True).strip("\n")
-        
-        try:
-            json_match = re.search(r'\{[^}]+\}', content)
-            if json_match:
-                result = json.loads(json_match.group())
-            else:
-                result = json.loads(content)
+        cleaned_text = summary.strip()
+        for p in prefixes:
+            cleaned_text = re.sub(p, "", cleaned_text, count=1, flags=re.IGNORECASE)
             
-            summary = result.get("summary", user_description[:30])
-            category = result.get("category", "Uncategorized")
-            urgency = result.get("urgency", "medium").lower()
+        # Cleanup: Remove conversational suffixes/explanations (clauses starting with 'that', 'which', 'causing', etc.)
+        suffixes = [
+            r"\s+that needs\s+.*",
+            r"\s+that need\s+.*",
+            r"\s+which needs\s+.*",
+            r"\s+which is\s+.*",
+            r"\s+that is\s+.*",
+            r"\s+causing\s+.*",
+            r"\s+resulting in\s+.*",
+            r"\s+so\s+.*",
+            r"\s+please\s+.*",
+            r"\s+kindly\s+.*",
+            r"\s+it has been\s+.*",
+            r"\s+we have\s+.*",
+            r"\s+and it\s+.*"
+        ]
+        for s in suffixes:
+            cleaned_text = re.sub(s, "", cleaned_text, count=1, flags=re.IGNORECASE)
+
+        cleaned_text = cleaned_text.strip()
+        
+        # Capitalize and ensure it's not too long
+        if cleaned_text:
+             cleaned_text = cleaned_text[0].upper() + cleaned_text[1:]
+             
+        # Hard truncate if still too long (fallback safety)
+        words = cleaned_text.split()
+        if len(words) > 10:
+            summary = " ".join(words[:10]) + "..."
+        else:
+            summary = cleaned_text
             
-            if urgency not in ["low", "medium", "high", "critical"]:
-                urgency = "medium"
-            
-            return {
-                "summary": summary,
-                "category": category,
-                "urgency": urgency
-            }
-        except json.JSONDecodeError:
-            return {
-                "summary": user_description[:30] + ("..." if len(user_description) > 30 else ""),
-                "category": "Uncategorized",
-                "urgency": "medium"
-            }
+        if not summary:
+             summary = user_description[:20] + "..."
+
+        print(f"Result -> Category: {best_category}, Urgency: {best_urgency}, Summary: {summary}")
+
+        return {
+            "summary": summary,
+            "category": best_category,
+            "urgency": best_urgency
+        }
+
     except Exception as e:
+        print(f"Error in analyze_issue: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/analyze-intent")

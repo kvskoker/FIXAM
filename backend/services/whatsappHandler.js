@@ -4,7 +4,8 @@ const crypto = require('crypto');
 const FixamDatabase = require('./fixamDatabase');
 const FixamHelpers = require('./fixamHelpers');
 const logger = require('./logger');
-const { analyzeIssue, analyzeIntent } = require('./aiService');
+const aiService = require('./aiService');
+const { analyzeIssue, analyzeIntent } = aiService; // Keep backward compatibility for existing calls
 const axios = require('axios');
 const FormData = require('form-data');
 
@@ -854,48 +855,32 @@ class FixamHandler {
             logger.log('media_handler', `Download result: ${downloadResult ? 'Success' : 'Failed'}`);
 
             if (downloadResult && mediaType === 'image') {
-                try {
-                    logger.log('media_handler', 'Checking for sensitive content...');
-                    const formData = new FormData();
-                    formData.append('image', downloadResult.buffer, { filename: 'image.jpg', contentType: downloadResult.mimeType || 'image/jpeg' });
-                    
-                    const aiResponse = await axios.post('http://localhost:8000/classify-image', formData, {
-                        headers: { ...formData.getHeaders() },
-                        maxContentLength: Infinity,
-                        maxBodyLength: Infinity
-                    });
+                logger.log('media_handler', 'Checking for sensitive content...');
+                const classification = await aiService.classifyImage(
+                    downloadResult.buffer, 
+                    downloadResult.mimeType || 'image/jpeg'
+                );
 
-                    if (aiResponse.data.status === 'nude') {
-                        logger.log('media_handler', 'Image rejected: Nudity detected');
-                        await this.sendMessage(fromNumber, "⚠️ This image contains sensitive content and has been rejected.");
-                        return;
-                    }
-                    logger.log('media_handler', 'Image passed safety check');
-                } catch (error) {
-                    logger.logError('media_handler', 'AI Safety Check failed', error.message);
-                    // Proceeding despite error to avoid blocking user flow if AI service is down
+                if (classification && classification.status === 'nude') {
+                    logger.log('media_handler', 'Image rejected: Nudity detected');
+                    await this.sendMessage(fromNumber, "⚠️ This image contains sensitive content and has been rejected.");
+                    return;
                 }
+                logger.log('media_handler', 'Image passed safety check matches');
+
             } else if (downloadResult && mediaType === 'video') {
                 // Check duration
-                try {
-                    logger.log('media_handler', 'Checking video duration...');
-                    const formData = new FormData();
-                    formData.append('file', downloadResult.buffer, { filename: 'video.mp4', contentType: downloadResult.mimeType || 'video/mp4' });
-                    
-                    const durationRes = await axios.post('http://localhost:8000/check-duration', formData, {
-                        headers: { ...formData.getHeaders() },
-                        maxContentLength: Infinity,
-                        maxBodyLength: Infinity
-                    });
-                    
-                    const duration = durationRes.data.duration;
-                    if (duration > 60) {
-                        logger.log('media_handler', `Video rejected: Duration ${duration}s > 60s`);
-                        await this.sendMessage(fromNumber, "⚠️ Video too long! Please send a video shorter than 1 minute.");
-                        return;
-                    }
-                } catch (error) {
-                    logger.logError('media_handler', 'Duration Check failed', error.message);
+                logger.log('media_handler', 'Checking video duration...');
+                const duration = await aiService.checkDuration(
+                    downloadResult.buffer, 
+                    'video.mp4', 
+                    downloadResult.mimeType || 'video/mp4'
+                );
+                
+                if (duration > 60) {
+                    logger.log('media_handler', `Video rejected: Duration ${duration}s > 60s`);
+                    await this.sendMessage(fromNumber, "⚠️ Video too long! Please send a video shorter than 1 minute.");
+                    return;
                 }
             }
             
@@ -962,64 +947,52 @@ class FixamHandler {
             let transcribedText = '';
 
             if (downloadResult) {
-                // Check duration first
-                try {
-                    const formData = new FormData();
-                    formData.append('file', downloadResult.buffer, { filename: 'audio.ogg', contentType: downloadResult.mimeType || 'audio/ogg' });
-                    
-                    const durationRes = await axios.post('http://localhost:8000/check-duration', formData, {
-                        headers: { ...formData.getHeaders() },
-                        maxContentLength: Infinity,
-                        maxBodyLength: Infinity
-                    });
-                    
-                    const duration = durationRes.data.duration;
-                    if (duration > 300) {
-                        await this.sendMessage(fromNumber, "⚠️ Voice note too long! Please keep it under 5 minutes.");
-                        return; // Stop processing, do not save
-                    }
-                } catch (error) {
-                    logger.logError('media_handler', 'Audio Duration Check failed', error.message);
-                    // Proceed cautiously or block? proceeding for now
-                }
-
-                const extension = downloadResult.mimeType ? downloadResult.mimeType.split('/')[1].split(';')[0] : 'ogg';
-                const filename = `${crypto.randomUUID()}.${extension}`;
-                
-                // Use frontend/uploads for web accessibility
-                const uploadsDir = path.join(process.cwd(), 'frontend', 'uploads', 'issues', 'audio');
-                const filePath = path.join(uploadsDir, filename);
-                
-                // Ensure directory exists
-                if (!fs.existsSync(uploadsDir)) {
-                    fs.mkdirSync(uploadsDir, { recursive: true });
-                }
-                
-                fs.writeFileSync(filePath, downloadResult.buffer);
-                mediaUrl = `/uploads/issues/audio/${filename}`;
-
-                // Transcribe with Whisper
-                try {
-                    await this.sendMessage(fromNumber, "Transcribing your voice note... 🎙️");
-                    const formData = new FormData();
-                    formData.append('file', downloadResult.buffer, { filename: `audio.${extension}`, contentType: downloadResult.mimeType || 'audio/ogg' });
-                    
-                    const aiResponse = await axios.post('http://localhost:8000/transcribe', formData, {
-                        headers: { ...formData.getHeaders() },
-                        maxContentLength: Infinity,
-                        maxBodyLength: Infinity
-                    });
-                    
-                    transcribedText = aiResponse.data.text;
-                    logger.log('media_handler', `Transcription: ${transcribedText}`);
-                } catch (error) {
-                    logger.logError('media_handler', 'Transcription failed', error.message);
-                }
-
-            } else {
-                await this.sendMessage(fromNumber, "⚠️ Failed to download the voice note. Please try again.");
-                return;
+            // Check duration first
+            const duration = await aiService.checkDuration(
+                downloadResult.buffer, 
+                'audio.ogg', 
+                downloadResult.mimeType || 'audio/ogg'
+            );
+            
+            if (duration > 300) {
+                await this.sendMessage(fromNumber, "⚠️ Voice note too long! Please keep it under 5 minutes.");
+                return; // Stop processing, do not save
             }
+
+            const extension = downloadResult.mimeType ? downloadResult.mimeType.split('/')[1].split(';')[0] : 'ogg';
+            const filename = `${crypto.randomUUID()}.${extension}`;
+            
+            // Use frontend/uploads for web accessibility
+            const uploadsDir = path.join(process.cwd(), 'frontend', 'uploads', 'issues', 'audio');
+            const filePath = path.join(uploadsDir, filename);
+            
+            // Ensure directory exists
+            if (!fs.existsSync(uploadsDir)) {
+                fs.mkdirSync(uploadsDir, { recursive: true });
+            }
+            
+            fs.writeFileSync(filePath, downloadResult.buffer);
+            mediaUrl = `/uploads/issues/audio/${filename}`;
+
+            // Transcribe with Whisper
+            await this.sendMessage(fromNumber, "Transcribing your voice note... 🎙️");
+            transcribedText = await aiService.transcribeAudio(
+                downloadResult.buffer, 
+                `audio.${extension}`, 
+                downloadResult.mimeType || 'audio/ogg'
+            );
+            
+            if (transcribedText) {
+                logger.log('media_handler', `Transcription: ${transcribedText}`);
+            } else {
+                 // Warning usually logged in service, but we can log here too
+                 logger.log('media_handler', 'Transcription returned empty');
+            }
+
+        } else {
+            await this.sendMessage(fromNumber, "⚠️ Failed to download the voice note. Please try again.");
+            return;
+        }
 
             const currentData = state.data || {};
             // Use transcribed text if available, otherwise fallback to a user-friendly message
@@ -1076,19 +1049,12 @@ class FixamHandler {
 
                     // Transcribe
                     await this.sendMessage(fromNumber, "Transcribing your feedback... 🎙️");
-                    const formData = new FormData();
-                    formData.append('file', downloadResult.buffer, { filename: `audio.${extension}`, contentType: downloadResult.mimeType || 'audio/ogg' });
-                    
-                    try {
-                        const aiResponse = await axios.post('http://localhost:8000/transcribe', formData, {
-                            headers: { ...formData.getHeaders() },
-                            maxContentLength: Infinity,
-                            maxBodyLength: Infinity
-                        });
-                        transcribedText = aiResponse.data.text;
-                    } catch (err) {
-                        logger.logError('media_handler', 'Feedback Transcription failed', err.message);
-                    }
+                    const tx = await aiService.transcribeAudio(
+                        downloadResult.buffer, 
+                        `audio.${extension}`, 
+                        downloadResult.mimeType || 'audio/ogg'
+                    );
+                    if (tx) transcribedText = tx;
                 } catch (writeError) {
                     logger.logError('media_handler', 'Failed to save feedback audio', writeError);
                 }

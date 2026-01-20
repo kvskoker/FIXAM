@@ -36,7 +36,7 @@ router.get('/config', (req, res) => {
 router.use((req, res, next) => {
     if (process.env.DEV_MODE === 'true') {
         // Safe paths
-        if (req.path === '/config' || req.path === '/webhook' || req.path.startsWith('/admin/login')) {
+        if (req.path === '/config' || req.path === '/webhook' || req.path.startsWith('/admin/login') || req.path.startsWith('/test/')) {
             return next();
         }
         
@@ -463,6 +463,8 @@ router.post('/webhook', async (req, res) => {
 // ==========================================
 // ADMIN ROUTES
 // ==========================================
+
+// --- DEV MODE TESTING ENDPOINTS REMOVED ---
 
 // POST /api/admin/login - Admin Login
 router.post('/admin/login', async (req, res) => {

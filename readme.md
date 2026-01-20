@@ -43,7 +43,7 @@ Codebase/
 ### 1. 🤖 Intelligent WhatsApp Bot
 The primary reporting channel, designed for accessibility and ease of use.
 - **Conversational Reporting**: Guided flow for citizens to report issues naturally.
-- **AI-Powered Analysis**: instant categorization, summarization, and urgency detection using LLMs.
+- **AI-Powered Analysis**: instant categorization, summarization, and urgency detection using Embeddings & TextRank.
 - **Voice-to-Text**: Native support for **Voice Notes** (Krio/English), transcribed locally via Whisper.
 - **Media Support**: Users can send photos or videos as evidence.
 - **Safety First**: Automated content moderation filters unsafe images (e.g., nudity) using local NudeNet.
@@ -138,7 +138,7 @@ npx serve frontend
 - **Frontend**: Vanilla JS, Leaflet/Mapbox, Chart.js, CSS
 - **Backend**: Node.js, Express, Socket.io
 - **Database**: PostgreSQL
-- **AI/ML**: Python (FastAPI), Whisper (OpenAI), NudeNet, Qwen (Local LLM)
+- **AI/ML**: Python (FastAPI), Whisper (OpenAI), NudeNet, SentenceTransformers (Embeddings), Summa (TextRank)
 - **Integration**: WhatsApp Business API (Meta), OpenStreetMap Nominatim
 
 ## License

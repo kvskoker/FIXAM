@@ -260,7 +260,7 @@
                     <p>The "Sanitizing Layer" that converts raw user data into government-ready data.</p>
                     <ul>
                         <li><strong>Text Classification:</strong> Automatically tags issues (e.g., "Pothole" → "Road Infrastructure").</li>
-                        <li><strong>Summarization:</strong> Qwen Local LLM converts detailed descriptions into concise summaries.</li>
+                        <li><strong>Summarization:</strong> Converts detailed descriptions into concise summaries using TextRank.</li>
                         <li><strong>Duplicate Detection:</strong> Smart detection of similar issues within a 100m radius to prevent redundancy.</li>
                     </ul>
 
@@ -304,7 +304,7 @@
                         <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Frontend: Vanilla JS, Leaflet JS</span>
                         <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Backend: Node.js, Express, Socket.io</span>
                         <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Database: PostgreSQL + PostGIS</span>
-                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">AI: Whisper, NudeNet, Qwen3-0.6B (Local LLM)</span>
+                        <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">AI: Whisper, NudeNet, Embeddings, TextRank</span>
                         <span style="background: var(--background-color); border: 1px solid var(--border-color); padding: 5px 15px; border-radius: 20px;">Integration: Meta WhatsApp Business API</span>
                     </div>
                 </section>
@@ -328,6 +328,7 @@
     </div>
     
     <!-- App JS (Only Theme JS required for this page) -->
+    <script src="js/maintenance.js"></script>
     <script src="js/theme.js"></script>
     <script>
         // Smooth scrolling for TOC links

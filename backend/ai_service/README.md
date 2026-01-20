@@ -1,6 +1,6 @@
-# AI Service (NudeNet + Whisper + Qwen)
+# AI Service (NudeNet + Whisper + Embeddings + TextRank)
 
-This service combines NudeNet (image safety classification), Whisper (audio transcription), and Qwen (text analysis) into a single FastAPI application for better performance and resource management.
+This service combines NudeNet (image safety classification), Whisper (audio transcription), SentenceTransformers (intent/category classification), and Summa (TextRank summarization) into a single FastAPI application for high performance and low resource usage.
 
 ## Prerequisites
 
@@ -62,7 +62,7 @@ The service will start on `http://0.0.0.0:8000`.
 - **POST /transcribe**: Accepts an audio file. Returns `{"text": "transcribed text", ...}`.
 - **POST /analyze-issue**: Accepts `{"description": "string", "categories": "optional string"}`. Returns `{"summary": "5 word max", "category": "detected category", "urgency": "low|medium|high|critical"}`.
 
-**Note:** The old `/analyze` and `/classify` endpoints using the embedding model have been removed in favor of the new Qwen-based `/analyze-issue` endpoint.
+**Note:** The heavy Qwen LLM has been completely removed. Content analysis now uses efficient embeddings (cosine similarity) and extractive summarization (TextRank), reducing response times from minutes to milliseconds.
 
 ## Linux Server Setup (Systemd)
 

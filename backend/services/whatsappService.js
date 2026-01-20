@@ -5,12 +5,29 @@ const logger = require('./logger');
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
 
+// In-memory set of muted numbers for load testing
+const mutedNumbers = new Set();
+
+function muteUser(phoneNumber) {
+    mutedNumbers.add(phoneNumber);
+}
+
+function unmuteUser(phoneNumber) {
+    mutedNumbers.delete(phoneNumber);
+}
+
 /**
  * Send a text message via WhatsApp.
  * @param {string} to - The recipient's phone number.
  * @param {string} body - The message text.
  */
 async function sendMessage(to, body) {
+    // Check if user is muted (Load Testing)
+    if (mutedNumbers.has(to)) {
+        console.log(`[Mock WhatsApp - SILENT] To ${to}: ${body}`);
+        return;
+    }
+
     if (!PHONE_NUMBER_ID || !ACCESS_TOKEN || PHONE_NUMBER_ID === 'your_phone_number_id') {
         console.log(`[Mock WhatsApp] Sending to ${to}: ${body}`);
         return;
@@ -50,6 +67,35 @@ async function requestLocation(to) {
  * @returns {Promise<{buffer: Buffer, mimeType: string}>} - The media buffer and mime type.
  */
 async function downloadMedia(mediaId) {
+    // DEV MODE MOCK for Load Testing
+    if (process.env.DEV_MODE === 'true' && (mediaId === 'TEST_AUDIO' || mediaId === 'TEST_IMAGE')) {
+        const fs = require('fs');
+        const path = require('path');
+        try {
+            let filename = mediaId === 'TEST_AUDIO' ? 'test_audio.ogg' : 'test_image.jpg';
+            let type = mediaId === 'TEST_AUDIO' ? 'audio/ogg' : 'image/jpeg';
+            
+            // Point to load_testing folder in backend
+            const filePath = path.join(__dirname, '../load_testing', filename);
+            console.log(`[MOCK DOWNLOAD] Checking path: ${filePath}`);
+            
+            if (fs.existsSync(filePath)) {
+                console.log(`[MOCK DOWNLOAD] Serving local test file: ${filename} (${fs.statSync(filePath).size} bytes)`);
+                const buffer = fs.readFileSync(filePath);
+                return {
+                    mimeType: type,
+                    buffer: buffer
+                };
+            } else {
+                console.error(`[MOCK DOWNLOAD] Test asset NOT FOUND at: ${filePath}`);
+                return null;
+            }
+        } catch (e) {
+            console.error("[MOCK DOWNLOAD] Error serving test asset", e);
+            return null;
+        }
+    }
+
     logger.log('media_download', `========== Starting media download for ID: ${mediaId} ==========`);
     
     if (!PHONE_NUMBER_ID || !ACCESS_TOKEN || PHONE_NUMBER_ID === 'your_phone_number_id') {
@@ -104,5 +150,5 @@ async function downloadMedia(mediaId) {
     }
 }
 
-module.exports = { sendMessage, requestLocation, downloadMedia };
+module.exports = { sendMessage, requestLocation, downloadMedia, muteUser, unmuteUser };
 
