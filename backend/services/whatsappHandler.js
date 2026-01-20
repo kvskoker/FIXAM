@@ -766,7 +766,7 @@ class FixamHandler {
                             msg += `   📍 ${issue.address || 'Location N/A'}\n`;
                             msg += `   👍 ${issue.upvote_count} Upvotes\n\n`;
                          });
-                         msg += `Reply with the number (e.g. *1*) to view details and vote, or *9* to cancel.`;
+                         msg += `Reply with the number (e.g. *1*) to view details and vote, type another community name to switch location, or *9* to cancel.`;
 
                          await this.fixamDb.updateConversationState(fromNumber, { 
                             current_step: 'awaiting_trending_selection',
@@ -782,7 +782,7 @@ class FixamHandler {
                 const tSelection = parseInt(input);
                 const tIssues = state.data.trending_issues;
                 
-                if (tSelection >= 1 && tSelection <= tIssues.length) {
+                if (!isNaN(tSelection) && tSelection >= 1 && tSelection <= tIssues.length) {
                     const tIssue = tIssues[tSelection - 1];
                     const link = `https://fixam.maxcit.com/?ticket=${tIssue.ticket_id}`;
                     
@@ -805,7 +805,38 @@ class FixamHandler {
                      await this.sendMessage(fromNumber, "Cancelled.");
                      await this.sendMainMenu(fromNumber, user.name);
                 } else {
-                    await this.sendMessage(fromNumber, `Please enter a number between 1 and ${tIssues.length}, or 9 to cancel.`);
+                    // Treat as a new location search
+                    const locations = await this.helpers.geocodeAddress(input + ", Sierra Leone");
+                    if (locations.length === 0) {
+                        await this.sendMessage(fromNumber, `I couldn't find "${input}". Please enter a valid number (1-${tIssues.length}), a valid community name, or 9 to cancel.`);
+                    } else {
+                        const loc = locations[0];
+                        const newTrending = await this.fixamDb.getTrendingIssues(loc.latitude, loc.longitude, 1000, 5); // 1km
+
+                        if (newTrending.length === 0) {
+                             await this.sendMessage(fromNumber, `No trending issues found in *${loc.display_name}* (1km radius).\n\nType another location, or *9* to cancel.`);
+                             // Keep waiting for location or number (though number invalid now technically, but logic allows infinite loop of location searching)
+                             // To be clean, we basically just stay in this state but with empty list? 
+                             // Better: Just update the list to empty so next input must be location.
+                             await this.fixamDb.updateConversationState(fromNumber, { 
+                                data: { trending_issues: [] } 
+                             });
+                        } else {
+                             let msg = `🔥 *Trending in ${loc.name || loc.display_name}*\n\n`;
+                             newTrending.forEach((issue, i) => {
+                                msg += `${i+1}. *${issue.title}*\n`;
+                                msg += `   📍 ${issue.address || 'Location N/A'}\n`;
+                                msg += `   👍 ${issue.upvote_count} Upvotes\n\n`;
+                             });
+                             msg += `Reply with the number (e.g. *1*) to view details and vote, type another community name to switch location, or *9* to cancel.`;
+
+                             await this.fixamDb.updateConversationState(fromNumber, { 
+                                current_step: 'awaiting_trending_selection',
+                                data: { trending_issues: newTrending }
+                            });
+                            await this.sendMessage(fromNumber, msg);
+                        }
+                    }
                 }
                 break;
 
