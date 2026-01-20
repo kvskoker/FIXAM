@@ -208,7 +208,7 @@ class FixamDatabase {
                    (6371000 * acos(cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2)) + sin(radians($1)) * sin(radians(lat)))) AS distance
             FROM issues i
             WHERE i.created_at >= CURRENT_TIMESTAMP - INTERVAL '${days} days'
-            AND i.status != 'fixed'
+            AND i.status NOT IN ('fixed', 'spam')
             AND i.duplicate_of IS NULL
         `;
         
@@ -247,7 +247,7 @@ class FixamDatabase {
                 WHERE vote_type = 'upvote' 
                 GROUP BY issue_id
             ) vote_counts ON i.id = vote_counts.issue_id
-            WHERE i.status != 'fixed'
+            WHERE i.status NOT IN ('fixed', 'spam')
             AND i.duplicate_of IS NULL
             AND (6371000 * acos(cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2)) + sin(radians($1)) * sin(radians(lat)))) <= $3
             ORDER BY upvote_count DESC, distance ASC

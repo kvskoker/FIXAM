@@ -193,14 +193,50 @@
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
                 <div>
-                    <div style="margin-bottom: 1rem;">
-                        <span id="modal-ticket" style="background: rgba(59, 130, 246, 0.1); color: var(--admin-primary); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600;">FIX0000001</span>
-                        <span id="modal-status" style="margin-left: 0.5rem; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600;">Critical</span>
+                    <!-- View Mode -->
+                    <div id="view-mode-container">
+                        <div style="margin-bottom: 1rem;">
+                            <span id="modal-ticket" style="background: rgba(59, 130, 246, 0.1); color: var(--admin-primary); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600;">FIX0000001</span>
+                            <span id="modal-status" style="margin-left: 0.5rem; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600;">Critical</span>
+                            <span id="modal-category-badge" style="margin-left: 0.5rem; background: var(--admin-bg); border: 1px solid var(--admin-border); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">Category</span>
+                        </div>
+                        <h2 id="modal-title" style="margin-bottom: 1rem;">Burst Pipe on Jomo Kenyatta Road</h2>
+                        <p id="modal-desc" style="color: var(--admin-text-muted); margin-bottom: 1.5rem; line-height: 1.6;">
+                            Large water pipe burst causing flooding in the intersection. Traffic is blocked.
+                        </p>
                     </div>
-                    <h2 id="modal-title" style="margin-bottom: 1rem;">Burst Pipe on Jomo Kenyatta Road</h2>
-                    <p id="modal-desc" style="color: var(--admin-text-muted); margin-bottom: 1.5rem; line-height: 1.6;">
-                        Large water pipe burst causing flooding in the intersection. Traffic is blocked.
-                    </p>
+
+                    <!-- Edit Mode -->
+                    <div id="edit-mode-container" class="hidden" style="background: var(--admin-bg); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--admin-border); margin-bottom: 1.5rem;">
+                        <h3 style="margin-bottom: 1rem;">Edit Issue Details</h3>
+                        
+                        <div style="margin-bottom: 1rem;">
+                            <label style="display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.5rem;">Category</label>
+                            <select id="edit-category" class="filter-input" style="width: 100%;">
+                                <option value="Water">Water Supply</option>
+                                <option value="Road">Roads & Infrastructure</option>
+                                <option value="Waste">Waste Management</option>
+                                <option value="Electricity">Electricity</option>
+                                <option value="Health">Health & Sanitation</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+
+                        <div style="margin-bottom: 1rem;">
+                            <label style="display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.5rem;">Title</label>
+                            <input type="text" id="edit-title" class="filter-input" style="width: 100%;">
+                        </div>
+
+                        <div style="margin-bottom: 1.5rem;">
+                            <label style="display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.5rem;">Description</label>
+                            <textarea id="edit-description" class="filter-input" rows="5" style="width: 100%;"></textarea>
+                        </div>
+
+                        <div style="display: flex; gap: 1rem;">
+                            <button onclick="saveIssueDetails()" style="background: var(--admin-primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Save Changes</button>
+                            <button onclick="toggleEditMode(false)" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.75rem 1.5rem; border-radius: 6px; cursor: pointer;">Cancel</button>
+                        </div>
+                    </div>
                     
                     <div style="margin-bottom: 1.5rem;">
                         <h4 style="margin-bottom: 0.5rem;">Location</h4>
@@ -219,6 +255,12 @@
                 <div style="border-left: 1px solid var(--admin-border); padding-left: 2rem;">
                     <h3 style="margin-bottom: 1rem;">Management</h3>
                     
+                    <div style="margin-bottom: 2rem;">
+                         <button onclick="toggleEditMode(true)" style="width: 100%; padding: 0.75rem; background: var(--admin-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-weight: 500;">
+                            <i class="fa-solid fa-pen-to-square"></i> Edit Details
+                        </button>
+                    </div>
+
                     <div style="margin-bottom: 2rem;">
                         <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem;">Update Status</label>
                         <div style="display: flex; gap: 0.5rem;">
@@ -246,6 +288,12 @@
                                 <button onclick="unlinkDuplicate()" style="width: 100%; background: var(--admin-danger); color: white; border: none; padding: 0.6rem; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem;">Unlink & Make Unique</button>
                             </div>
                         </div>
+                    </div>
+                    
+                     <div style="margin-bottom: 2rem; border-top: 1px solid var(--admin-border); padding-top: 1.5rem;">
+                        <button onclick="flagAsSpam()" style="width: 100%; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--admin-danger); color: var(--admin-danger); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-weight: 500;">
+                            <i class="fa-solid fa-flag"></i> Flag as SPAM
+                        </button>
                     </div>
 
                     <h3 style="margin-bottom: 1rem;">Activity Timeline</h3>

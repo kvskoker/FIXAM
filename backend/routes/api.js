@@ -104,6 +104,9 @@ router.get('/issues', async (req, res) => {
             query += ` AND i.status = $${paramCount}`;
             params.push(status);
             paramCount++;
+        } else {
+            // Default: Hide spam issues unless explicitly requested
+            query += ` AND i.status != 'spam'`;
         }
 
         if (ticket) {
@@ -799,10 +802,87 @@ router.post('/admin/issues/:id/mark-duplicate', async (req, res) => {
         const description = note || `Marked as duplicate of ticket ${originalTicketId}`;
         await db.query(`
             INSERT INTO issue_tracker (issue_id, action, description, performed_by)
-            VALUES ($1, $2, $3, $4)
-        `, [id, 'marked_duplicate', description, admin_id || null]);
+            VALUES ($1, 'duplicate', $2, $3)
+        `, [id, description, admin_id || null]);
 
-        res.json({ success: true, message: 'Issue marked as duplicate' });
+        res.json({ success: true, message: 'Marked as duplicate successfully' });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
+});
+
+// PUT /api/admin/issues/:id/details - Edit Issue Details
+router.put('/admin/issues/:id/details', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { title, description, category, admin_id } = req.body;
+
+        if (!title || !description || !category) {
+            return res.status(400).json({ success: false, message: 'Title, description, and category are required' });
+        }
+
+        // Update issue
+        const sql = `UPDATE issues SET title = $1, description = $2, category = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4`;
+        await db.query(sql, [title, description, category, id]);
+
+        // Log to tracker
+        await db.query(`
+            INSERT INTO issue_tracker (issue_id, action, description, performed_by)
+            VALUES ($1, 'edited', 'Issue details updated by admin', $2)
+        `, [id, admin_id || null]);
+
+        res.json({ success: true, message: 'Issue details updated successfully' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
+});
+
+// PUT /api/admin/issues/:id/spam - Flag Issue as Spam
+router.put('/admin/issues/:id/spam', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { admin_id, reason } = req.body;
+
+         // Update issue status to spam
+        await db.query(`UPDATE issues SET status = 'spam', resolution_note = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [reason || 'Flagged as spam', id]);
+        
+        // Mark duplicates as spam too
+        await db.query(`UPDATE issues SET status = 'spam', resolution_note = $1, updated_at = CURRENT_TIMESTAMP WHERE duplicate_of = $2`, ["Original issue flagged as spam", id]);
+
+        // Log to tracker
+        await db.query(`
+            INSERT INTO issue_tracker (issue_id, action, description, performed_by)
+            VALUES ($1, 'flagged_spam', $2, $3)
+        `, [id, reason || 'Flagged as Spam', admin_id || null]);
+        
+        // Notify Reporter
+         try {
+            const reporterRes = await db.query(`
+                SELECT i.ticket_id, i.title, u.phone_number, u.id as user_id
+                FROM issues i
+                JOIN users u ON i.reported_by = u.id
+                WHERE i.id = $1
+            `, [id]);
+
+            if (reporterRes.rows.length > 0) {
+                 const { ticket_id, title, phone_number, user_id } = reporterRes.rows[0];
+                 if (phone_number) {
+                     const msg = `⚠️ *Issue Flagged*\n\nYour reported issue *${title}* (#${ticket_id}) has been flagged as *SPAM* or violating our community guidelines.\n\nIt has been removed from public view. If you believe this is a mistake, please contact support.`;
+                     await whatsappService.sendMessage(phone_number, msg);
+                 }
+                 
+                 // Penalty: -5 points
+                  await db.query('UPDATE users SET points = GREATEST(0, points - 5) WHERE id = $1', [user_id]);
+                  await db.query(`INSERT INTO user_point_logs (user_id, amount, action_type, related_issue_id) VALUES ($1, -5, 'spam_penalty', $2)`, [user_id, id]);
+            }
+        } catch (notifyErr) {
+            console.error('Error notifying reporter of spam:', notifyErr);
+        }
+
+        res.json({ success: true, message: 'Issue flagged as spam successfully' });
     } catch (err) {
         console.error(err);
         res.status(500).json({ success: false, message: 'Internal Server Error' });

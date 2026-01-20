@@ -73,41 +73,68 @@ document.addEventListener('DOMContentLoaded', () => {
     const confirmNo = document.getElementById('confirm-no-btn');
     
     if (confirmYes) {
+    if (confirmYes) {
         confirmYes.addEventListener('click', async () => {
+            const userId = confirmYes.getAttribute('data-action'); 
             const pendingStatus = confirmYes.getAttribute('data-pending-status');
             const noteInput = document.getElementById('confirm-note-input');
             const noteError = document.getElementById('confirm-note-error');
             const note = noteInput.value.trim();
 
+            // Validation
+            if ((pendingStatus === 'fixed' || userId === 'spam') && !note) {
+                 // For spam, maybe note is optional? Prompt said "Optional".
+                 // But in the code block below, let's keep it optional for spam if the user requested it.
+                 // Wait, the prompt said "Optional: Enter a reason". So for spam it is optional.
+                 // Only required for 'fixed'.
+                 if (userId !== 'spam') {
+                    noteError.style.display = 'block';
+                    return;
+                 }
+            }
+            // Actually, existing code required note for fixed.
             if (pendingStatus === 'fixed' && !note) {
                 noteError.style.display = 'block';
                 return;
-            } else {
-                noteError.style.display = 'none';
             }
+             
+            noteError.style.display = 'none';
 
-            if (pendingStatus) {
-                // Show spinner
-                const originalText = confirmYes.innerHTML;
-                confirmYes.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Updating...';
-                confirmYes.disabled = true;
-                document.getElementById('confirm-no-btn').disabled = true;
+            // Show spinner
+            const originalText = confirmYes.innerHTML;
+            confirmYes.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+            confirmYes.disabled = true;
+            document.getElementById('confirm-no-btn').disabled = true;
 
+            if (userId === 'spam') {
+                await executeSpamFlag(note);
+            } else if (pendingStatus) {
                 await executeStatusUpdate(pendingStatus, note);
-                
-                // Reset (though modal closes, good practice)
-                confirmYes.innerHTML = originalText;
-                confirmYes.disabled = false;
-                document.getElementById('confirm-no-btn').disabled = false;
-                
-                document.getElementById('status-confirm-overlay').classList.add('hidden');
             }
+
+            // Reset
+            confirmYes.innerHTML = originalText;
+            confirmYes.disabled = false;
+            document.getElementById('confirm-no-btn').disabled = false;
+            document.getElementById('status-confirm-overlay').classList.add('hidden');
         });
+    }
     }
 
     if (confirmNo) {
         confirmNo.addEventListener('click', () => {
             document.getElementById('status-confirm-overlay').classList.add('hidden');
+            
+            // Clean up potentially leftover Spam Modal state
+            const yesBtn = document.getElementById('confirm-yes-btn');
+            if (yesBtn) {
+                 yesBtn.style.background = "var(--admin-primary)";
+                 yesBtn.innerText = "Yes, Update";
+                 yesBtn.removeAttribute('data-action');
+                 document.getElementById('confirm-title').innerText = "Confirm Action";
+                 document.getElementById('confirm-title').style.color = "var(--admin-text)";
+                 document.getElementById('confirm-message').textContent = "Are you sure you want to proceed?"; // Default placeholder
+            }
         });
     }
     
@@ -293,8 +320,10 @@ async function openIssueDetails(id) {
         const allIssues = Array.isArray(responseData) ? responseData : responseData.data;
         const issue = allIssues.find(i => i.id === id);
         if (issue) {
+            currentIssueData = issue;
             document.getElementById('modal-ticket').textContent = issue.ticket_id;
             document.getElementById('modal-status').textContent = issue.status;
+            document.getElementById('modal-category-badge').textContent = issue.category; // Ensure badge text is updated too
             document.getElementById('modal-title').textContent = issue.title;
             document.getElementById('modal-desc').textContent = issue.description;
             document.getElementById('modal-location').textContent = issue.address || `${issue.lat}, ${issue.lng}`;
@@ -570,5 +599,148 @@ async function unlinkDuplicate() {
         }
     } catch (err) {
         console.error('Error unlinking duplicate:', err);
+    }
+}
+
+// Global variable update
+let currentIssueData = null;
+
+function toggleEditMode(show) {
+    const viewContainer = document.getElementById('view-mode-container');
+    const editContainer = document.getElementById('edit-mode-container');
+    
+    if (show) {
+        if (!currentIssueData) return;
+        viewContainer.classList.add('hidden');
+        editContainer.classList.remove('hidden');
+        
+        // Populate inputs
+        document.getElementById('edit-title').value = currentIssueData.title;
+        document.getElementById('edit-description').value = currentIssueData.description;
+        document.getElementById('edit-category').value = currentIssueData.category;
+    } else {
+        viewContainer.classList.remove('hidden');
+        editContainer.classList.add('hidden');
+    }
+}
+
+async function saveIssueDetails() {
+    if (!currentIssueId) return;
+    
+    const title = document.getElementById('edit-title').value.trim();
+    const description = document.getElementById('edit-description').value.trim();
+    const category = document.getElementById('edit-category').value;
+    
+    if (!title || !description || !category) {
+        alert('All fields are required.');
+        return;
+    }
+
+    const adminUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
+    
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/issues/${currentIssueId}/details`, {
+             method: 'PUT',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ 
+                 title, 
+                 description, 
+                 category, 
+                 admin_id: adminUser?.id 
+             })
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+            toggleEditMode(false);
+            openIssueDetails(currentIssueId); // Reload details
+            loadIssues(); // Refresh list background
+        } else {
+            alert(data.message || 'Failed to update issue');
+        }
+    } catch (err) {
+        console.error('Error saving issue details:', err);
+        alert('An error occurred while saving.');
+    }
+}
+
+async function flagAsSpam() {
+    if (!currentIssueId) return;
+    
+    // Use the status confirmation overlay
+    const overlay = document.getElementById('status-confirm-overlay');
+    const messageEl = document.getElementById('confirm-message');
+    const yesBtn = document.getElementById('confirm-yes-btn');
+    const noteLabel = document.getElementById('confirm-note-label');
+    const noteInput = document.getElementById('confirm-note-input');
+    const noteError = document.getElementById('confirm-note-error');
+
+    if (overlay && messageEl && yesBtn) {
+        document.getElementById('confirm-title').innerText = "⚠️ Flag as SPAM";
+        document.getElementById('confirm-title').style.color = "var(--admin-danger)";
+        
+        messageEl.innerHTML = `Are you sure you want to flag this issue as <strong>SPAM</strong>?<br><br>
+        <div style="text-align: left; font-size: 0.85rem; background: rgba(239, 68, 68, 0.1); padding: 0.75rem; border-radius: 6px; color: var(--admin-danger);">
+            <strong>This action will:</strong>
+            <ul style="margin: 0; padding-left: 1.25rem; margin-top: 0.25rem;">
+                <li>Hide the issue from public view.</li>
+                <li>Remove it from trending lists.</li>
+                <li>Send a warning to the reporter.</li>
+                <li>Deduct 5 points from the reporter.</li>
+            </ul>
+        </div>`;
+        
+        yesBtn.setAttribute('data-action', 'spam');
+        yesBtn.removeAttribute('data-pending-status'); // Ensure no collision
+        yesBtn.innerText = "Yes, Flag as SPAM";
+        yesBtn.style.background = "var(--admin-danger)";
+
+        noteLabel.textContent = "Reason (Internal Note - Optional)";
+        noteInput.value = "";
+        noteInput.placeholder = "e.g. Violates community guidelines, Abusive content...";
+        noteError.style.display = 'none';
+
+        overlay.classList.remove('hidden');
+    }
+}
+
+async function executeSpamFlag(reason) {
+     const adminUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
+     
+     try {
+        const res = await fetch(`${API_BASE_URL}/admin/issues/${currentIssueId}/spam`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                reason: reason, 
+                admin_id: adminUser?.id 
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            // Restore button style for next use
+             const yesBtn = document.getElementById('confirm-yes-btn');
+             if (yesBtn) {
+                 yesBtn.style.background = "var(--admin-primary)";
+                 yesBtn.innerText = "Yes, Update";
+                 yesBtn.removeAttribute('data-action');
+                 document.getElementById('confirm-title').innerText = "Confirm Action";
+                 document.getElementById('confirm-title').style.color = "var(--admin-text)";
+             }
+             
+            closeModal();
+            loadIssues();
+            
+            // Optional: Show success toast/alert
+            // alert('Issue flagged as SPAM.'); // User asked for modal, but a success feedback is fine. 
+        } else {
+            alert(data.message || 'Failed to flag as spam');
+        }
+    } catch (err) {
+        console.error('Error flagging spam:', err);
+        alert('An error occurred.');
     }
 }
