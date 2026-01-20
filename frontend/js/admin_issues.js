@@ -145,11 +145,32 @@ document.addEventListener('DOMContentLoaded', () => {
     setupDateRestrictions();
 
     // Check for ID in URL to auto-open modal
+    // Check for ID in URL to auto-open modal
     const urlParams = getURLParams();
     if (urlParams.id) {
         setTimeout(() => openIssueDetails(parseInt(urlParams.id)), 1000);
     }
 });
+
+async function loadCategories() {
+    try {
+        const res = await fetch(`${API_BASE_URL}/categories`);
+        const categories = await res.json();
+        const select = document.getElementById('issue-filter-category');
+        
+        // Reset to default
+        select.innerHTML = '<option value="">All Categories</option>';
+        
+        categories.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.name;
+            opt.textContent = cat.name;
+            select.appendChild(opt);
+        });
+    } catch (err) {
+        console.error('Error loading categories:', err);
+    }
+}
 
 function setupDateRestrictions() {
     const startDate = document.getElementById('issue-filter-start');
