@@ -255,15 +255,15 @@
                 <div style="border-left: 1px solid var(--admin-border); padding-left: 2rem;">
                     <h3 style="margin-bottom: 1rem;">Management</h3>
                     
-                    <div style="margin-bottom: 2rem;">
-                         <button onclick="toggleEditMode(true)" style="width: 100%; padding: 0.75rem; background: var(--admin-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-weight: 500;">
+                     <div style="margin-bottom: 2rem;">
+                         <button id="btn-edit-details" onclick="toggleEditMode(true)" style="width: 100%; padding: 0.75rem; background: var(--admin-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-weight: 500;">
                             <i class="fa-solid fa-pen-to-square"></i> Edit Details
                         </button>
                     </div>
 
                     <div style="margin-bottom: 2rem;">
                         <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem;">Update Status</label>
-                        <div style="display: flex; gap: 0.5rem;">
+                        <div id="status-buttons-container" style="display: flex; gap: 0.5rem;">
                             <button id="btn-status-acknowledged" onclick="updateStatus('acknowledged')" class="status-btn" style="flex: 1; padding: 0.5rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer;">Acknowledge</button>
                             <button id="btn-status-progress" onclick="updateStatus('progress')" class="status-btn" style="flex: 1; padding: 0.5rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer;">In Progress</button>
                             <button id="btn-status-fixed" onclick="updateStatus('fixed')" class="status-btn" style="flex: 1; padding: 0.5rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer;">Resolved</button>
@@ -291,7 +291,7 @@
                     </div>
                     
                      <div style="margin-bottom: 2rem; border-top: 1px solid var(--admin-border); padding-top: 1.5rem;">
-                        <button onclick="flagAsSpam()" style="width: 100%; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--admin-danger); color: var(--admin-danger); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-weight: 500;">
+                        <button id="btn-flag-spam" onclick="flagAsSpam()" style="width: 100%; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--admin-danger); color: var(--admin-danger); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-weight: 500;">
                             <i class="fa-solid fa-flag"></i> Flag as SPAM
                         </button>
                     </div>

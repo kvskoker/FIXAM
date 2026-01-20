@@ -676,6 +676,11 @@ router.put('/admin/issues/:id/status', async (req, res) => {
         }
         
         const currentIssue = checkIssue.rows[0];
+        
+        if (currentIssue.status === 'spam') {
+            return res.status(403).json({ success: false, message: 'Cannot update status of a SPAM issue.' });
+        }
+
         if (currentIssue.duplicate_of) {
             return res.status(400).json({ success: false, message: 'Status cannot be set directly on a duplicate issue. Update the original issue instead.' });
         }
@@ -788,6 +793,12 @@ router.post('/admin/issues/:id/mark-duplicate', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Original issue ID (parent issue) is required' });
         }
 
+        // Check if target issue is spam
+        const targetIssue = await db.query('SELECT status FROM issues WHERE id = $1', [id]);
+        if (targetIssue.rows.length > 0 && targetIssue.rows[0].status === 'spam') {
+             return res.status(403).json({ success: false, message: 'Cannot mark a SPAM issue as duplicate.' });
+        }
+
         // 0. Get original issue status
         const originalIssue = await db.query('SELECT ticket_id, status FROM issues WHERE id = $1', [original_issue_id]);
         if (originalIssue.rows.length === 0) {
@@ -821,6 +832,13 @@ router.put('/admin/issues/:id/details', async (req, res) => {
 
         if (!title || !description || !category) {
             return res.status(400).json({ success: false, message: 'Title, description, and category are required' });
+        }
+
+        // Check if issue is spam
+        const check = await db.query('SELECT status FROM issues WHERE id = $1', [id]);
+        if (check.rows.length === 0) return res.status(404).json({ success: false, message: 'Issue not found' });
+        if (check.rows[0].status === 'spam') {
+             return res.status(403).json({ success: false, message: 'Cannot edit details of a SPAM issue.' });
         }
 
         // Update issue

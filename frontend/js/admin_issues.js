@@ -291,7 +291,7 @@ function renderIssuesTable(issues) {
         tbody.innerHTML = '<tr><td colspan="8" style="padding: 2rem; text-align: center; color: var(--admin-text-muted);">No issues found</td></tr>';
         return;
     }
-    const statusColors = { 'critical': 'var(--admin-danger)', 'progress': 'var(--admin-warning)', 'fixed': 'var(--admin-success)', 'acknowledged': 'var(--admin-primary)' };
+    const statusColors = { 'critical': 'var(--admin-danger)', 'progress': 'var(--admin-warning)', 'fixed': 'var(--admin-success)', 'acknowledged': 'var(--admin-primary)', 'spam': 'var(--admin-danger)' };
     issues.forEach(issue => {
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid var(--admin-border)';
@@ -381,7 +381,7 @@ async function openIssueDetails(id) {
             }
 
             const statusEl = document.getElementById('modal-status');
-            const statusColors = { 'critical': 'var(--admin-danger)', 'progress': 'var(--admin-warning)', 'fixed': 'var(--admin-success)', 'duplicate': 'var(--admin-warning)' };
+            const statusColors = { 'critical': 'var(--admin-danger)', 'progress': 'var(--admin-warning)', 'fixed': 'var(--admin-success)', 'duplicate': 'var(--admin-warning)', 'spam': 'var(--admin-danger)' };
             statusEl.style.background = statusColors[issue.status] || 'rgba(255,255,255,0.1)';
             statusEl.style.color = 'white';
             
@@ -428,6 +428,49 @@ async function openIssueDetails(id) {
                     currentStatusBtn.style.color = 'white';
                     currentStatusBtn.title = 'Already in this status';
                 }
+            }
+            
+            // NEW SPAM LOGIC
+            const btnEdit = document.getElementById('btn-edit-details');
+            const statusContainer = document.getElementById('status-buttons-container');
+            const duplicateSection = document.getElementById('duplicate-management-section');
+            const btnSpam = document.getElementById('btn-flag-spam');
+            const spamBannerId = 'spam-warning-banner';
+
+             // Remove existing banner if any
+            const existingBanner = document.getElementById(spamBannerId);
+            if(existingBanner) existingBanner.remove();
+
+            if (issue.status === 'spam') {
+                 // Hide controls
+                if(btnEdit) btnEdit.parentElement.style.display = 'none'; // Hide the container div
+                if(statusContainer) statusContainer.parentElement.style.display = 'none'; // Hide the label and container
+                if(duplicateSection) duplicateSection.style.display = 'none';
+                if(btnSpam) btnSpam.parentElement.style.display = 'none';
+
+                // Create and insert banner
+                 const banner = document.createElement('div');
+                banner.id = spamBannerId;
+                banner.style.background = 'rgba(239, 68, 68, 0.1)';
+                banner.style.border = '1px solid var(--admin-danger)';
+                banner.style.color = 'var(--admin-danger)';
+                banner.style.padding = '1rem';
+                banner.style.borderRadius = '6px';
+                banner.style.marginBottom = '2rem';
+                banner.style.fontWeight = '500';
+                banner.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> This issue has been flagged as SPAM. Management actions are restricted.';
+                
+                 // Insert before the Edit Details button container (which is now hidden, but we can insert into the parent column)
+                 if (btnEdit && btnEdit.parentElement && btnEdit.parentElement.parentNode) {
+                     btnEdit.parentElement.parentNode.insertBefore(banner, btnEdit.parentElement);
+                 }
+
+            } else {
+                // Show controls (Reset visibility)
+                 if(btnEdit) btnEdit.parentElement.style.display = 'block';
+                 if(statusContainer) statusContainer.parentElement.style.display = 'block';
+                 if(duplicateSection) duplicateSection.style.display = 'block';
+                 if(btnSpam) btnSpam.parentElement.style.display = 'block';
             }
         }
         const trackerRes = await fetch(`${API_BASE_URL}/issues/${id}/tracker`);
