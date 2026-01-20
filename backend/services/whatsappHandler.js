@@ -345,7 +345,7 @@ class FixamHandler {
                                  const locations = await this.helpers.geocodeAddress(community + ", Sierra Leone");
                                  if (locations.length > 0) {
                                      const loc = locations[0];
-                                     const trendingIssues = await this.fixamDb.getTrendingIssues(loc.latitude, loc.longitude, 5000, 5);
+                                     const trendingIssues = await this.fixamDb.getTrendingIssues(loc.latitude, loc.longitude, 1000, 5);
                                     
                                      if (trendingIssues.length === 0) {
                                          await this.sendMessage(fromNumber, `No trending issues found in *${loc.display_name}*.`);
@@ -752,10 +752,10 @@ class FixamHandler {
                 } else {
                     // Use first match
                     const loc = locations[0];
-                    const trendingIssues = await this.fixamDb.getTrendingIssues(loc.latitude, loc.longitude, 5000, 5); // 5km radius, top 5
+                    const trendingIssues = await this.fixamDb.getTrendingIssues(loc.latitude, loc.longitude, 1000, 5); // 1km radius, top 5
 
                     if (trendingIssues.length === 0) {
-                         await this.sendMessage(fromNumber, `No trending issues found in *${loc.display_name}* (5km radius).\n\nType *1* to Report an Issue instead, or *9* to return to menu.`);
+                         await this.sendMessage(fromNumber, `No trending issues found in *${loc.display_name}* (1km radius).\n\nType *1* to Report an Issue instead, or *9* to return to menu.`);
                          await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category' }); // Slightly hacky to move them to a state where 1 works or just send menu
                          // Actually let's just send main menu to match standard flow if empty
                          await this.sendMainMenu(fromNumber, user.name);

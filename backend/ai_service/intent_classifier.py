@@ -15,16 +15,19 @@ class IntentClassifier:
             "vote_issue": [
                 "I want to vote on an issue",
                 "upvote ticket FIX-123456",
-                "support this report",
+                "support this issue",
                 "downvote the issue",
                 "cast my vote for FIX-999AX1",
                 "vote for issue",
+                "vote",
                 "a wan vote",
                 "support dis matter",
                 "put hand pan dis",
                 "vote gim am"
             ],
             "report_issue": [
+                "report",
+                "make a report",
                 "I want to report an issue",
                 "There is a pothole here",
                 "fix this broken pipe",
@@ -87,7 +90,7 @@ class IntentClassifier:
             ],
             "greeting": [
                 "hi", "hello", "hey", "good morning", "good afternoon", "hola", "hi there",
-                "kush", "aw di body?", "how de body?", "usai", "hello boss", "boss", "chief"
+                "kushe", "aw di body?", "how de body?", "usai", "hello boss", "boss", "chief"
             ],
             "appreciation": [
                 "thanks", "thank you", "tnx", "nice work", "good job", "thanks a lot",
