@@ -4,7 +4,10 @@ let issuePage = 1;
 const issueLimit = 8;
 
 document.addEventListener('DOMContentLoaded', () => {
-    checkAuth(() => {
+    checkAuth(async () => {
+        // Load categories first
+        await loadCategories();
+
         // Initialize filters from URL
         const urlParams = getURLParams();
         if (urlParams.search) document.getElementById('issue-search').value = urlParams.search;

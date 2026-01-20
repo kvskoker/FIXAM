@@ -1,6 +1,9 @@
 // Include this after admin_common.js
 document.addEventListener('DOMContentLoaded', () => {
-    checkAuth(() => {
+    checkAuth(async () => {
+        // Load categories first
+        await loadCategories();
+
         // Initialize filters from URL
         const urlParams = getURLParams();
         if (urlParams.category) document.getElementById('global-category-filter').value = urlParams.category;
@@ -73,6 +76,26 @@ async function loadDashboardData() {
 
     } catch (err) {
         console.error('Error loading dashboard data:', err);
+    }
+}
+
+async function loadCategories() {
+    try {
+        const res = await fetch(`${API_BASE_URL}/categories`);
+        const categories = await res.json();
+        const select = document.getElementById('global-category-filter');
+        
+        // Reset to default
+        select.innerHTML = '<option value="All">All Categories</option>';
+        
+        categories.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.name;
+            opt.textContent = cat.name;
+            select.appendChild(opt);
+        });
+    } catch (err) {
+        console.error('Error loading categories:', err);
     }
 }
 
