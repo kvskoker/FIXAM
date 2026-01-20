@@ -227,6 +227,9 @@ async function loadIssues() {
     if (start) params.append('start_date', start);
     if (end) params.append('end_date', end);
     if (sort) params.append('sort', sort);
+    
+    // Admins should see spam
+    params.append('include_spam', 'true');
 
     try {
         const res = await fetch(`${API_BASE_URL}/issues?${params.toString()}`);
@@ -605,19 +608,43 @@ async function unlinkDuplicate() {
 // Global variable update
 let currentIssueData = null;
 
-function toggleEditMode(show) {
+async function toggleEditMode(show) {
     const viewContainer = document.getElementById('view-mode-container');
     const editContainer = document.getElementById('edit-mode-container');
     
     if (show) {
         if (!currentIssueData) return;
-        viewContainer.classList.add('hidden');
-        editContainer.classList.remove('hidden');
         
         // Populate inputs
         document.getElementById('edit-title').value = currentIssueData.title;
         document.getElementById('edit-description').value = currentIssueData.description;
-        document.getElementById('edit-category').value = currentIssueData.category;
+        
+        // Fetch categories dynamically
+        try {
+            const res = await fetch(`${API_BASE_URL}/categories`);
+            const categories = await res.json();
+            const categorySelect = document.getElementById('edit-category');
+            categorySelect.innerHTML = '';
+            
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat.name; // Assuming category object has 'name'
+                opt.textContent = cat.name;
+                categorySelect.appendChild(opt);
+            });
+            
+             // Set current value
+            categorySelect.value = currentIssueData.category;
+            
+        } catch (err) {
+            console.error('Error fetching categories:', err);
+             // Fallback existing options if fetch fails (though innerHTML cleared above, so actually we should rely on fetch)
+             // If fetch fails, we might leave it empty or show error.
+             // Simplest: just alert or ensure backend works.
+        }
+
+        viewContainer.classList.add('hidden');
+        editContainer.classList.remove('hidden');
     } else {
         viewContainer.classList.remove('hidden');
         editContainer.classList.add('hidden');

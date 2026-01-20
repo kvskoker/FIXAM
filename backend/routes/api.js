@@ -104,7 +104,7 @@ router.get('/issues', async (req, res) => {
             query += ` AND i.status = $${paramCount}`;
             params.push(status);
             paramCount++;
-        } else {
+        } else if (req.query.include_spam !== 'true') {
             // Default: Hide spam issues unless explicitly requested
             query += ` AND i.status != 'spam'`;
         }
