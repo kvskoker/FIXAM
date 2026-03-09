@@ -602,12 +602,28 @@ async function viewTracker(issueId) {
                                 <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Address</div>
                                 <div style="color: var(--text-primary); font-weight: 600; font-size: 0.85rem; line-height: 1.3;">${formatAddress(issue.address) || 'Location not specified'}</div>
                             </div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Community Support</div>
+                                <div style="display: flex; gap: 15px; align-items: center;">
+                                    <div title="Upvotes" style="color: var(--admin-success); font-weight: 700; display: flex; align-items: center; gap: 4px;">
+                                        <i class="fa-solid fa-arrow-up"></i> ${issue.upvotes || 0}
+                                    </div>
+                                    <div title="Downvotes" style="color: var(--danger-color); font-weight: 700; display: flex; align-items: center; gap: 4px;">
+                                        <i class="fa-solid fa-arrow-down"></i> ${issue.downvotes || 0}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         ${issue.status === 'fixed' && issue.resolution_note ? `
                             <div style="background: rgba(34, 197, 94, 0.05); border: 1px solid rgba(34, 197, 94, 0.2); border-radius: 12px; padding: 1.25rem;">
-                                <div style="color: var(--admin-success); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
-                                    <i class="fa-solid fa-circle-check"></i> Resolution Note
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                                    <div style="color: var(--admin-success); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; display: flex; align-items: center; gap: 6px;">
+                                        <i class="fa-solid fa-circle-check"></i> Resolution Note
+                                    </div>
+                                    <div title="Citizen Endorsements" style="background: #22c55e; color: white; padding: 2px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+                                        <i class="fa-solid fa-thumbs-up"></i> ${issue.endorsements || 0} Endorsed
+                                    </div>
                                 </div>
                                 <div style="color: var(--text-primary); font-size: 0.95rem; line-height: 1.5;">${issue.resolution_note}</div>
                             </div>

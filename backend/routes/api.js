@@ -69,7 +69,8 @@ router.get('/issues', async (req, res) => {
                 u.name as reported_by_name,
                 COALESCE(v.upvotes, 0) as upvotes,
                 COALESCE(v.downvotes, 0) as downvotes,
-                COALESCE(v.net_votes, 0) as votes
+                COALESCE(v.net_votes, 0) as votes,
+                COALESCE(e.count, 0) as endorsements
             FROM issues i
             LEFT JOIN users u ON i.reported_by = u.id
             LEFT JOIN (
@@ -82,6 +83,11 @@ router.get('/issues', async (req, res) => {
                 JOIN issues i2 ON v.issue_id = i2.id
                 GROUP BY COALESCE(i2.duplicate_of, i2.id)
             ) v ON i.id = v.effective_issue_id
+            LEFT JOIN (
+                SELECT issue_id, COUNT(*) as count 
+                FROM endorsements 
+                GROUP BY issue_id
+            ) e ON i.id = e.issue_id
             WHERE 1=1
         `;
 
