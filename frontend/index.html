@@ -82,7 +82,18 @@
                         <option value="fixed">Fixed</option>
                     </select>
                 </div>
+                <div class="filter-row" style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <div style="flex: 1;">
+                        <label style="display: block; font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 4px;">From</label>
+                        <input type="date" id="start-date" style="width: 100%; padding: 8px; border-radius: 6px; background: var(--background-color); color: var(--text-primary); border: 1px solid var(--border-color); font-family: inherit; font-size: 0.85rem; outline: none;">
+                    </div>
+                    <div style="flex: 1;">
+                        <label style="display: block; font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 4px;">To</label>
+                        <input type="date" id="end-date" style="width: 100%; padding: 8px; border-radius: 6px; background: var(--background-color); color: var(--text-primary); border: 1px solid var(--border-color); font-family: inherit; font-size: 0.85rem; outline: none;">
+                    </div>
+                </div>
                 <div class="sort-row">
+                    <label style="display: block; font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 4px;">Sort By</label>
                     <select id="sort-filter" style="width: 100%; padding: 8px; border-radius: 6px; background: var(--background-color); color: var(--text-primary); border: 1px solid var(--border-color); font-family: inherit; font-size: 0.85rem; outline: none; cursor: pointer;">
                         <option value="newest">Newest First</option>
                         <option value="oldest">Oldest First</option>
@@ -99,12 +110,21 @@
             </div>
         </aside>
 
-        <!-- Map -->
-        <main class="map-container" id="map">
-            <div class="map-controls">
-                <button class="control-btn" title="My Location" onclick="locateUser()">
-                    <i class="fa-solid fa-location-crosshairs"></i>
-                </button>
+        <!-- Map Area Wrapper -->
+        <main class="map-area-wrapper" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; z-index: 10;">
+            <!-- Map -->
+            <div class="map-container" id="map" style="flex: 1; box-sizing: border-box; position: relative;">
+                <div class="map-controls">
+                    <button class="control-btn" title="My Location" onclick="locateUser()">
+                        <i class="fa-solid fa-location-crosshairs"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Issue Details Panel -->
+            <div id="issue-details-panel" style="display: none; box-sizing: border-box; height: 50%; background: var(--surface-color); border-top: 1px solid var(--border-color); overflow-y: auto; padding: 1.5rem; position: relative; z-index: 20;">
+                <button onclick="closeTrackerPanel()" style="position: absolute; top: 15px; right: 20px; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-secondary);">&times;</button>
+                <div id="issue-details-content"></div>
             </div>
         </main>
     </div>

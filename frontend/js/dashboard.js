@@ -23,10 +23,7 @@ function setupDateRestrictions() {
         altFormat: "d/m/Y",
         maxDate: today,
         onChange: function(selectedDates, dateStr, instance) {
-            endPicker.set('minDate', dateStr);
-            if (endDateInput.value && endDateInput.value < dateStr) {
-                endPicker.setDate(dateStr);
-            }
+            if (endPicker) endPicker.set('minDate', dateStr);
             fetchDashboardData();
         }
     });
@@ -38,10 +35,18 @@ function setupDateRestrictions() {
         altFormat: "d/m/Y",
         maxDate: today,
         onChange: function(selectedDates, dateStr, instance) {
-            startPicker.set('maxDate', dateStr ? dateStr : today);
+            if (startPicker) startPicker.set('maxDate', dateStr ? dateStr : today);
             fetchDashboardData();
         }
     });
+
+    // Set defaults: last 6 months
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(today.getMonth() - 6);
+    
+    startPicker.setDate(sixMonthsAgo);
+    endPicker.setDate(today);
+    endPicker.set('minDate', sixMonthsAgo.toISOString().split('T')[0]);
 
     // Store pickers on elements for easy access if needed
     startDateInput._flatpickr = startPicker;

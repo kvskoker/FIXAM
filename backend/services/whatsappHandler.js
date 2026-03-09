@@ -1175,6 +1175,10 @@ class FixamHandler {
             return;
         }
 
+        const isEmergencyCategory = ['Fire Services', 'Road Safety', 'Natural Disaster Response', 'Public Safety'].includes(issue.category);
+        const header = isEmergencyCategory ? "🚨 *EMERGENCY DISPATCH* 🚨" : "📢 *ISSUE ALERT* 📢";
+        const urgencyLabel = (issue.urgency || 'medium').toUpperCase();
+
         for (const group of groups) {
             logger.log('alert_system', `Alerting group ${group.name} for issue ${issue.ticket_id}`);
 
@@ -1184,8 +1188,10 @@ class FixamHandler {
                 continue;
             }
 
-            const alertMessage = `🚨 *ISSUE ALERT* 🚨\n\n` +
-                `*Title:* ${issue.title}\n` +
+            const alertMessage = `${header}\n\n` +
+                `*Urgency:* ${urgencyLabel}\n` +
+                `*Category:* ${issue.category}\n` +
+                `*Issue:* ${issue.title}\n` +
                 `*Loc:* ${address || `${issue.lat}, ${issue.lng}`}\n` +
                 `*ID:* ${issue.ticket_id}\n` +
                 `*Link:* https://fixam.maxcit.com/?ticket=${issue.ticket_id}`;
@@ -1193,7 +1199,7 @@ class FixamHandler {
             for (const member of members) {
                 try {
                     await this.sendMessage(member.phone_number, alertMessage);
-                    logger.log('alert_system', `Alert sent to ${member.name} (${member.phone_number})`);
+                    logger.log('alert_system', `Alert sent to ${member.name} (${member.phone_number}) in group ${group.name}`);
                 } catch (err) {
                     logger.logError('alert_system', `Failed to send alert to ${member.phone_number}`, err);
                 }

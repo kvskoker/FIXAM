@@ -96,6 +96,8 @@ const colors = {
     pending: { r: 239, g: 68, b: 68 } // Red
 };
 
+let activeMarkerIndicator = null;
+
 const getStatusType = (status) => {
     if (status === 'fixed') return 'fixed';
     if (status === 'progress') return 'progress';
@@ -106,6 +108,31 @@ const searchInput = document.getElementById('search-input');
 const categoryFilter = document.getElementById('category-filter');
 const statusFilter = document.getElementById('status-filter');
 const sortFilter = document.getElementById('sort-filter');
+const startDateInput = document.getElementById('start-date');
+const endDateInput = document.getElementById('end-date');
+
+// Set default date range: last 6 months and restrict future dates
+if (startDateInput && endDateInput) {
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    
+    // Restrict to current date
+    startDateInput.max = todayStr;
+    endDateInput.max = todayStr;
+    
+    // Set defaults
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(today.getMonth() - 6);
+    
+    startDateInput.value = sixMonthsAgo.toISOString().split('T')[0];
+    endDateInput.value = todayStr;
+    
+    // Ensure end date cannot be before start date
+    startDateInput.addEventListener('change', () => {
+        endDateInput.min = startDateInput.value;
+    });
+    endDateInput.min = startDateInput.value;
+}
 
 // Debounce helper
 function debounce(func, wait) {
@@ -121,6 +148,8 @@ if (searchInput) searchInput.addEventListener('input', debounce(() => fetchIssue
 if (categoryFilter) categoryFilter.addEventListener('change', () => fetchIssues());
 if (statusFilter) statusFilter.addEventListener('change', () => fetchIssues());
 if (sortFilter) sortFilter.addEventListener('change', () => fetchIssues());
+if (startDateInput) startDateInput.addEventListener('change', () => fetchIssues());
+if (endDateInput) endDateInput.addEventListener('change', () => fetchIssues());
 
 // Fetch Data from API
 async function fetchIssues() {
@@ -130,6 +159,8 @@ async function fetchIssues() {
         if (categoryFilter && categoryFilter.value) params.append('category', categoryFilter.value);
         if (statusFilter && statusFilter.value) params.append('status', statusFilter.value);
         if (sortFilter && sortFilter.value) params.append('sort', sortFilter.value);
+        if (startDateInput && startDateInput.value) params.append('start_date', startDateInput.value);
+        if (endDateInput && endDateInput.value) params.append('end_date', endDateInput.value);
 
         // Check for ticket param in URL
         const urlParams = new URLSearchParams(window.location.search);
@@ -188,12 +219,15 @@ window.expandVideo = function(container, event) {
 };
 
 // Global function to show specific issue page in a popup
-window.showIssuePage = function(locKey, targetIndex, total) {
+window.showIssuePage = function(locKey, targetIndex, total, issueId) {
     for(let i = 0; i < total; i++) {
         const el = document.getElementById(`issue-page-${locKey}-${i}`);
         if(el) {
             el.style.display = (i === targetIndex) ? 'block' : 'none';
         }
+    }
+    if (issueId) {
+        viewTracker(issueId);
     }
 };
 
@@ -256,7 +290,9 @@ function renderIssues(issues) {
 
     // Group issues by coordinates
     const locationGroups = {};
+    window.issueMap = {};
     issues.forEach(issue => {
+        window.issueMap[issue.id] = issue;
         if (!issue.lat || !issue.lng) return;
         const lat = parseFloat(issue.lat).toFixed(6);
         const lng = parseFloat(issue.lng).toFixed(6);
@@ -313,55 +349,30 @@ function renderIssues(issues) {
                 `;
             }
 
-            let resolutionNoteHtml = '';
-            if (issue.status === 'fixed' && issue.resolution_note) {
-                resolutionNoteHtml = `
-                    <div class="resolution-note">
-                        <div class="resolution-note-title">Resolution Note</div>
-                        <div class="resolution-note-text">${issue.resolution_note}</div>
-                    </div>
-                `;
-            }
-
             const paginationHtml = locationIssues.length > 1 ? `
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; border-top: 1px solid var(--border-color); padding-top: 10px;">
-                    <button class="btn btn-sm" style="padding: 4px 8px; font-size: 0.8rem; border-radius:4px; border:1px solid #ccc; background:var(--surface-color); color:var(--text-primary); cursor:pointer;" onclick="event.stopPropagation(); window.showIssuePage('${safeLocKey}', ${index - 1}, ${locationIssues.length})" ${index === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>Previous</button>
+                    <button class="btn btn-sm" style="padding: 4px 8px; font-size: 0.8rem; border-radius:4px; border:1px solid #ccc; background:var(--surface-color); color:var(--text-primary); cursor:pointer;" onclick="event.stopPropagation(); window.showIssuePage('${safeLocKey}', ${index - 1}, ${locationIssues.length}, ${index > 0 ? locationIssues[index-1].id : 'null'})" ${index === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>Previous</button>
                     <span style="font-size: 0.8rem; font-weight: bold; color: var(--text-primary);">${index + 1} of ${locationIssues.length}</span>
-                    <button class="btn btn-sm" style="padding: 4px 8px; font-size: 0.8rem; border-radius:4px; border:1px solid #ccc; background:var(--surface-color); color:var(--text-primary); cursor:pointer;" onclick="event.stopPropagation(); window.showIssuePage('${safeLocKey}', ${index + 1}, ${locationIssues.length})" ${index === locationIssues.length - 1 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>Next</button>
+                    <button class="btn btn-sm" style="padding: 4px 8px; font-size: 0.8rem; border-radius:4px; border:1px solid #ccc; background:var(--surface-color); color:var(--text-primary); cursor:pointer;" onclick="event.stopPropagation(); window.showIssuePage('${safeLocKey}', ${index + 1}, ${locationIssues.length}, ${index < locationIssues.length - 1 ? locationIssues[index+1].id : 'null'})" ${index === locationIssues.length - 1 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>Next</button>
                 </div>
             ` : '';
 
             return `
                 <div id="issue-page-${safeLocKey}-${index}" style="display: ${index === 0 ? 'block' : 'none'};">
-                    <div class="popup-content" style="min-width: 280px; padding: 5px;">
+                    <div class="popup-content" style="min-width: 250px; padding: 5px;">
                         ${mediaContent}
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        ${audioContent}
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
                              <div style="font-size: 0.7rem; font-weight: 650; color: ${currentColor}; text-transform: uppercase;">${issue.category}</div>
                              <span style="background: rgba(${colors[currentStatusType].r}, ${colors[currentStatusType].g}, ${colors[currentStatusType].b}, 0.15); color: ${currentColor}; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: capitalize;">${issue.status}</span>
                         </div>
-                        <div class="popup-title" style="font-weight: 700; font-size: 1.1rem; margin-bottom: 10px; color: var(--text-primary);">${issue.title}</div>
-                        ${audioContent}
-                        ${resolutionNoteHtml}
+                        <div class="popup-title" style="font-weight: 700; font-size: 1.1rem; margin-bottom: 12px; color: var(--text-primary); line-height: 1.3;">${issue.title}</div>
                         
-                        <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 0.85rem; margin-bottom: 15px; color: var(--text-secondary);">
-                            <div style="font-weight: 500;">Issue ID:</div>
-                            <div style="color: var(--text-primary); font-family: monospace; font-weight: 600;">#${issue.ticket_id}</div>
-                            
-                            <div style="font-weight: 500;">Reported:</div>
-                            <div style="color: var(--text-primary);">${new Date(issue.reported_on || issue.created_at).toLocaleDateString('en-GB')}</div>
-                            
-                            <div style="font-weight: 500;">By:</div>
-                            <div style="color: var(--text-primary);">${issue.reported_by_name || 'Anonymous citizen'}</div>
-                            
-                            <div style="font-weight: 500;">Location:</div>                    
-                            <div style="color: var(--text-primary); font-size: 0.8rem;"><i class="fa-solid fa-location-dot" style="margin-right: 4px; opacity: 0.7;"></i>${formatAddress(issue.address) || `Freetown, SL (${parseFloat(issue.lat).toFixed(4)}, ${parseFloat(issue.lng).toFixed(4)})`}</div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+                            <span style="font-weight: 500;">Issue ID:</span>
+                            <span style="color: var(--text-primary); font-family: monospace; font-weight: 600;">#${issue.ticket_id}</span>
                         </div>
-
-                        <div class="popup-desc" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 15px; line-height: 1.4; border-top: 1px solid var(--border-color); padding-top: 8px;">${issue.description}</div>
-                        
-                        <button class="btn btn-primary" onclick="viewTracker(${issue.id})" style="width: 100%; font-size: 0.85rem; padding: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 8px;">
-                            <i class="fa-solid fa-clock-rotate-left"></i> View Full Activity History
-                        </button>
 
                         ${paginationHtml}
                     </div>
@@ -370,19 +381,20 @@ function renderIssues(issues) {
         }).join('');
 
         marker.bindPopup(`<div>${allPopupsContent}</div>`, {
-            autoPan: false, // Prevent map shifting while opening popup
+            autoPan: true,
+            autoPanPaddingTopLeft: L.point(10, 20),
+            autoPanPaddingBottomRight: L.point(10, 20),
             closeButton: true,
-            maxWidth: 300
+            minWidth: 260,
+            maxWidth: 260
         });
         
         // Add zoom and open popup on marker click
         marker.on('click', (e) => {
             L.DomEvent.stopPropagation(e); // Prevent map click handler from triggering
-            map.flyTo(e.latlng, 16);
-            // Small timeout ensures the popup opens AFTER the animation base starts
-            setTimeout(() => {
-                marker.openPopup();
-            }, 350);
+            viewTracker(locationIssues[0].id);
+            marker.openPopup();
+            map.setView(e.latlng, 16, { animate: true, duration: 1.5 });
         });
 
         clusterGroup.addLayer(marker);
@@ -412,13 +424,14 @@ function renderIssues(issues) {
             `;
 
             card.addEventListener('click', () => {
-                map.flyTo([issue.lat, issue.lng], 16);
-                setTimeout(() => {
+                viewTracker(issue.id);
+                clusterGroup.zoomToShowLayer(marker, () => {
                     marker.openPopup();
+                    map.setView([issue.lat, issue.lng], 16, { animate: true, duration: 1.5 });
                     if (locationIssues.length > 1) {
-                        window.showIssuePage(safeLocKey, index, locationIssues.length);
+                        window.showIssuePage(safeLocKey, index, locationIssues.length, issue.id);
                     }
-                }, 350);
+                });
                 
                 document.querySelectorAll('.issue-card').forEach(c => c.style.borderColor = 'var(--border-color)');
                 card.style.borderColor = 'var(--primary-color)';
@@ -437,8 +450,11 @@ function renderIssues(issues) {
         // Find the marker for this ticket
         const issue = issues.find(i => i.ticket_id === ticketId);
         if (issue && markers[issue.id]) {
-            map.flyTo([issue.lat, issue.lng], 16);
-            markers[issue.id].openPopup();
+            viewTracker(issue.id);
+            clusterGroup.zoomToShowLayer(markers[issue.id], () => {
+                markers[issue.id].openPopup();
+                map.setView([issue.lat, issue.lng], 16, { animate: true, duration: 1.5 });
+            });
         }
     }
 }
@@ -503,6 +519,15 @@ async function vote(issueId, voteType) {
     */
 }
 
+// Close tracker panel
+window.closeTrackerPanel = function() {
+    const historyPanel = document.getElementById('issue-details-panel');
+    if (historyPanel) {
+        historyPanel.style.display = 'none';
+        setTimeout(() => map.invalidateSize(), 50);
+    }
+}
+
 async function viewTracker(issueId) {
     try {
         const response = await fetch(`${API_BASE_URL}/issues/${issueId}/tracker`);
@@ -513,80 +538,200 @@ async function viewTracker(issueId) {
             return;
         }
 
-        // Create modal to display tracker logs
-        const modal = document.createElement('div');
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.7);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-        `;
+        const panel = document.getElementById('issue-details-panel');
+        const contentDiv = document.getElementById('issue-details-content');
+        
+        if (!panel || !contentDiv) return;
 
-        const modalContent = document.createElement('div');
-        modalContent.style.cssText = `
-            background: var(--surface-color);
-            color: var(--text-primary);
-            padding: 2rem;
-            border-radius: 12px;
-            max-width: 600px;
-            max-height: 80vh;
-            overflow-y: auto;
-            box-shadow: var(--shadow-lg);
-            border: 1px solid var(--border-color);
-        `;
+        const issue = window.issueMap[issueId];
 
-        let trackerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-                <h2 style="margin: 0; color: var(--text-primary);">Issue History</h2>
-                <button onclick="this.closest('[style*=fixed]').remove()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-secondary);">&times;</button>
-            </div>
-        `;
-
-        if (trackerLogs.length === 0) {
-            trackerHTML += '<p style="color: #64748b;">No history available for this issue.</p>';
-        } else {
-            trackerHTML += '<div style="position: relative; padding-left: 2rem;">';
-            
-            trackerLogs.forEach((log, index) => {
-                const isLast = index === trackerLogs.length - 1;
-                trackerHTML += `
-                    <div style="position: relative; padding-bottom: ${isLast ? '0' : '1.5rem'};">
-                        <div style="position: absolute; left: -2rem; top: 0; width: 12px; height: 12px; border-radius: 50%; background: var(--primary-color); border: 3px solid white; box-shadow: 0 0 0 2px var(--primary-color);"></div>
-                        ${!isLast ? '<div style="position: absolute; left: -1.44rem; top: 12px; width: 2px; height: calc(100% - 12px); background: #e2e8f0;"></div>' : ''}
-                        <div>
-                            <div style="font-weight: 600; color: var(--text-primary); text-transform: capitalize;">${log.action.replace('_', ' ')}</div>
-                            <div style="font-size: 0.9rem; color: var(--text-secondary); margin-top: 0.25rem;">${log.description || 'No description'}</div>
-                            ${log.performed_by_name ? `<div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">By: ${log.performed_by_name}</div>` : ''}
-                            <div style="font-size: 0.8rem; color: var(--text-secondary); opacity: 0.7; margin-top: 0.25rem;">${new Date(log.created_at).toLocaleString('en-GB')}</div>
-                        </div>
-                    </div>
-                `;
-            });
-            
-            trackerHTML += '</div>';
+        // Indicate active marker with Pin Drop + Wave
+        if (activeMarkerIndicator) {
+            map.removeLayer(activeMarkerIndicator);
+            activeMarkerIndicator = null;
         }
 
-        modalContent.innerHTML = trackerHTML;
-        modal.appendChild(modalContent);
-        document.body.appendChild(modal);
+        if (issue && issue.lat && issue.lng) {
+            activeMarkerIndicator = L.marker([issue.lat, issue.lng], {
+                icon: L.divIcon({
+                    className: '',
+                    html: `
+                        <div class="active-marker-wrapper">
+                            <div class="active-marker-wave"></div>
+                        </div>
+                    `,
+                    iconSize: [40, 40],
+                    iconAnchor: [20, 20]
+                }),
+                interactive: false,
+                zIndexOffset: 1000
+            }).addTo(map);
+        }
 
-        // Close on background click
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.remove();
-            }
-        });
+        let detailsHTML = '';
+        if (issue) {
+            detailsHTML += `
+                <div class="issue-details-grid">
+                    
+                    <!-- Left Column: Details & History -->
+                    <div class="details-col-left">
+                        <div>
+                            <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem;">
+                                <span style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.5px;">${issue.category}</span>
+                                <span style="padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: capitalize; background: rgba(0,0,0,0.05); color: var(--text-primary); border: 1px solid var(--border-color);">${issue.status}</span>
+                            </div>
+                            <h2 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.75rem; line-height: 1.2; font-weight: 700;">${issue.title}</h2>
+                            <div style="font-size: 1rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 1.5rem;">${issue.description}</div>
+                        </div>
+
+                        <!-- Info Card -->
+                        <div style="background: var(--background-color); padding: 1.25rem; border-radius: 12px; border: 1px solid var(--border-color); display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                            <div>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Issue ID</div>
+                                <div style="color: var(--text-primary); font-family: monospace; font-weight: 700; font-size: 1.1rem;">#${issue.ticket_id}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Reported On</div>
+                                <div style="color: var(--text-primary); font-weight: 600;">${new Date(issue.reported_on || issue.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Reported By</div>
+                                <div style="color: var(--text-primary); font-weight: 600;">${issue.reported_by_name || 'Anonymous citizen'}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Address</div>
+                                <div style="color: var(--text-primary); font-weight: 600; font-size: 0.85rem; line-height: 1.3;">${formatAddress(issue.address) || 'Location not specified'}</div>
+                            </div>
+                        </div>
+
+                        ${issue.status === 'fixed' && issue.resolution_note ? `
+                            <div style="background: rgba(34, 197, 94, 0.05); border: 1px solid rgba(34, 197, 94, 0.2); border-radius: 12px; padding: 1.25rem;">
+                                <div style="color: var(--admin-success); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                                    <i class="fa-solid fa-circle-check"></i> Resolution Note
+                                </div>
+                                <div style="color: var(--text-primary); font-size: 0.95rem; line-height: 1.5;">${issue.resolution_note}</div>
+                            </div>
+                        ` : ''}
+
+                        <!-- Activity History -->
+                        <div style="margin-top: 1rem;">
+                            <h3 style="margin: 0 0 1.25rem 0; color: var(--text-primary); font-size: 1.1rem; font-weight: 700; display: flex; align-items: center; gap: 10px;">
+                                <i class="fa-solid fa-timeline" style="color: var(--admin-primary);"></i> Activity History
+                            </h3>
+                            ${trackerLogs.length === 0 ? '<p style="color: var(--text-secondary); font-style: italic;">No history available yet.</p>' : `
+                            <div style="position: relative; padding-left: 1.5rem; border-left: 2px solid var(--border-color); margin-left: 5px;">
+                                ${trackerLogs.map((log, index) => {
+                                    return `
+                                        <div style="position: relative; padding-bottom: 1.5rem; padding-left: 1rem;">
+                                            <div style="position: absolute; left: -1.9rem; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--admin-primary); border: 2px solid var(--surface-color);"></div>
+                                            <div style="font-weight: 600; color: var(--text-primary); font-size: 0.9rem; text-transform: capitalize;">${log.action.replace('_', ' ')}</div>
+                                            <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 2px;">${log.description || 'No description'}</div>
+                                            <div style="font-size: 0.75rem; color: var(--text-secondary); opacity: 0.6; margin-top: 4px; font-weight: 500;">
+                                                <i class="fa-regular fa-clock" style="margin-right: 4px;"></i> ${new Date(log.created_at).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>`}
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Media Attachment -->
+                    <div class="details-col-right">
+                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <h3 style="margin: 0; color: var(--text-primary); font-size: 1.1rem; font-weight: 700; display: flex; align-items: center; gap: 10px;">
+                                <i class="fa-solid fa-camera" style="color: var(--admin-primary);"></i> Media Evidence
+                            </h3>
+                            ${issue.image_url ? `
+                                <button onclick="window.fullScreenMedia('${issue.image_url}')" style="background: var(--admin-primary); border: none; color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 600; transition: opacity 0.2s;">
+                                    <i class="fa-solid fa-expand"></i> Open Full Screen
+                                </button>
+                            ` : ''}
+                        </div>
+                        ${issue.image_url ? `
+                            <div style="position: relative; width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--border-color);">
+                                ${isVideo(issue.image_url) ? `
+                                    <video src="${issue.image_url}" style="width: 100%; height: auto; display: block;" controls></video>
+                                ` : `
+                                    <img src="${issue.image_url}" style="width: 100%; height: auto; display: block;" alt="Issue evidence">
+                                `}
+                            </div>
+                        ` : `
+                            <div style="flex: 1; background: var(--background-color); border: 2px dashed var(--border-color); border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-secondary); min-height: 350px;">
+                                <i class="fa-solid fa-image-slash" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;"></i>
+                                <span>No media evidence attached</span>
+                            </div>
+                        `}
+                    </div>
+                </div>
+            `;
+        }
+
+        contentDiv.innerHTML = detailsHTML;
+        panel.style.display = 'block';
+        
+        // Let leaflet know the map container changed size
+        setTimeout(() => {
+            map.invalidateSize();
+        }, 50);
+
     } catch (error) {
         console.error('Error fetching tracker logs:', error);
         alert('Failed to load issue history');
     }
 }
+
+window.fullScreenMedia = function(url) {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.95);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        cursor: pointer;
+    `;
+    
+    if (isVideo(url)) {
+        const video = document.createElement('video');
+        video.src = url;
+        video.controls = true;
+        video.autoplay = true;
+        video.style.maxWidth = '95%';
+        video.style.maxHeight = '95%';
+        modal.appendChild(video);
+    } else {
+        const img = document.createElement('img');
+        img.src = url;
+        img.style.maxWidth = '95%';
+        img.style.maxHeight = '95%';
+        img.style.objectFit = 'contain';
+        modal.appendChild(img);
+    }
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '&times;';
+    closeBtn.style.cssText = `
+        position: absolute;
+        top: 20px;
+        right: 30px;
+        background: none;
+        border: none;
+        color: white;
+        font-size: 3rem;
+        cursor: pointer;
+    `;
+    modal.appendChild(closeBtn);
+    
+    modal.onclick = () => modal.remove();
+    document.body.appendChild(modal);
+}
+
 
 // Initial Fetch
 fetchIssues();
