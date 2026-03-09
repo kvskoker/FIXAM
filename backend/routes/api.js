@@ -282,7 +282,7 @@ router.get('/categories', async (req, res) => {
 // GET /api/stats/trends - Daily reporting and resolution trends
 router.get('/stats/trends', async (req, res) => {
     try {
-        const { start_date, end_date } = req.query;
+        const { start_date, end_date, category } = req.query;
         // Explicitly set session timezone to UTC for consistent aggregation
         await db.query("SET LOCAL timezone TO 'UTC'");
 
@@ -292,30 +292,38 @@ router.get('/stats/trends', async (req, res) => {
             WHERE 1=1
         `;
         let resolutionsQuery = `
-            SELECT (created_at AT TIME ZONE 'UTC')::date::text as date, COUNT(*) as count
-            FROM issue_tracker
-            WHERE action = 'resolved'
+            SELECT (it.created_at AT TIME ZONE 'UTC')::date::text as date, COUNT(*) as count
+            FROM issue_tracker it
+            JOIN issues i ON it.issue_id = i.id
+            WHERE it.action = 'resolved'
         `;
         const params = [];
         let pCount = 1;
 
         if (start_date) {
             reportsQuery += ` AND created_at >= $${pCount}`;
-            resolutionsQuery += ` AND created_at >= $${pCount}`;
+            resolutionsQuery += ` AND it.created_at >= $${pCount}`;
             params.push(start_date);
             pCount++;
         }
         if (end_date) {
             reportsQuery += ` AND created_at <= $${pCount}::timestamp + interval '1 day' - interval '1 second'`;
-            resolutionsQuery += ` AND created_at <= $${pCount}::timestamp + interval '1 day' - interval '1 second'`;
+            resolutionsQuery += ` AND it.created_at <= $${pCount}::timestamp + interval '1 day' - interval '1 second'`;
             params.push(end_date);
+            pCount++;
+        }
+
+        if (category) {
+            reportsQuery += ` AND category = $${pCount}`;
+            resolutionsQuery += ` AND i.category = $${pCount}`;
+            params.push(category);
             pCount++;
         }
 
         // If no dates provided, default to last 14 days
         if (!start_date && !end_date) {
             reportsQuery += ` AND created_at >= CURRENT_DATE - INTERVAL '14 days'`;
-            resolutionsQuery += ` AND created_at >= CURRENT_DATE - INTERVAL '14 days'`;
+            resolutionsQuery += ` AND it.created_at >= CURRENT_DATE - INTERVAL '14 days'`;
         }
 
         reportsQuery += ` GROUP BY 1 ORDER BY 1 ASC`;
@@ -339,7 +347,15 @@ router.get('/stats/trends', async (req, res) => {
 // GET /api/stats - Fetch dashboard statistics
 router.get('/stats', async (req, res) => {
     try {
-        const { start_date, end_date } = req.query;
+        const { start_date, end_date, category } = req.query;
+
+        // Common condition for category
+        let categoryCond = '';
+        let categoryParams = [];
+        if (category) {
+            categoryCond = ` AND category = $${(start_date || end_date ? (start_date && end_date ? 3 : 2) : 1)}`;
+            categoryParams = [category];
+        }
 
         if (start_date || end_date) {
             const params = [];
@@ -357,11 +373,17 @@ router.get('/stats', async (req, res) => {
                 pCount++;
             }
 
+            if (category) {
+                whereClause += ` AND category = $${pCount}`;
+                params.push(category);
+                pCount++;
+            }
+
             const [totalRes, resolvedRes, criticalRes, allTimeRes] = await Promise.all([
                 db.query(`SELECT COUNT(*) as count FROM issues ${whereClause}`, params),
-                db.query(`SELECT COUNT(*) as count FROM issue_tracker WHERE action = 'resolved' ${whereClause.replace('WHERE', 'AND')}`, params),
+                db.query(`SELECT COUNT(*) as count FROM issue_tracker it JOIN issues i ON it.issue_id = i.id WHERE it.action = 'resolved' ${whereClause.replace(/created_at/g, 'it.created_at').replace(/category/g, 'i.category').replace('WHERE', 'AND')}`, params),
                 db.query(`SELECT COUNT(*) as count FROM issues ${whereClause} AND status = 'critical'`, params),
-                db.query(`SELECT COUNT(*) as count FROM issues`)
+                db.query(`SELECT COUNT(*) as count FROM issues ${category ? 'WHERE category = $1' : ''}`, category ? [category] : [])
             ]);
 
             const total = parseInt(totalRes.rows[0].count);
@@ -381,12 +403,16 @@ router.get('/stats', async (req, res) => {
         }
 
         // Default logic: This Week vs Last Week
+        const currentParams = category ? [category] : [];
+        const catIdx = category ? 1 : null;
+        
         // 1. Total Reports (This Week)
         const totalReportsResult = await db.query(`
             SELECT COUNT(*) as count 
             FROM issues 
             WHERE created_at >= date_trunc('week', CURRENT_DATE)
-        `);
+            ${category ? `AND category = $1` : ''}
+        `, currentParams);
         const totalReports = parseInt(totalReportsResult.rows[0].count);
 
         // 2. Total Reports (Last Week) - for comparison
@@ -395,7 +421,8 @@ router.get('/stats', async (req, res) => {
             FROM issues 
             WHERE created_at >= date_trunc('week', CURRENT_DATE - INTERVAL '1 week')
             AND created_at < date_trunc('week', CURRENT_DATE)
-        `);
+            ${category ? `AND category = $1` : ''}
+        `, currentParams);
         const lastWeekReports = parseInt(lastWeekReportsResult.rows[0].count);
         
         // Calculate percentage change
@@ -408,19 +435,19 @@ router.get('/stats', async (req, res) => {
 
         // 3. Resolved Issues
         const resolvedResult = await db.query(`
-            SELECT COUNT(*) as count FROM issues WHERE status = 'fixed'
-        `);
+            SELECT COUNT(*) as count FROM issues WHERE status = 'fixed' ${category ? `AND category = $1` : ''}
+        `, currentParams);
         const resolvedCount = parseInt(resolvedResult.rows[0].count);
 
         // 4. Total Issues (All time) for resolution rate
-        const allTimeResult = await db.query('SELECT COUNT(*) as count FROM issues');
+        const allTimeResult = await db.query(`SELECT COUNT(*) as count FROM issues ${category ? `WHERE category = $1` : ''}`, currentParams);
         const allTimeCount = parseInt(allTimeResult.rows[0].count);
         const resolutionRate = allTimeCount > 0 ? Math.round((resolvedCount / allTimeCount) * 100) : 0;
 
         // 5. Critical Pending
         const criticalPendingResult = await db.query(`
-            SELECT COUNT(*) as count FROM issues WHERE status = 'critical'
-        `);
+            SELECT COUNT(*) as count FROM issues WHERE status = 'critical' ${category ? `AND category = $1` : ''}
+        `, currentParams);
         const criticalPendingCount = parseInt(criticalPendingResult.rows[0].count);
 
         res.json({

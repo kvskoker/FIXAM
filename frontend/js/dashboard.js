@@ -13,6 +13,8 @@ const API_BASE_URL = window.location.port === '3000'
     ? `http://${window.location.hostname}:5000/api`
     : '/api';
 
+let fetchController = null;
+
 function setupDateRestrictions() {
     const today = new Date();
     
@@ -54,17 +56,32 @@ function setupDateRestrictions() {
 }
 
 async function fetchDashboardData() {
+    // Cancel previous request if still running
+    if (fetchController) {
+        fetchController.abort();
+    }
+    fetchController = new AbortController();
+    const { signal } = fetchController;
+
     try {
         const start = startDateInput.value;
         const end = endDateInput.value;
-        const dateParams = (start || end) ? `&start_date=${start}&end_date=${end}` : '';
-        const dateParamsQ = (start || end) ? `?start_date=${start}&end_date=${end}` : '';
+        const category = categoryFilter ? categoryFilter.value : '';
+        
+        const params = new URLSearchParams();
+        if (start) params.append('start_date', start);
+        if (end) params.append('end_date', end);
+        if (category) params.append('category', category);
+        
+        const queryStr = params.toString();
+        const finalParams = queryStr ? `?${queryStr}` : '';
+        const limitParams = queryStr ? `&${queryStr}` : '';
 
         const [issuesRes, statsRes, categoriesRes, trendsRes] = await Promise.all([
-            fetch(`${API_BASE_URL}/issues?limit=10000${dateParams}`),
-            fetch(`${API_BASE_URL}/stats${dateParamsQ}`),
-            fetch(`${API_BASE_URL}/categories`),
-            fetch(`${API_BASE_URL}/stats/trends${dateParamsQ}`)
+            fetch(`${API_BASE_URL}/issues?limit=10000${limitParams}`, { signal }),
+            fetch(`${API_BASE_URL}/stats${finalParams}`, { signal }),
+            fetch(`${API_BASE_URL}/categories`, { signal }),
+            fetch(`${API_BASE_URL}/stats/trends${finalParams}`, { signal })
         ]);
 
         if (!issuesRes.ok || !statsRes.ok || !categoriesRes.ok || !trendsRes.ok) throw new Error('Network response was not ok');
@@ -131,15 +148,24 @@ function renderPriorityList(issues) {
 
 function populateCategoryFilter(categories) {
     if (!categoryFilter) return;
+    
+    // Clear existing options except the first one
+    const firstOption = categoryFilter.options[0];
+    categoryFilter.innerHTML = '';
+    if (firstOption) categoryFilter.appendChild(firstOption);
+
     categories.forEach(cat => {
         const option = document.createElement('option');
         option.value = cat.name;
         option.textContent = cat.name;
         categoryFilter.appendChild(option);
     });
+}
 
+// Attach category filter listener once
+if (categoryFilter) {
     categoryFilter.addEventListener('change', () => {
-        renderDashboardContent();
+        fetchDashboardData();
     });
 }
 
