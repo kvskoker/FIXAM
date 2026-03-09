@@ -178,12 +178,19 @@ class FixamDatabase {
 
     // Get Issue by Ticket ID
     async getIssueByTicketId(ticketId) {
+        if (!ticketId) return null;
+        
+        let normalizedId = ticketId.toUpperCase().trim();
+        if (!normalizedId.startsWith('FIX-')) {
+            normalizedId = `FIX-${normalizedId}`;
+        }
+
         const sql = "SELECT * FROM issues WHERE ticket_id = $1";
         try {
-            const result = await this.db.query(sql, [ticketId]);
+            const result = await this.db.query(sql, [normalizedId]);
             return result.rows.length > 0 ? result.rows[0] : null;
         } catch (error) {
-            this.debugLog('Error fetching issue by ticketId', { error: error.message, ticketId });
+            this.debugLog('Error fetching issue by ticketId', { error: error.message, ticketId: normalizedId });
             return null;
         }
     }

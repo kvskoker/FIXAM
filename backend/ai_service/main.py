@@ -382,31 +382,34 @@ def analyze_intent(request: AnalyzeIntentRequest):
             "entities": {}
         }
         
-        # 2. Extract Entities (Rule-based / Regex)
-        # Ticket ID (Strongest Entity)
-        ticket_pattern = r'(FIX-[A-Z0-9]{6})'
+        # Ticket ID Extraction (Improved to handle missing prefix)
+        # Matches FIX-G9IJIY or just G9IJIY (but only if it looks like a ticket ID)
+        ticket_pattern = r'\b(?:FIX-)?([A-Z0-9]{6})\b'
         ticket_match = re.search(ticket_pattern, user_text.upper())
         if ticket_match:
-            ticket_id = ticket_match.group(1)
+            ticket_id = f"FIX-{ticket_match.group(1)}"
             print(f"DEBUG: Found Ticket ID: {ticket_id}")
             result["entities"]["ticket_id"] = ticket_id
             
-            # If ticket found, contextual override
-            if "status" in lower_text or "track" in lower_text or "follow" in lower_text or "endorse" in lower_text:
+            # Contextual Intent Override
+            tracking_keywords = ["status", "track", "follow", "endorse", "check", "happen", "far"]
+            if any(kw in lower_text for kw in tracking_keywords):
                  result["intent"] = 'track_status'
             elif result["intent"] == 'unknown':
-                 result["intent"] = 'vote_issue'
+                 # If it's just a ticket ID alone, let the handler decide based on current state
+                 # By returning 'unknown' here but including the ticket_id, the handler
+                 # can prioritize the 'awaiting_track_ticket_id' state if it's active.
+                 # However, if we must pick one, vote is a safe default for NEW conversations.
+                 result["intent"] = 'unknown' # Let JS Handler handle the state-based logic
         
         # Vote Type (Simple keywords)
-        lower_text = user_text.lower()
         if "upvote" in lower_text or "up vote" in lower_text or "support" in lower_text:
              result["entities"]["vote_type"] = "upvote"
         elif "downvote" in lower_text or "down vote" in lower_text or "reject" in lower_text:
              result["entities"]["vote_type"] = "downvote"
 
         # Location extraction (Simple heuristics for now)
-        # "trending in Freetown"
-        loc_match = re.search(r'\b(?:in|at|near|around)\s+([a-zA-Z\s]+)', user_text, re.IGNORECASE)
+        loc_match = re.search(r'\b(?:in|at|near|around)\s+([a-zA-Z\s]{3,})', user_text, re.IGNORECASE)
         if loc_match:
             result["entities"]["location"] = loc_match.group(1).strip()
             

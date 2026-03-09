@@ -261,6 +261,19 @@ class FixamHandler {
                     }
                 }
 
+                if (analysis && analysis.entities && analysis.entities.ticket_id && 
+                    (!analysis.intent || analysis.intent === 'unknown' || analysis.intent === 'vote_issue')) {
+                    // Special case: If a ticket ID is found but intent is weak, 
+                    // and there are NO vote keywords, default to tracking/viewing.
+                    const voteKeywords = ['upvote', 'downvote', 'support', 'reject', 'vote'];
+                    const hasVoteKeyword = voteKeywords.some(kw => lowerInput.includes(kw));
+                    
+                    if (!hasVoteKeyword) {
+                        logger.log('ai_debug', `Ticket ID detected without vote keywords, defaulting to track_status`);
+                        analysis.intent = 'track_status';
+                    }
+                }
+
                 if (analysis && analysis.intent && analysis.intent !== 'unknown') {
                         logger.log('ai_debug', `Detected intent: ${analysis.intent}`);
                         
@@ -320,11 +333,15 @@ class FixamHandler {
                                          });
                                          await this.sendMessage(fromNumber, `Found Issue: *${issue.title}* (${issue.ticket_id})\n\nI see you want to *${voteType}*.\n\nType *1* to Confirm Upvote 👍\nType *2* to Confirm Downvote 👎\nType *9* to cancel.`);
                                      } else {
+                                         // If it's just a ticket ID in a vote context but NO clear vote intent keywords,
+                                         // maybe redirect to tracking instead? 
+                                         // Actually, let's keep it consistent: if they were in a vote flow, keep it.
+                                         // But if this was an AI detection, the earlier block already handled the redirection.
                                          await this.fixamDb.updateConversationState(fromNumber, { 
                                             current_step: 'awaiting_vote_confirmation',
                                             data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
-                                        });
-                                        await this.sendMessage(fromNumber, `Found Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                                         });
+                                         await this.sendMessage(fromNumber, `Found Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
                                      }
                                  } else {
                                      await this.sendMessage(fromNumber, `Could not find issue with ID: ${ticketId}. Please check and try again.`);
@@ -390,7 +407,7 @@ class FixamHandler {
                                  // I need to replicate the tracker logic here or move it to a helper
                                  // But for now, let's just push to the state
                                  await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_track_ticket_id', data: {} });
-                                 return this.handleTextMessage(fromNumber, ticketId);
+                                 return await this.handleTextMessage(fromNumber, ticketId);
                              } else {
                                 await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_track_ticket_id', data: {} });
                                 await this.sendMessage(fromNumber, "🔍 *Track/Endorse Issue*\n\nPlease enter the *Issue ID* you want to follow up on, or type *9* to cancel.");
