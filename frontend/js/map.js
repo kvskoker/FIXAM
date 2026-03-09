@@ -187,6 +187,16 @@ window.expandVideo = function(container, event) {
     }
 };
 
+// Global function to show specific issue page in a popup
+window.showIssuePage = function(locKey, targetIndex, total) {
+    for(let i = 0; i < total; i++) {
+        const el = document.getElementById(`issue-page-${locKey}-${i}`);
+        if(el) {
+            el.style.display = (i === targetIndex) ? 'block' : 'none';
+        }
+    }
+};
+
 // Helper: Format address (Max 3 levels)
 function formatAddress(address) {
     if (!address) return null;
@@ -244,92 +254,122 @@ function renderIssues(issues) {
 
     issueList.innerHTML = ''; // Clear loading
 
+    // Group issues by coordinates
+    const locationGroups = {};
     issues.forEach(issue => {
         if (!issue.lat || !issue.lng) return;
+        const lat = parseFloat(issue.lat).toFixed(6);
+        const lng = parseFloat(issue.lng).toFixed(6);
+        const locKey = `${lat}_${lng}`;
+        
+        if (!locationGroups[locKey]) locationGroups[locKey] = [];
+        locationGroups[locKey].push(issue);
+    });
 
-        const statusType = getStatusType(issue.status);
+    Object.keys(locationGroups).forEach(locKey => {
+        const locationIssues = locationGroups[locKey];
+        const firstIssue = locationIssues[0];
+        const statusType = getStatusType(firstIssue.status);
         const color = `rgb(${colors[statusType].r}, ${colors[statusType].g}, ${colors[statusType].b})`;
 
         // Add Marker
-        const marker = L.circleMarker([issue.lat, issue.lng], {
+        const marker = L.circleMarker([firstIssue.lat, firstIssue.lng], {
             radius: 8,
             fillColor: color,
             color: '#fff',
             weight: 2,
             opacity: 1,
             fillOpacity: 0.8,
-            status: issue.status
+            status: firstIssue.status
         });
 
-        // Popup Content
-        let mediaContent = '';
-        if (isVideo(issue.image_url)) {
-            mediaContent = `
-                <div class="video-container" style="position: relative; width: 100%; height: 150px; margin-bottom: 0.5rem; border-radius: 0.5rem; overflow: hidden; background: #000;">
-                    <video src="${issue.image_url}" style="width: 100%; height: 100%; object-fit: cover;" preload="metadata" onclick="playVideo(this.parentElement)"></video>
-                    <div class="play-button" onclick="playVideo(this.parentElement)" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; background: rgba(0,0,0,0.6); border-radius: 50%; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px); cursor: pointer; z-index: 10;">
-                        <i class="fa-solid fa-play" style="color: white; font-size: 16px; margin-left: 2px;"></i>
+        const safeLocKey = locKey.replace(/\./g, '_').replace(/-/g, 'm');
+
+        let allPopupsContent = locationIssues.map((issue, index) => {
+            const currentStatusType = getStatusType(issue.status);
+            const currentColor = `rgb(${colors[currentStatusType].r}, ${colors[currentStatusType].g}, ${colors[currentStatusType].b})`;
+            
+            let mediaContent = '';
+            if (isVideo(issue.image_url)) {
+                mediaContent = `
+                    <div class="video-container" style="position: relative; width: 100%; height: 150px; margin-bottom: 0.5rem; border-radius: 0.5rem; overflow: hidden; background: #000;">
+                        <video src="${issue.image_url}" style="width: 100%; height: 100%; object-fit: cover;" preload="metadata" onclick="playVideo(this.parentElement)"></video>
+                        <div class="play-button" onclick="playVideo(this.parentElement)" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; background: rgba(0,0,0,0.6); border-radius: 50%; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px); cursor: pointer; z-index: 10;">
+                            <i class="fa-solid fa-play" style="color: white; font-size: 16px; margin-left: 2px;"></i>
+                        </div>
+                    </div>
+                `;
+            } else {
+                mediaContent = `<img src="${issue.image_url || 'https://via.placeholder.com/400'}" class="popup-image" alt="${issue.title}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 8px; margin-bottom: 8px;">`;
+            }
+
+            let audioContent = '';
+            if (issue.audio_url) {
+                audioContent = `
+                    <div style="margin-bottom: 10px;">
+                        <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px;">Voice Report:</div>
+                        <audio controls src="${issue.audio_url}" style="width: 100%; height: 32px; border-radius: 4px;"></audio>
+                    </div>
+                `;
+            }
+
+            let resolutionNoteHtml = '';
+            if (issue.status === 'fixed' && issue.resolution_note) {
+                resolutionNoteHtml = `
+                    <div class="resolution-note">
+                        <div class="resolution-note-title">Resolution Note</div>
+                        <div class="resolution-note-text">${issue.resolution_note}</div>
+                    </div>
+                `;
+            }
+
+            const paginationHtml = locationIssues.length > 1 ? `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; border-top: 1px solid var(--border-color); padding-top: 10px;">
+                    <button class="btn btn-sm" style="padding: 4px 8px; font-size: 0.8rem; border-radius:4px; border:1px solid #ccc; background:var(--surface-color); color:var(--text-primary); cursor:pointer;" onclick="event.stopPropagation(); window.showIssuePage('${safeLocKey}', ${index - 1}, ${locationIssues.length})" ${index === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>Previous</button>
+                    <span style="font-size: 0.8rem; font-weight: bold; color: var(--text-primary);">${index + 1} of ${locationIssues.length}</span>
+                    <button class="btn btn-sm" style="padding: 4px 8px; font-size: 0.8rem; border-radius:4px; border:1px solid #ccc; background:var(--surface-color); color:var(--text-primary); cursor:pointer;" onclick="event.stopPropagation(); window.showIssuePage('${safeLocKey}', ${index + 1}, ${locationIssues.length})" ${index === locationIssues.length - 1 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>Next</button>
+                </div>
+            ` : '';
+
+            return `
+                <div id="issue-page-${safeLocKey}-${index}" style="display: ${index === 0 ? 'block' : 'none'};">
+                    <div class="popup-content" style="min-width: 280px; padding: 5px;">
+                        ${mediaContent}
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                             <div style="font-size: 0.7rem; font-weight: 650; color: ${currentColor}; text-transform: uppercase;">${issue.category}</div>
+                             <span style="background: rgba(${colors[currentStatusType].r}, ${colors[currentStatusType].g}, ${colors[currentStatusType].b}, 0.15); color: ${currentColor}; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: capitalize;">${issue.status}</span>
+                        </div>
+                        <div class="popup-title" style="font-weight: 700; font-size: 1.1rem; margin-bottom: 10px; color: var(--text-primary);">${issue.title}</div>
+                        ${audioContent}
+                        ${resolutionNoteHtml}
+                        
+                        <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 0.85rem; margin-bottom: 15px; color: var(--text-secondary);">
+                            <div style="font-weight: 500;">Issue ID:</div>
+                            <div style="color: var(--text-primary); font-family: monospace; font-weight: 600;">#${issue.ticket_id}</div>
+                            
+                            <div style="font-weight: 500;">Reported:</div>
+                            <div style="color: var(--text-primary);">${new Date(issue.reported_on || issue.created_at).toLocaleDateString('en-GB')}</div>
+                            
+                            <div style="font-weight: 500;">By:</div>
+                            <div style="color: var(--text-primary);">${issue.reported_by_name || 'Anonymous citizen'}</div>
+                            
+                            <div style="font-weight: 500;">Location:</div>                    
+                            <div style="color: var(--text-primary); font-size: 0.8rem;"><i class="fa-solid fa-location-dot" style="margin-right: 4px; opacity: 0.7;"></i>${formatAddress(issue.address) || `Freetown, SL (${parseFloat(issue.lat).toFixed(4)}, ${parseFloat(issue.lng).toFixed(4)})`}</div>
+                        </div>
+
+                        <div class="popup-desc" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 15px; line-height: 1.4; border-top: 1px solid var(--border-color); padding-top: 8px;">${issue.description}</div>
+                        
+                        <button class="btn btn-primary" onclick="viewTracker(${issue.id})" style="width: 100%; font-size: 0.85rem; padding: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 8px;">
+                            <i class="fa-solid fa-clock-rotate-left"></i> View Full Activity History
+                        </button>
+
+                        ${paginationHtml}
                     </div>
                 </div>
             `;
-        } else {
-            mediaContent = `<img src="${issue.image_url || 'https://via.placeholder.com/400'}" class="popup-image" alt="${issue.title}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 8px; margin-bottom: 8px;">`;
-        }
+        }).join('');
 
-        let audioContent = '';
-        if (issue.audio_url) {
-            audioContent = `
-                <div style="margin-bottom: 10px;">
-                    <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px;">Voice Report:</div>
-                    <audio controls src="${issue.audio_url}" style="width: 100%; height: 32px; border-radius: 4px;"></audio>
-                </div>
-            `;
-        }
-
-        let resolutionNoteHtml = '';
-        if (issue.status === 'fixed' && issue.resolution_note) {
-            resolutionNoteHtml = `
-                <div class="resolution-note">
-                    <div class="resolution-note-title">Resolution Note</div>
-                    <div class="resolution-note-text">${issue.resolution_note}</div>
-                </div>
-            `;
-        }
-
-        const popupContent = `
-            <div class="popup-content" style="min-width: 280px; padding: 5px;">
-                ${mediaContent}
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                     <div style="font-size: 0.7rem; font-weight: 650; color: ${color}; text-transform: uppercase;">${issue.category}</div>
-                     <span style="background: rgba(${colors[statusType].r}, ${colors[statusType].g}, ${colors[statusType].b}, 0.15); color: ${color}; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: capitalize;">${issue.status}</span>
-                </div>
-                <div class="popup-title" style="font-weight: 700; font-size: 1.1rem; margin-bottom: 10px; color: var(--text-primary);">${issue.title}</div>
-                ${audioContent}
-                ${resolutionNoteHtml}
-                
-                <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 0.85rem; margin-bottom: 15px; color: var(--text-secondary);">
-                    <div style="font-weight: 500;">Issue ID:</div>
-                    <div style="color: var(--text-primary); font-family: monospace; font-weight: 600;">#${issue.ticket_id}</div>
-                    
-                    <div style="font-weight: 500;">Reported:</div>
-                    <div style="color: var(--text-primary);">${new Date(issue.reported_on || issue.created_at).toLocaleDateString('en-GB')}</div>
-                    
-                    <div style="font-weight: 500;">By:</div>
-                    <div style="color: var(--text-primary);">${issue.reported_by_name || 'Anonymous citizen'}</div>
-                    
-                    <div style="font-weight: 500;">Location:</div>                    
-                    <div style="color: var(--text-primary); font-size: 0.8rem;"><i class="fa-solid fa-location-dot" style="margin-right: 4px; opacity: 0.7;"></i>${formatAddress(issue.address) || `Freetown, SL (${parseFloat(issue.lat).toFixed(4)}, ${parseFloat(issue.lng).toFixed(4)})`}</div>
-                </div>
-
-                <div class="popup-desc" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 15px; line-height: 1.4; border-top: 1px solid var(--border-color); padding-top: 8px;">${issue.description}</div>
-                
-                <button class="btn btn-primary" onclick="viewTracker(${issue.id})" style="width: 100%; font-size: 0.85rem; padding: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 8px;">
-                    <i class="fa-solid fa-clock-rotate-left"></i> View Full Activity History
-                </button>
-            </div>
-        `;
-
-        marker.bindPopup(popupContent, {
+        marker.bindPopup(`<div>${allPopupsContent}</div>`, {
             autoPan: false, // Prevent map shifting while opening popup
             closeButton: true,
             maxWidth: 300
@@ -345,41 +385,47 @@ function renderIssues(issues) {
             }, 350);
         });
 
-        markers[issue.id] = marker;
         clusterGroup.addLayer(marker);
 
-        // Add to Sidebar List
-        const card = document.createElement('div');
-        card.className = 'issue-card';
-        card.innerHTML = `
-            <div class="issue-header">
-                <span class="issue-category">${issue.category}</span>
-                <div class="issue-status status-${issue.status}"></div>
-            </div>
-            <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.25rem;">#${issue.ticket_id}</div>
-            <div class="issue-title" style="font-weight: 600;">${issue.title}</div>
-            <div class="issue-location">
-                <i class="fa-solid fa-location-dot"></i> ${formatAddress(issue.address) || 'Freetown, SL'}
-            </div>            
-            <div class="issue-meta">
-                <span>${new Date(issue.reported_on || issue.created_at).toLocaleDateString('en-GB')}</span>
-                <div class="vote-count">
-                    <i class="fa-solid fa-arrow-up"></i> ${issue.upvotes || 0}
+        locationIssues.forEach((issue, index) => {
+            markers[issue.id] = marker;
+
+            // Add to Sidebar List
+            const card = document.createElement('div');
+            card.className = 'issue-card';
+            card.innerHTML = `
+                <div class="issue-header">
+                    <span class="issue-category">${issue.category}</span>
+                    <div class="issue-status status-${issue.status}"></div>
                 </div>
-            </div>
-        `;
+                <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.25rem;">#${issue.ticket_id}</div>
+                <div class="issue-title" style="font-weight: 600;">${issue.title}</div>
+                <div class="issue-location">
+                    <i class="fa-solid fa-location-dot"></i> ${formatAddress(issue.address) || 'Freetown, SL'}
+                </div>            
+                <div class="issue-meta">
+                    <span>${new Date(issue.reported_on || issue.created_at).toLocaleDateString('en-GB')}</span>
+                    <div class="vote-count">
+                        <i class="fa-solid fa-arrow-up"></i> ${issue.upvotes || 0}
+                    </div>
+                </div>
+            `;
 
-        card.addEventListener('click', () => {
-            map.flyTo([issue.lat, issue.lng], 16);
-            setTimeout(() => {
-                marker.openPopup();
-            }, 350);
-            
-            document.querySelectorAll('.issue-card').forEach(c => c.style.borderColor = 'var(--border-color)');
-            card.style.borderColor = 'var(--primary-color)';
+            card.addEventListener('click', () => {
+                map.flyTo([issue.lat, issue.lng], 16);
+                setTimeout(() => {
+                    marker.openPopup();
+                    if (locationIssues.length > 1) {
+                        window.showIssuePage(safeLocKey, index, locationIssues.length);
+                    }
+                }, 350);
+                
+                document.querySelectorAll('.issue-card').forEach(c => c.style.borderColor = 'var(--border-color)');
+                card.style.borderColor = 'var(--primary-color)';
+            });
+
+            issueList.appendChild(card);
         });
-
-        issueList.appendChild(card);
     });
 
     map.addLayer(clusterGroup);

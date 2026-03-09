@@ -8,7 +8,8 @@ node_modules/
 backend/.env
 backend/.env.local
 backend/.env.*.local
-
+frontend/pitch-deck-print.html
+frontend/pitch-deck.html
 # Ignore logs
 *.log
 npm-debug.log*

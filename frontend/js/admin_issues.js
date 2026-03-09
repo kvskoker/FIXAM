@@ -85,11 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const note = noteInput.value.trim();
 
             // Validation
-            if ((pendingStatus === 'fixed' || userId === 'spam') && !note) {
-                 // For spam, maybe note is optional? Prompt said "Optional".
-                 // But in the code block below, let's keep it optional for spam if the user requested it.
-                 // Wait, the prompt said "Optional: Enter a reason". So for spam it is optional.
-                 // Only required for 'fixed'.
+            if ((pendingStatus === 'fixed' || userId === 'spam') && !note) {                 
                  if (userId !== 'spam') {
                     noteError.style.display = 'block';
                     return;

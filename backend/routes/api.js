@@ -89,7 +89,7 @@ router.get('/issues', async (req, res) => {
         let paramCount = 1;
 
         if (search) {
-            query += ` AND (i.title ILIKE $${paramCount} OR i.description ILIKE $${paramCount} OR i.ticket_id ILIKE $${paramCount})`;
+            query += ` AND (i.title ILIKE $${paramCount} OR i.description ILIKE $${paramCount} OR i.ticket_id ILIKE $${paramCount} OR i.address ILIKE $${paramCount})`;
             params.push(`%${search}%`);
             paramCount++;
         }
@@ -173,7 +173,7 @@ router.get('/issues', async (req, res) => {
         let pCount = 1;
         
         if (search) { 
-            countSql += ` AND (i.title ILIKE $${pCount} OR i.description ILIKE $${pCount} OR i.ticket_id ILIKE $${pCount})`; 
+            countSql += ` AND (i.title ILIKE $${pCount} OR i.description ILIKE $${pCount} OR i.ticket_id ILIKE $${pCount} OR i.address ILIKE $${pCount})`; 
             countSqlParams.push(`%${search}%`); 
             pCount++; 
         }
