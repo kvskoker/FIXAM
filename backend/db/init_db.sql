@@ -229,6 +229,16 @@ CREATE TABLE IF NOT EXISTS feedback (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 15. Endorsements Table (Verification of resolution)
+CREATE TABLE IF NOT EXISTS endorsements (
+    id SERIAL PRIMARY KEY,
+    issue_id INTEGER REFERENCES issues(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(issue_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_endorsements_issue_id ON endorsements (issue_id);
+
 -- Seed Category-Group mappings (Simplified for key categories)
 DO $$
 DECLARE
