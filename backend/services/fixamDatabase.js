@@ -494,6 +494,48 @@ class FixamDatabase {
             return false;
         }
     }
+
+    // Endorse Resolution
+    async endorseIssue(issueId, userId) {
+        const sql = "INSERT INTO endorsements (issue_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING id";
+        try {
+            const result = await this.db.query(sql, [issueId, userId]);
+            
+            // award points for endorsing (confirming) a resolution? 
+            // maybe +5 points for participating in verification
+            if (result.rows.length > 0) {
+                await this.addPoints(userId, 5, 'issue_endorsed', issueId);
+            }
+            return result.rows.length > 0;
+        } catch (error) {
+            this.debugLog('Error endorsing issue', error);
+            return false;
+        }
+    }
+
+    // Check if user has endorsed an issue
+    async checkUserEndorsement(issueId, userId) {
+        const sql = "SELECT * FROM endorsements WHERE issue_id = $1 AND user_id = $2";
+        try {
+            const result = await this.db.query(sql, [issueId, userId]);
+            return result.rows.length > 0;
+        } catch (error) {
+            this.debugLog('Error checking user endorsement', error);
+            return false;
+        }
+    }
+
+    // Get endorsement count for an issue
+    async getEndorsementCount(issueId) {
+        const sql = "SELECT COUNT(*) FROM endorsements WHERE issue_id = $1";
+        try {
+            const result = await this.db.query(sql, [issueId]);
+            return parseInt(result.rows[0].count);
+        } catch (error) {
+            this.debugLog('Error getting endorsement count', error);
+            return 0;
+        }
+    }
 }
 
 module.exports = FixamDatabase;

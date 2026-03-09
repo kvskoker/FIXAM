@@ -391,9 +391,10 @@ def analyze_intent(request: AnalyzeIntentRequest):
             print(f"DEBUG: Found Ticket ID: {ticket_id}")
             result["entities"]["ticket_id"] = ticket_id
             
-            # If ticket found, highly likely 'vote_issue' or 'status'
-            # If embedding said unknown or report, override to vote if context implies
-            if result["intent"] == 'unknown':
+            # If ticket found, contextual override
+            if "status" in lower_text or "track" in lower_text or "follow" in lower_text or "endorse" in lower_text:
+                 result["intent"] = 'track_status'
+            elif result["intent"] == 'unknown':
                  result["intent"] = 'vote_issue'
         
         # Vote Type (Simple keywords)

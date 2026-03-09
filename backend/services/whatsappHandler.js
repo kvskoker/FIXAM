@@ -377,8 +377,24 @@ class FixamHandler {
 
                         } else if (analysis.intent === 'view_points') {
                              const points = user.points || 0;
-                             await this.sendMessage(fromNumber, `🏆 *Your Citizen Score*\n\nYou currently have: *${points} Points* ⭐\n\n*How to earn points:*\n+10 pts: Report an Issue\n+50 pts: Issue Resolved\n+1 pt: Getting Upvoted\n\nKeep participating to unlock future rewards! 🎁`);
+                             await this.sendMessage(fromNumber, `🏆 *Your Citizen Score*\n\nYou currently have: *${points} Points* ⭐\n\n*How to earn points:*\n+10 pts: Report an Issue\n+50 pts: Issue Resolved\n+5 pts: Endorsing Resolution ✅\n+1 pt: Getting Upvoted\n\nKeep participating to unlock future rewards! 🎁`);
                              await this.sendMainMenu(fromNumber, user.name);
+                             return;
+
+                        } else if (analysis.intent === 'track_status') {
+                             const entities = analysis.entities || {};
+                             const ticketId = (entities.ticket_id || '').toUpperCase();
+
+                             if (ticketId) {
+                                 // If ticket ID is provided in the sentence, jump straight to tracking
+                                 // I need to replicate the tracker logic here or move it to a helper
+                                 // But for now, let's just push to the state
+                                 await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_track_ticket_id', data: {} });
+                                 return this.handleTextMessage(fromNumber, ticketId);
+                             } else {
+                                await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_track_ticket_id', data: {} });
+                                await this.sendMessage(fromNumber, "🔍 *Track/Endorse Issue*\n\nPlease enter the *Issue ID* you want to follow up on, or type *9* to cancel.");
+                             }
                              return;
 
                         } else if (analysis.intent === 'provide_feedback') {
@@ -397,11 +413,12 @@ class FixamHandler {
 
                         } else if (analysis.intent === 'get_help') {
                             const helpMsg = `ℹ️ *Fixam Help Guide*\n\n` +
-                                            `*1. Report an Issue*: Tell us about problems like potholes, water leaks, or trash. Share location and a photo!\n` +
-                                            `*2. Vote*: Support issues reported by others using their Issue ID.\n` +
-                                            `*3. Trending*: Find popular issues in your area (e.g. 'Freetown') to support.\n` +
-                                            `*4. Points*: Earn points for being an active citizen!\n` +
-                                            `*5. Feedback*: Share your thoughts with the Fixam team.\n\n` +
+                                            `*1. Report*: Tell us about problems like potholes or water leaks.\n` +
+                                            `*2. Vote*: Support issues reported by others.\n` +
+                                            `*3. Track/Endorse*: Check status of an issue or confirm if it's fixed!\n` +
+                                            `*4. Trending*: Find popular issues in your area to support.\n` +
+                                            `*5. Points*: Earn points for being an active citizen!\n` +
+                                            `*6. Feedback*: Share your thoughts with us.\n\n` +
                                             `*Useful Commands:*\n` +
                                             `- Type *9* to Cancel any action.\n` +
                                             `- Type *Reset* to start over.\n\n` +
@@ -440,26 +457,27 @@ class FixamHandler {
                 } else if (input === '2' || lowerInput.includes('vote')) {
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_vote_ticket_id', data: {} });
                     await this.sendMessage(fromNumber, "Okay! Please enter the *Issue ID* of the issue you want to vote on, or type *9* to cancel.");
-                } else if (input === '3' || lowerInput.includes('trending')) {
+                } else if (input === '3' || lowerInput.includes('track') || lowerInput.includes('endorse') || lowerInput.includes('status')) {
+                    await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_track_ticket_id', data: {} });
+                    await this.sendMessage(fromNumber, "🔍 *Track/Endorse Issue*\n\nPlease enter the *Issue ID* you want to follow up on, or type *9* to cancel.");
+                } else if (input === '4' || lowerInput.includes('trending')) {
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_trending_community', data: {} });
                     await this.sendMessage(fromNumber, "Please enter the name of the community or area you want to check (e.g. 'Lumley', 'Kissy'), or type *9* to cancel.");
-                } else if (input === '4' || lowerInput.includes('point')) {
+                } else if (input === '5' || lowerInput.includes('point')) {
                     const points = user.points || 0;
-                    // Mock leaderboard rank for now or fetch it
-                    // Simple message
-                    await this.sendMessage(fromNumber, `🏆 *Your Citizen Score*\n\nYou currently have: *${points} Points* ⭐\n\n*How to earn points:*\n+10 pts: Report an Issue\n+50 pts: Issue Resolved\n+1 pt: Getting Upvoted\n\nKeep participating to unlock future rewards! 🎁`);
-                    // Stay in main menu
+                    await this.sendMessage(fromNumber, `🏆 *Your Citizen Score*\n\nYou currently have: *${points} Points* ⭐\n\n*How to earn points:*\n+10 pts: Report an Issue\n+50 pts: Issue Resolved\n+5 pts: Endorsing Resolution\n+1 pt: Getting Upvoted\n\nKeep participating to unlock future rewards! 🎁`);
                     await this.sendMainMenu(fromNumber, user.name);
-                } else if (input === '5' || lowerInput.includes('feedback')) {
+                } else if (input === '6' || lowerInput.includes('feedback')) {
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_feedback', data: {} });
                     await this.sendMessage(fromNumber, "We value your feedback! 💬\n\nPlease type your feedback or send a *Voice Note*.");
-                } else if (input === '6' || lowerInput.includes('help')) {
+                } else if (input === '7' || lowerInput.includes('help')) {
                     const helpMsg = `ℹ️ *Fixam Help Guide*\n\n` +
-                                    `*1. Report an Issue*: Tell us about problems like potholes, water leaks, or trash. Share location and a photo!\n` +
-                                    `*2. Vote*: Support issues reported by others using their Issue ID.\n` +
-                                    `*3. Trending*: Find popular issues in your area (e.g. 'Freetown') to support.\n` +
-                                    `*4. Points*: Earn points for being an active citizen!\n` +
-                                    `*5. Feedback*: Share your thoughts with the Fixam team.\n\n` +
+                                    `*1. Report*: Tell us about problems like potholes or water leaks.\n` +
+                                    `*2. Vote*: Support issues reported by others.\n` +
+                                    `*3. Track/Endorse*: Check status of an issue or confirm if it's fixed!\n` +
+                                    `*4. Trending*: Find popular issues in your area to support.\n` +
+                                    `*5. Points*: Earn points for being an active citizen!\n` +
+                                    `*6. Feedback*: Share your thoughts with us.\n\n` +
                                     `*Useful Commands:*\n` +
                                     `- Type *9* to Cancel any action.\n` +
                                     `- Type *Reset* to start over.\n\n` +
@@ -467,7 +485,7 @@ class FixamHandler {
                     await this.sendMessage(fromNumber, helpMsg);
                     await this.sendMainMenu(fromNumber, user.name);
                 } else {
-                    await this.sendMessage(fromNumber, "I'm not sure what you mean. Please select an option from the menu (1-6) or try describing what you want to do.");
+                    await this.sendMessage(fromNumber, "I'm not sure what you mean. Please select an option from the menu (1-7) or try describing what you want to do.");
                     await this.sendMainMenu(fromNumber, user.name);
                 }
                 break;
@@ -696,15 +714,88 @@ class FixamHandler {
                 break;
 
             case 'awaiting_vote_ticket_id':
-                const issue = await this.fixamDb.getIssueByTicketId(input.toUpperCase());
-                if (issue) {
+                const issueVote = await this.fixamDb.getIssueByTicketId(input.toUpperCase());
+                if (issueVote) {
                     await this.fixamDb.updateConversationState(fromNumber, { 
                         current_step: 'awaiting_vote_confirmation',
-                        data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
+                        data: { issue_id: issueVote.id, ticket_id: issueVote.ticket_id, title: issueVote.title }
                     });
-                    await this.sendMessage(fromNumber, `Found Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                    await this.sendMessage(fromNumber, `Found Issue: *${issueVote.title}* (${issueVote.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
                 } else {
                     await this.sendMessage(fromNumber, "Issue not found. Please check the Issue ID and try again, or type *9* to cancel.");
+                }
+                break;
+
+            case 'awaiting_track_ticket_id':
+                const trackIssue = await this.fixamDb.getIssueByTicketId(input.toUpperCase());
+                if (trackIssue) {
+                    const endorsements = await this.fixamDb.getEndorsementCount(trackIssue.id);
+                    const statusEmoji = {
+                        'critical': '🔴 Critical',
+                        'acknowledged': '🟡 Acknowledged',
+                        'in_progress': '🔵 In Progress',
+                        'fixed': '✅ Fixed/Resolved'
+                    }[trackIssue.status] || trackIssue.status;
+
+                    let msg = `🔍 *Issue Status Report*\n\n` +
+                                `*ID:* ${trackIssue.ticket_id}\n` +
+                                `*Title:* ${trackIssue.title}\n` +
+                                `*Status:* ${statusEmoji}\n` +
+                                `*Category:* ${trackIssue.category}\n` +
+                                `*Location:* ${trackIssue.address || 'Sierra Leone'}\n\n` +
+                                `*Description:* ${trackIssue.description || 'No description provided.'}\n\n` +
+                                `*Endorsements:* ${endorsements} 👍\n\n`;
+
+                    if (trackIssue.status === 'fixed') {
+                        const hasEndorsed = await this.fixamDb.checkUserEndorsement(trackIssue.id, user.id);
+                        if (hasEndorsed) {
+                            msg += `✨ You have already endorsed this resolution. Thank you!`;
+                            await this.sendMessage(fromNumber, msg);
+                            await this.sendMainMenu(fromNumber, user.name);
+                        } else {
+                            msg += `Government has marked this as *FIXED*. Do you agree? \n\nType *1* to Endorse/Confirm Resolution ✅\nType *9* to return to menu.`;
+                            await this.fixamDb.updateConversationState(fromNumber, { 
+                                current_step: 'awaiting_endorse_confirmation',
+                                data: { issue_id: trackIssue.id, ticket_id: trackIssue.ticket_id }
+                            });
+                            await this.sendMessage(fromNumber, msg);
+                        }
+                    } else {
+                        msg += `Would you like to support this issue?\n\nType *1* to go to Voting 🗳️\nType *9* for Menu.`;
+                        await this.fixamDb.updateConversationState(fromNumber, { 
+                            current_step: 'awaiting_track_action_selection',
+                            data: { issue_id: trackIssue.id, ticket_id: trackIssue.ticket_id, title: trackIssue.title }
+                        });
+                        await this.sendMessage(fromNumber, msg);
+                    }
+                } else {
+                    await this.sendMessage(fromNumber, "Issue not found. Please check the Issue ID and try again, or type *9* to cancel.");
+                }
+                break;
+
+            case 'awaiting_track_action_selection':
+                if (input === '1') {
+                    await this.fixamDb.updateConversationState(fromNumber, { 
+                        current_step: 'awaiting_vote_confirmation',
+                        data: state.data
+                    });
+                    await this.sendMessage(fromNumber, `🗳️ *Voting for: ${state.data.title}*\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                } else {
+                    await this.sendMainMenu(fromNumber, user.name);
+                }
+                break;
+
+            case 'awaiting_endorse_confirmation':
+                if (input === '1') {
+                    const success = await this.fixamDb.endorseIssue(state.data.issue_id, user.id);
+                    if (success) {
+                        await this.sendMessage(fromNumber, "Thank you! Your endorsement has been recorded. +5 Citizen Points awarded! 🏆");
+                    } else {
+                        await this.sendMessage(fromNumber, "You have already endorsed this issue or an error occurred.");
+                    }
+                    await this.sendMainMenu(fromNumber, user.name);
+                } else {
+                    await this.sendMainMenu(fromNumber, user.name);
                 }
                 break;
 
@@ -1099,8 +1190,8 @@ class FixamHandler {
     }
 
     async sendMainMenu(fromNumber, name) {
-        await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today? (Reply with a number [1-6] or text keywords!)\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *Trending Issues* 🔥\n4️⃣ *My Points* 🏆\n5️⃣ *Feedback* 💬\n6️⃣ *Help & Info* ℹ️`);
-        await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category' });
+    await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today? (Reply with a number [1-7] or text keywords!)\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *Track/Endorse Issue* 🔍\n4️⃣ *Trending Issues* 🔥\n5️⃣ *My Points* 🏆\n6️⃣ *Feedback* 💬\n7️⃣ *Help & Info* ℹ️`);
+    await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category' });
     }
 
     async sendReportSummary(fromNumber, data) {

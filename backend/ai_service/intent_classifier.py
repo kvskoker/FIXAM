@@ -99,6 +99,22 @@ class IntentClassifier:
             "agreement": [
                 "ok", "okay", "agreed", "sure", "no problem", "yes", "alright",
                 "na so", "no wahala", "i good", "sharp", "correct"
+            ],
+            "track_status": [
+                "I want to track an issue",
+                "check status of FIX-123456",
+                "track my report",
+                "is my issue fixed?",
+                "is it resolved?",
+                "endorse a resolution",
+                "confirm if fixed",
+                "wetin happen pan me report?",
+                "how far with me issue?",
+                "den don fix am?",
+                "usai den reach with me report?",
+                "show mi status",
+                "track",
+                "endorse"
             ]
         }
         
