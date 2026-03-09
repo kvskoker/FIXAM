@@ -344,14 +344,15 @@ class FixamHandler {
                                  // Trigger trending logic directly
                                  const locations = await this.helpers.geocodeAddress(community + ", Sierra Leone");
                                  if (locations.length > 0) {
-                                     const loc = locations[0];
-                                     const trendingIssues = await this.fixamDb.getTrendingIssues(loc.latitude, loc.longitude, 1000, 5);
+                                      const loc = locations[0];
+                                      // Increased radius from 1km to 3km for better results in communities
+                                      const trendingIssues = await this.fixamDb.getTrendingIssues(loc.latitude, loc.longitude, 3000, 5);
                                     
-                                     if (trendingIssues.length === 0) {
-                                         await this.sendMessage(fromNumber, `No trending issues found in *${loc.display_name}*.`);
-                                         await this.sendMainMenu(fromNumber, user.name);
-                                     } else {
-                                         let msg = `🔥 *Trending in ${loc.name || loc.display_name}*\n\n`;
+                                         const isGlobal = trendingIssues[0]?.is_global;
+                                         let msg = isGlobal 
+                                            ? `🔥 *Global Trending in Sierra Leone*\n(Nothing found recently in ${loc.name || 'this area'})\n\n`
+                                            : `🔥 *Trending in ${loc.name || loc.display_name}*\n\n`;
+
                                          trendingIssues.forEach((issue, i) => {
                                             msg += `${i+1}. *${issue.title}*\n`;
                                             msg += `   📍 ${issue.address || 'Location N/A'}\n`;
@@ -364,7 +365,6 @@ class FixamHandler {
                                             data: { trending_issues: trendingIssues }
                                         });
                                         await this.sendMessage(fromNumber, msg);
-                                     }
                                  } else {
                                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_trending_community', data: {} });
                                     await this.sendMessage(fromNumber, `I couldn't find "${community}". Please enter the name of the community again (e.g. 'Lumley'), or type *9* to cancel.`);
@@ -751,34 +751,32 @@ class FixamHandler {
                     await this.sendMessage(fromNumber, "I couldn't find a community with that name. Please try again (e.g. 'Freetown', 'Bo'), or type *9* to cancel.");
                 } else {
                     // Use first match
+                    // Increased search radius from 1km to 5km to be more inclusive of community issues
                     const loc = locations[0];
-                    const trendingIssues = await this.fixamDb.getTrendingIssues(loc.latitude, loc.longitude, 1000, 5); // 1km radius, top 5
+                    const trendingIssues = await this.fixamDb.getTrendingIssues(loc.latitude, loc.longitude, 5000, 5);
 
-                    if (trendingIssues.length === 0) {
-                         await this.sendMessage(fromNumber, `No trending issues found in *${loc.display_name}* (1km radius).\n\nType *1* to Report an Issue instead, or *9* to return to menu.`);
-                         await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category' }); // Slightly hacky to move them to a state where 1 works or just send menu
-                         // Actually let's just send main menu to match standard flow if empty
-                         await this.sendMainMenu(fromNumber, user.name);
-                    } else {
-                         let msg = `🔥 *Trending in ${loc.name || loc.display_name}*\n\n`;
-                         trendingIssues.forEach((issue, i) => {
-                            msg += `${i+1}. *${issue.title}*\n`;
-                            msg += `   📍 ${issue.address || 'Location N/A'}\n`;
-                            msg += `   👍 ${issue.upvote_count} Upvotes\n\n`;
-                         });
+                    const isGlobal = trendingIssues[0]?.is_global;
+                    let msg = isGlobal 
+                        ? `🔥 *Global Trending in Sierra Leone*\n(Nothing found recently in ${loc.name || 'this area'})\n\n`
+                        : `🔥 *Trending in ${loc.name || loc.display_name}*\n\n`;
+
+                    trendingIssues.forEach((issue, i) => {
+                       msg += `${i+1}. *${issue.title}*\n`;
+                       msg += `   📍 ${issue.address || 'Location N/A'}\n`;
+                       msg += `   👍 ${issue.upvote_count} Upvotes\n\n`;
+                    });
                          msg += `Reply with the number (e.g. *1*) to view details and vote, type another community name to switch location, or *9* to cancel.`;
 
                          await this.fixamDb.updateConversationState(fromNumber, { 
                             current_step: 'awaiting_trending_selection',
                             data: { trending_issues: trendingIssues }
                         });
-                        await this.sendMessage(fromNumber, msg);
-                    }
+                    await this.sendMessage(fromNumber, msg);
                 }
-                break;
             }
+            break;
 
-            case 'awaiting_trending_selection':
+        case 'awaiting_trending_selection':
                 const tSelection = parseInt(input);
                 const tIssues = state.data.trending_issues;
                 

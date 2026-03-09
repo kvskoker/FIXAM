@@ -256,6 +256,29 @@ class FixamDatabase {
 
         try {
             const result = await this.db.query(sql, [lat, lng, radiusMeters, limit]);
+            
+            // If nothing found in local area, fallback to GLOBAL (Country-wide)
+            if (result.rows.length === 0) {
+                this.debugLog(`No local trending found for ${lat}, ${lng} at ${radiusMeters}m. Falling back to Global.`);
+                const globalSql = `
+                    SELECT i.*, 
+                           COALESCE(vote_counts.upvotes, 0) as upvote_count
+                    FROM issues i
+                    LEFT JOIN (
+                        SELECT issue_id, COUNT(*) as upvotes 
+                        FROM votes 
+                        WHERE vote_type = 'upvote' 
+                        GROUP BY issue_id
+                    ) vote_counts ON i.id = vote_counts.issue_id
+                    WHERE i.status NOT IN ('fixed', 'spam')
+                    AND i.duplicate_of IS NULL
+                    ORDER BY upvote_count DESC, i.created_at DESC
+                    LIMIT $1
+                `;
+                const globalResult = await this.db.query(globalSql, [limit]);
+                return globalResult.rows.map(row => ({ ...row, is_global: true }));
+            }
+
             return result.rows;
         } catch (error) {
             this.debugLog('Error fetching trending issues', { error: error.message, lat, lng });
