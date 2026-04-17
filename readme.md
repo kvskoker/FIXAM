@@ -1,8 +1,10 @@
 # FIXAM - Facilitating Issue eXchange for Accountable Municipalities
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 **Live Demo:** <a href="https://fixam.maxcit.com/" target="_blank">https://fixam.maxcit.com/</a>
 
-A comprehensive civic engagement ecosystem that empowers citizens to report municipal issues via WhatsApp and enables authorities to manage, analyze, and resolve them efficiently through advanced AI and automation.
+A comprehensive civic engagement ecosystem that empowers citizens to report municipal issues via WhatsApp and enables authorities to manage, analyze, and resolve them efficiently through advanced AI and automation. This project is proudly designed as a **Digital Public Good (DPG)**, adhering to open-source principles to ensure accessibility, transparency, and community-driven improvement.
 
 ## Project Structure
 
@@ -141,6 +143,13 @@ npx serve frontend
 - **AI/ML**: Python (FastAPI), Whisper (OpenAI), NudeNet, SentenceTransformers (Embeddings), Summa (TextRank)
 - **Integration**: WhatsApp Business API (Meta), OpenStreetMap Nominatim
 
+## Contributing & Community
+
+We welcome contributions to make FIXAM better as an open-source Digital Public Good! Please see our [Contributing Guidelines](CONTRIBUTING.md) to get started. 
+We expect all contributors to adhere to our [Code of Conduct](CODE_OF_CONDUCT.md). 
+For security concerns, please review our [Security Policy](SECURITY.md).
+
 ## License
 
-ISC
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Copyright (c) 2026 KVSK/MaxCIT.
