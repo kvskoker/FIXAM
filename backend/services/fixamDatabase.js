@@ -34,15 +34,125 @@ class FixamDatabase {
         }
     }
 
-    // Register user
+    // Register user — only called AFTER consent is confirmed
     async registerUser(phoneNumber, name) {
-        const sql = "INSERT INTO users (phone_number, name) VALUES ($1, $2) ON CONFLICT (phone_number) DO UPDATE SET name = COALESCE(EXCLUDED.name, users.name) RETURNING id";
+        const sql = "INSERT INTO users (phone_number, name, consent_given, consent_timestamp) VALUES ($1, $2, TRUE, CURRENT_TIMESTAMP) ON CONFLICT (phone_number) DO UPDATE SET name = COALESCE(EXCLUDED.name, users.name) RETURNING id";
         try {
             const result = await this.db.query(sql, [phoneNumber, name]);
             this.debugLog(`User registered/updated: ${phoneNumber}`, { name });
             return result.rows[0].id;
         } catch (error) {
             this.debugLog('Error registering user', { error: error.message, phoneNumber });
+            return null;
+        }
+    }
+
+    // ── DPG FIX: PENDING CONSENT ─────────────────────────────────────────────
+
+    // Store a new visitor who has not yet consented (do NOT add to users table yet)
+    async setPendingConsent(phoneNumber, name, firstMessage) {
+        const sql = "INSERT INTO pending_consent (phone_number, name, first_message) VALUES ($1, $2, $3) ON CONFLICT (phone_number) DO UPDATE SET name = $2, sent_at = CURRENT_TIMESTAMP";
+        try {
+            await this.db.query(sql, [phoneNumber, name, firstMessage]);
+            return true;
+        } catch (error) {
+            this.debugLog('Error setting pending consent', { error: error.message, phoneNumber });
+            return false;
+        }
+    }
+
+    // Check if a phone number is waiting for consent
+    async getPendingConsent(phoneNumber) {
+        const sql = "SELECT * FROM pending_consent WHERE phone_number = $1";
+        try {
+            const result = await this.db.query(sql, [phoneNumber]);
+            return result.rows.length > 0 ? result.rows[0] : null;
+        } catch (error) {
+            this.debugLog('Error getting pending consent', { error: error.message, phoneNumber });
+            return null;
+        }
+    }
+
+    // Remove from pending after consent given or user opted out
+    async clearPendingConsent(phoneNumber) {
+        const sql = "DELETE FROM pending_consent WHERE phone_number = $1";
+        try {
+            await this.db.query(sql, [phoneNumber]);
+            return true;
+        } catch (error) {
+            this.debugLog('Error clearing pending consent', { error: error.message, phoneNumber });
+            return false;
+        }
+    }
+
+    // ── DPG FIX: DATA DELETION (Right to Erasure) ────────────────────────────
+
+    // Delete a user and ALL their data. Triggered by "DELETE MY DATA" WhatsApp message.
+    async deleteUser(phoneNumber) {
+        const client = await this.db.connect();
+        try {
+            await client.query('BEGIN');
+
+            // Get user id first
+            const userResult = await client.query('SELECT id FROM users WHERE phone_number = $1', [phoneNumber]);
+            if (userResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return false;
+            }
+            const userId = userResult.rows[0].id;
+
+            // Delete in dependency order (child records first)
+            await client.query('DELETE FROM endorsements WHERE user_id = $1', [userId]);
+            await client.query('DELETE FROM votes WHERE user_id = $1', [userId]);
+            await client.query('DELETE FROM user_point_logs WHERE user_id = $1', [userId]);
+            await client.query('DELETE FROM user_roles WHERE user_id = $1', [userId]);
+            await client.query('DELETE FROM user_groups WHERE user_id = $1', [userId]);
+            await client.query('DELETE FROM feedback WHERE user_id = $1', [userId]);
+            await client.query('DELETE FROM conversation_state WHERE phone_number = $1', [phoneNumber]);
+            await client.query('DELETE FROM message_logs WHERE phone_number = $1', [phoneNumber]);
+            await client.query('DELETE FROM pending_consent WHERE phone_number = $1', [phoneNumber]);
+
+            // Anonymize issues instead of deleting (preserve civic data, remove PII linkage)
+            await client.query('UPDATE issues SET reported_by = NULL WHERE reported_by = $1', [userId]);
+
+            // Delete user
+            await client.query('DELETE FROM users WHERE id = $1', [userId]);
+
+            await client.query('COMMIT');
+            this.debugLog(`User deleted: ${phoneNumber}`);
+            return true;
+        } catch (error) {
+            await client.query('ROLLBACK');
+            this.debugLog('Error deleting user', { error: error.message, phoneNumber });
+            return false;
+        } finally {
+            client.release();
+        }
+    }
+
+    // ── DPG FIX: DATA EXPORT (Data Portability) ──────────────────────────────
+
+    // Return all personal data held about a user as a JSON object.
+    async getUserData(phoneNumber) {
+        try {
+            const [userResult, issuesResult, votesResult, pointsResult, logsResult] = await Promise.all([
+                this.db.query('SELECT id, phone_number, name, consent_given, consent_timestamp, points, created_at FROM users WHERE phone_number = $1', [phoneNumber]),
+                this.db.query('SELECT ticket_id, title, category, description, status, urgency, address, created_at FROM issues WHERE reported_by = (SELECT id FROM users WHERE phone_number = $1)', [phoneNumber]),
+                this.db.query('SELECT i.ticket_id, v.vote_type, v.created_at FROM votes v JOIN issues i ON v.issue_id = i.id WHERE v.user_id = (SELECT id FROM users WHERE phone_number = $1)', [phoneNumber]),
+                this.db.query('SELECT amount, action_type, created_at FROM user_point_logs WHERE user_id = (SELECT id FROM users WHERE phone_number = $1)', [phoneNumber]),
+                this.db.query('SELECT direction, message_type, message_body, created_at FROM message_logs WHERE phone_number = $1 ORDER BY created_at DESC LIMIT 100', [phoneNumber]),
+            ]);
+
+            return {
+                profile: userResult.rows[0] || null,
+                issues_reported: issuesResult.rows,
+                votes_cast: votesResult.rows,
+                points_history: pointsResult.rows,
+                recent_messages: logsResult.rows,
+                exported_at: new Date().toISOString(),
+            };
+        } catch (error) {
+            this.debugLog('Error exporting user data', { error: error.message, phoneNumber });
             return null;
         }
     }
@@ -99,10 +209,6 @@ class FixamDatabase {
             values.push(updates.current_step);
         }
         if (updates.data !== undefined) {
-            // Merge existing data with new data if possible, or just overwrite
-            // For simplicity, we'll fetch existing, merge, and update, or just update if we trust the caller
-            // But here we'll assume the caller passes the full data object or we use jsonb_set for partial updates
-            // Let's just overwrite for now as it's easier to manage in the handler
             fields.push(`data = $${paramCount++}`);
             values.push(updates.data);
         }
@@ -162,11 +268,7 @@ class FixamDatabase {
             const result = await this.db.query(sql, values);
             const issue = result.rows[0];
             
-            // Gamification: Award 10 points for reporting
             if (issue.reported_by) {
-                // Don't await strictly to avoid blocking response? 
-                // Better to await to ensure consistency or handle error quietly. 
-                // But since we have a try-catch block, awaiting is fine.
                 await this.addPoints(issue.reported_by, 10, 'report_created', issue.id);
             }
             return issue;
@@ -209,7 +311,6 @@ class FixamDatabase {
 
     // Find potential duplicates within radius (in meters) and timeframe (days)
     async findPotentialDuplicates(lat, lng, radiusMeters, category = null, days = 30) {
-        // Haversine formula in SQL
         let sql = `
             SELECT i.*, 
                    (6371000 * acos(cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2)) + sin(radians($1)) * sin(radians(lat)))) AS distance
@@ -241,8 +342,6 @@ class FixamDatabase {
 
     // Get Trending Issues within radius
     async getTrendingIssues(lat, lng, radiusMeters = 5000, limit = 5) {
-        // Find issues within radius, sort by upvotes (desc) then distance (asc)
-        // We look effectively for "popular nearby issues"
         const sql = `
             SELECT i.*, 
                    (6371000 * acos(cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2)) + sin(radians($1)) * sin(radians(lat)))) AS distance,
@@ -264,7 +363,6 @@ class FixamDatabase {
         try {
             const result = await this.db.query(sql, [lat, lng, radiusMeters, limit]);
             
-            // If nothing found in local area, fallback to GLOBAL (Country-wide)
             if (result.rows.length === 0) {
                 this.debugLog(`No local trending found for ${lat}, ${lng} at ${radiusMeters}m. Falling back to Global.`);
                 const globalSql = `
@@ -316,16 +414,11 @@ class FixamDatabase {
         try {
             await this.db.query(sql, [issueId, userId, voteType]);
             
-            // Gamification: Award 1 point to the reporter if it's an upvote
-            // Gamification: Point Logic
             const issue = await this.getIssueById(issueId);
             if (issue && issue.reported_by && issue.reported_by !== userId) {
                 if (voteType === 'upvote') {
-                    // +1 Point for community validation
                     await this.addPoints(issue.reported_by, 1, 'issue_upvoted', issueId);
                 } else if (voteType === 'downvote') {
-                    // -2 Points for reporting spam/fake issues
-                    // We penalize more heavily than we reward for votes to discourage point farming
                     await this.addPoints(issue.reported_by, -2, 'issue_downvoted', issueId);
                 }
             }
@@ -380,6 +473,7 @@ class FixamDatabase {
             return null;
         }
     }
+
     // Get groups for a category
     async getGroupsForCategory(categoryName) {
         const sql = `
@@ -415,6 +509,7 @@ class FixamDatabase {
             return [];
         }
     }
+
     // Add Points to User
     async addPoints(userId, amount, actionType, relatedIssueId = null) {
         if (!userId) return false;
@@ -422,16 +517,11 @@ class FixamDatabase {
         const client = await this.db.connect();
         try {
             await client.query('BEGIN');
-            
-            // Update user points (Ensure floor of 0)
             await client.query('UPDATE users SET points = GREATEST(0, points + $1) WHERE id = $2', [amount, userId]);
-            
-            // Log transaction
             await client.query(
                 'INSERT INTO user_point_logs (user_id, amount, action_type, related_issue_id) VALUES ($1, $2, $3, $4)', 
                 [userId, amount, actionType, relatedIssueId]
             );
-            
             await client.query('COMMIT');
             this.debugLog(`Added ${amount} points to user ${userId} for ${actionType}`);
             return true;
@@ -474,7 +564,6 @@ class FixamDatabase {
 
     // Get All Feedback
     async getFeedback() {
-        // user_id is integer in DB but we want name/phone. Join users.
         const sql = `
             SELECT f.*, u.name as user_name, u.phone_number
             FROM feedback f
@@ -507,9 +596,6 @@ class FixamDatabase {
         const sql = "INSERT INTO endorsements (issue_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING id";
         try {
             const result = await this.db.query(sql, [issueId, userId]);
-            
-            // award points for endorsing (confirming) a resolution? 
-            // maybe +5 points for participating in verification
             if (result.rows.length > 0) {
                 await this.addPoints(userId, 5, 'issue_endorsed', issueId);
             }
