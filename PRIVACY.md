@@ -12,8 +12,8 @@ Fixam is a civic technology platform built for Sierra Leone. It enables citizens
 **Data Controller:**
 Fixam
 Freetown, Sierra Leone
-📧 privacy@fixam.app
-🌐 https://fixam.app
+📧 privacy@fixam.sl
+🌐 https://fixam.sl
 
 ---
 
@@ -109,7 +109,7 @@ You have the right to:
 | Update your name | `UPDATE NAME [your new name]` |
 | Contact support | `HELP` |
 
-You can also email **privacy@fixam.app** and we will respond within 14 days.
+You can also email **privacy@fixam.sl** and we will respond within 14 days.
 
 ---
 
@@ -129,7 +129,7 @@ To report a security vulnerability, see our [Security Policy](./SECURITY.md).
 
 ## 10. Children's Privacy
 
-Fixam is not directed at children under 13. If you believe a child has registered, please contact us at privacy@fixam.app.
+Fixam is not directed at children under 13. If you believe a child has registered, please contact us at privacy@fixam.sl.
 
 ---
 
@@ -141,8 +141,8 @@ When we update this policy, we will update the effective date above and notify a
 
 ## 12. Contact
 
-📧 privacy@fixam.app
-🌐 https://fixam.app
+📧 privacy@fixam.sl
+🌐 https://fixam.sl
 📍 Freetown, Sierra Leone
 
 ---

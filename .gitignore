@@ -30,3 +30,4 @@ Thumbs.db
 # Ignore build outputs
 dist/
 build/
+coverage/

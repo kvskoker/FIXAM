@@ -27,7 +27,7 @@ app.use((req, res, next) => {
 
 // ── DPG FIX: Restricted CORS (was open wildcard) ─────────────────────────────
 // List your allowed origins in the ALLOWED_ORIGINS env variable (comma-separated)
-// e.g. ALLOWED_ORIGINS=https://fixam.app,https://www.fixam.app
+// e.g. ALLOWED_ORIGINS=https://fixam.sl,https://www.fixam.sl
 const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
     : ['http://localhost:3000', 'http://localhost:5000']; // dev fallback only

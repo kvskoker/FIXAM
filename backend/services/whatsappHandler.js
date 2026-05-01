@@ -106,15 +106,57 @@ class FixamHandler {
         // Check if user exists
         let user = await this.fixamDb.getUser(fromNumber);
 
-        // Global Reset
-        if (lowerInput === 'reset' || lowerInput === 'cancel' || input === '9') {
-            await this.fixamDb.resetConversationState(fromNumber);
-            if (user) {
-                await this.sendMainMenu(fromNumber, user.name);
-            } else {
-                await this.sendMessage(fromNumber, "Conversation reset. Type 'Hi' to start again.");
+        // ── DPG: Global data commands (available to all users) ───────────────────
+        if (lowerInput === 'my data' || lowerInput === 'mydata') {
+            if (!user) {
+                await this.sendMessage(fromNumber, "You are not registered yet. Please complete registration first.");
+                return;
             }
+            const data = await this.fixamDb.getUserData(fromNumber);
+            if (!data || !data.profile) {
+                await this.sendMessage(fromNumber, "Unable to retrieve your data at this time. Please try again later.");
+                return;
+            }
+            const summary = `📊 *Your Data Summary*\n\n` +
+                `👤 *Name:* ${data.profile.name || 'N/A'}\n` +
+                `📱 *Phone:* ${data.profile.phone_number}\n` +
+                `⭐ *Points:* ${data.profile.points || 0}\n` +
+                `📝 *Issues Reported:* ${data.issues_reported.length}\n` +
+                `🗳️ *Votes Cast:* ${data.votes_cast.length}\n` +
+                `🕒 *Exported:* ${new Date(data.exported_at).toLocaleString()}\n\n` +
+                `To download your full data, visit the website or reply *DELETE MY DATA* to erase your account permanently.`;
+            await this.sendMessage(fromNumber, summary);
             return;
+        }
+
+        if (lowerInput === 'delete my data' || lowerInput === 'deletemydata') {
+            if (!user) {
+                await this.sendMessage(fromNumber, "You are not registered. No data to delete.");
+                return;
+            }
+            // Ask for explicit confirmation
+            await this.fixamDb.updateConversationState(fromNumber, {
+                current_step: 'awaiting_delete_confirmation',
+                data: {}
+            });
+            await this.sendMessage(fromNumber, "⚠️ *Delete Account Confirmation*\n\nYou are about to permanently delete your account and ALL associated data. This action cannot be undone.\n\nType *YES* to confirm deletion\nType *9* to cancel.");
+            return;
+        }
+
+        // Global Reset (skip if confirming deletion — let switch handle it)
+        if (lowerInput === 'reset' || lowerInput === 'cancel' || input === '9') {
+            const currentState = await this.fixamDb.getConversationState(fromNumber);
+            if (currentState && currentState.current_step === 'awaiting_delete_confirmation') {
+                // Let the switch case handle cancellation of deletion
+            } else {
+                await this.fixamDb.resetConversationState(fromNumber);
+                if (user) {
+                    await this.sendMainMenu(fromNumber, user.name);
+                } else {
+                    await this.sendMessage(fromNumber, "Conversation reset. Type 'Hi' to start again.");
+                }
+                return;
+            }
         }
 
         // 1. User Registration
@@ -125,13 +167,18 @@ class FixamHandler {
              const issue = await this.fixamDb.getIssueByTicketId(ticketId);
              if (issue) {
                  if (!user) {
-                     // New user: Start registration but save intent
-                     await this.fixamDb.initializeConversationState(fromNumber);
-                     await this.fixamDb.updateConversationState(fromNumber, { 
-                        current_step: 'awaiting_name',
-                        data: { pending_vote_ticket: ticketId }
-                     });
-                     await this.sendMessage(fromNumber, `Welcome to Fixam! 👋\n\nTo vote on *${issue.title}*, please first tell us your name.`);
+                     // New user — route through consent; store intent for after consent
+                     const pendingConsent = await this.fixamDb.getPendingConsent(fromNumber);
+                     if (!pendingConsent) {
+                         await this.fixamDb.setPendingConsent(fromNumber, null, input);
+                         await this.fixamDb.initializeConversationState(fromNumber);
+                         await this.fixamDb.updateConversationState(fromNumber, {
+                             current_step: 'awaiting_consent',
+                             data: { pending_vote_ticket: ticketId }
+                         });
+                         await this.sendMessage(fromNumber, `Welcome to Fixam! 🏗️\n\nFixam helps citizens report and track infrastructure issues in Sierra Leone. We collect your phone number, name, location, and photos to process your reports.\n\n📄 Read our privacy policy: https://fixam.sl/privacy\n\nReply *YES* to agree and continue, or *NO* to decline.`);
+                     }
+                     // If consent already pending, the general consent flow below handles it
                      return;
                  } else {
                      // Registered user: Proceed to vote
@@ -147,25 +194,24 @@ class FixamHandler {
         }
 
         if (!user) {
-            // Check if we are already asking for name
+            // ── DPG: Consent-based registration flow ────────────────────────
             let state = await this.fixamDb.getConversationState(fromNumber);
-            
+            const pendingConsent = await this.fixamDb.getPendingConsent(fromNumber);
+
+            // Already consented — proceed to name registration
             if (state && state.current_step === 'awaiting_name') {
-                // Register user
                 const name = this.extractName(input);
                 if (name.length < 2) {
                     await this.sendMessage(fromNumber, "Please enter a valid name.");
                     return;
                 }
                 await this.fixamDb.registerUser(fromNumber, name);
-                
-                // Check if they had a pending vote
+
                 const pendingTicket = state.data && state.data.pending_vote_ticket;
                 if (pendingTicket) {
                     const issue = await this.fixamDb.getIssueByTicketId(pendingTicket);
                     if (issue) {
-                        const newUser = await this.fixamDb.getUser(fromNumber); // Re-fetch to get ID
-                        await this.fixamDb.updateConversationState(fromNumber, { 
+                        await this.fixamDb.updateConversationState(fromNumber, {
                             current_step: 'awaiting_vote_confirmation',
                             data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
                         });
@@ -174,34 +220,35 @@ class FixamHandler {
                     }
                 }
 
-                // Normal flow
                 await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
                 await this.sendMainMenu(fromNumber, name);
-            } else {
-                // Check if user provided name in this message via AI
-                try {
-                    const analysis = await analyzeIntent(input);
-                    if (analysis && analysis.intent === 'registration' && analysis.entities && analysis.entities.name) {
-                        const name = this.extractName(analysis.entities.name);
-                        if (name.length >= 2) {
-                             await this.fixamDb.registerUser(fromNumber, name);
-                             await this.fixamDb.initializeConversationState(fromNumber);
-                             await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
-                             
-                             await this.sendMessage(fromNumber, `Welcome to Fixam, ${name}! 👋`);
-                             await this.sendMainMenu(fromNumber, name);
-                             return;
-                        }
-                    }
-                } catch (e) {
-                    logger.logError('ai_debug', 'Registration Intent analysis failed', e);
-                }
-
-                // Start registration
-                await this.fixamDb.initializeConversationState(fromNumber);
-                await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_name' });
-                await this.sendMessage(fromNumber, "Welcome to Fixam! 👋\n\nIt looks like you're new here. What is your name?");
+                return;
             }
+
+            // No pending consent yet — first contact, request consent
+            if (!pendingConsent) {
+                await this.fixamDb.setPendingConsent(fromNumber, null, input);
+                await this.fixamDb.initializeConversationState(fromNumber);
+                await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_consent' });
+                await this.sendMessage(fromNumber, `Welcome to Fixam! 🏗️\n\nFixam helps citizens report and track infrastructure issues in Sierra Leone. We collect your phone number, name, location, and photos to process your reports.\n\n📄 Read our privacy policy: https://fixam.sl/privacy\n\nReply *YES* to agree and continue, or *NO* to decline.`);
+                return;
+            }
+
+            // Pending consent exists — process response
+            if (lowerInput === 'yes') {
+                await this.fixamDb.clearPendingConsent(fromNumber);
+                await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_name' });
+                await this.sendMessage(fromNumber, "Thank you for agreeing! 🙏\n\nWhat is your name?");
+                return;
+            } else if (lowerInput === 'no') {
+                await this.fixamDb.clearPendingConsent(fromNumber);
+                await this.fixamDb.resetConversationState(fromNumber);
+                await this.sendMessage(fromNumber, "We understand. Your data has not been stored. You can change your mind anytime — just say \"Hi\" to start over. 👋");
+                return;
+            }
+
+            // Still waiting for consent decision
+            await this.sendMessage(fromNumber, "Please reply *YES* to agree to our privacy policy and continue, or *NO* to decline.");
             return;
         }
 
@@ -234,10 +281,10 @@ class FixamHandler {
         }
 
         if (acknowledgement.includes(lowerInput)) {
-            // Exception: If we are in location confirmation, 'yes' implies we want to proceed, not reset.
+            // Exception: If we are in location confirmation or delete confirmation, 'yes' implies we want to proceed.
             // We pass it through to the state machine handler.
-            if (state.current_step === 'awaiting_report_location' && (lowerInput === 'yes')) {
-                logger.log('webhook', 'Passing "yes" to awaiting_report_location handler');
+            if ((state.current_step === 'awaiting_report_location' || state.current_step === 'awaiting_delete_confirmation') && (lowerInput === 'yes')) {
+                logger.log('webhook', `Passing "yes" to ${state.current_step} handler`);
             } else {
                 await this.sendMessage(fromNumber, "Great! Let me know if you need anything else.");
                 await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
@@ -313,11 +360,10 @@ class FixamHandler {
                             return;
 
                         } else if (analysis.intent === 'vote_issue') {
-                             console.log("DEBUG_HANDLER: Vote intent detected. Analysis:", JSON.stringify(analysis));
+                             logger.log('ai_debug', `Vote intent detected. Ticket: ${analysis.entities?.ticket_id}, VoteType: ${analysis.entities?.vote_type}`);
                              const entities = analysis.entities || {};
                              const ticketId = entities.ticket_id ? entities.ticket_id.toUpperCase() : null;
                              const voteType = entities.vote_type ? entities.vote_type.toLowerCase() : null;
-                             console.log(`DEBUG_HANDLER: Extracted Ticket: ${ticketId}, VoteType: ${voteType}`);
 
                              if (ticketId) {
                                  // Verify ticket
@@ -496,13 +542,31 @@ class FixamHandler {
                                     `*5. Points*: Earn points for being an active citizen!\n` +
                                     `*6. Feedback*: Share your thoughts with us.\n\n` +
                                     `*Useful Commands:*\n` +
+                                    `- Type *MY DATA* to see your data summary.\n` +
+                                    `- Type *DELETE MY DATA* to erase your account.\n` +
                                     `- Type *9* to Cancel any action.\n` +
                                     `- Type *Reset* to start over.\n\n` +
                                     `For more support, contact: fixam@maxcit.com`;
                     await this.sendMessage(fromNumber, helpMsg);
                     await this.sendMainMenu(fromNumber, user.name);
+                } else if (input === '8' || lowerInput.includes('my data') || lowerInput.includes('mydata')) {
+                    const data = await this.fixamDb.getUserData(fromNumber);
+                    if (!data || !data.profile) {
+                        await this.sendMessage(fromNumber, "Unable to retrieve your data at this time. Please try again later.");
+                    } else {
+                        const summary = `📊 *Your Data Summary*\n\n` +
+                            `👤 *Name:* ${data.profile.name || 'N/A'}\n` +
+                            `📱 *Phone:* ${data.profile.phone_number}\n` +
+                            `⭐ *Points:* ${data.profile.points || 0}\n` +
+                            `📝 *Issues Reported:* ${data.issues_reported.length}\n` +
+                            `🗳️ *Votes Cast:* ${data.votes_cast.length}\n` +
+                            `🕒 *Exported:* ${new Date(data.exported_at).toLocaleString()}\n\n` +
+                            `To download your full data, visit the website or reply *DELETE MY DATA* to erase your account permanently.`;
+                        await this.sendMessage(fromNumber, summary);
+                    }
+                    await this.sendMainMenu(fromNumber, user.name);
                 } else {
-                    await this.sendMessage(fromNumber, "I'm not sure what you mean. Please select an option from the menu (1-7) or try describing what you want to do.");
+                    await this.sendMessage(fromNumber, "I'm not sure what you mean. Please select an option from the menu (1-8) or try describing what you want to do.");
                     await this.sendMainMenu(fromNumber, user.name);
                 }
                 break;
@@ -512,6 +576,23 @@ class FixamHandler {
                 await this.fixamDb.createFeedback(user.id, 'text', input);
                 await this.sendMessage(fromNumber, "Thank you for your feedback! 🙏\n\nWe appreciate you helping us improve Fixam.");
                 await this.sendMainMenu(fromNumber, user.name);
+                break;
+
+            // ── DPG: Delete confirmation ──────────────────────────────────
+            case 'awaiting_delete_confirmation':
+                if (lowerInput === 'yes') {
+                    const deleted = await this.fixamDb.deleteUser(fromNumber);
+                    if (deleted) {
+                        await this.fixamDb.resetConversationState(fromNumber);
+                        await this.sendMessage(fromNumber, "✅ Your account and all associated data have been permanently deleted.\n\nThank you for using Fixam. If you ever want to return, just say \"Hi\". 👋");
+                    } else {
+                        await this.sendMessage(fromNumber, "❌ Sorry, we couldn't delete your account. Please try again later or contact privacy@fixam.sl.");
+                    }
+                } else {
+                    await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category' });
+                    await this.sendMessage(fromNumber, "Account deletion cancelled. Your data is safe. ✅");
+                    await this.sendMainMenu(fromNumber, user.name);
+                }
                 break;
 
             case 'awaiting_report_evidence':
@@ -1207,7 +1288,7 @@ class FixamHandler {
     }
 
     async sendMainMenu(fromNumber, name) {
-    await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today? (Reply with a number [1-7] or text keywords!)\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *Track/Endorse Issue* 🔍\n4️⃣ *Trending Issues* 🔥\n5️⃣ *My Points* 🏆\n6️⃣ *Feedback* 💬\n7️⃣ *Help & Info* ℹ️`);
+    await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today? (Reply with a number [1-8] or text keywords!)\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *Track/Endorse Issue* 🔍\n4️⃣ *Trending Issues* 🔥\n5️⃣ *My Points* 🏆\n6️⃣ *Feedback* 💬\n7️⃣ *Help & Info* ℹ️\n8️⃣ *My Data* 📊\n\nType *DELETE MY DATA* to erase your account permanently.`);
     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category' });
     }
 

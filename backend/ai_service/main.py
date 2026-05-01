@@ -1,3 +1,4 @@
+import logging
 import torch
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline, AutoTokenizer, AutoModelForCausalLM
 from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -17,6 +18,9 @@ import subprocess
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from intent_classifier import IntentClassifier
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("ai_service")
 
 
 # Load environment variables from backend/.env
@@ -371,11 +375,11 @@ def analyze_intent(request: AnalyzeIntentRequest):
 
     try:
         user_text = request.text.strip()
-        print(f"DEBUG: Analyzing intent for text: {user_text}")
+        logger.info("Analyzing intent for text: %s", user_text)
         
         # 1. Use Embedding Model to find best matching intent
         intent, score = intent_classifier.predict(user_text)
-        print(f"DEBUG: Embedding Prediction: Intent='{intent}', Score={score:.4f}")
+        logger.info("Embedding Prediction: Intent='%s', Score=%.4f", intent, score)
         
         result = {
             "intent": intent, 
@@ -388,7 +392,7 @@ def analyze_intent(request: AnalyzeIntentRequest):
         ticket_match = re.search(ticket_pattern, user_text.upper())
         if ticket_match:
             ticket_id = f"FIX-{ticket_match.group(1)}"
-            print(f"DEBUG: Found Ticket ID: {ticket_id}")
+            logger.info("Found Ticket ID: %s", ticket_id)
             result["entities"]["ticket_id"] = ticket_id
             
             # Contextual Intent Override
@@ -413,11 +417,11 @@ def analyze_intent(request: AnalyzeIntentRequest):
         if loc_match:
             result["entities"]["location"] = loc_match.group(1).strip()
             
-        print(f"DEBUG: Final Result: {result}")
+        logger.info("Final Result: %s", result)
         return result
 
     except Exception as e:
-        print(f"DEBUG: Exception in analyze_intent: {e}")
+        logger.error("Exception in analyze_intent: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
