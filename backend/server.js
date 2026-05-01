@@ -26,24 +26,33 @@ app.use((req, res, next) => {
 });
 
 // ── DPG FIX: Restricted CORS (was open wildcard) ─────────────────────────────
-// List your allowed origins in the ALLOWED_ORIGINS env variable (comma-separated)
-// e.g. ALLOWED_ORIGINS=https://fixam.sl,https://www.fixam.sl
+// Set ALLOWED_ORIGINS env variable to a comma-separated list of allowed origins.
+// Falls back to localhost + the demo deployment if not configured.
+// Example: ALLOWED_ORIGINS=https://fixam.sl,https://www.fixam.sl,https://fixam.maxcit.com
 const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-    : ['http://localhost:3000', 'http://localhost:5000']; // dev fallback only
+    : [
+        'http://localhost:3000',
+        'http://localhost:5000',
+        'http://localhost:4000',
+        'https://fixam.maxcit.com',   // demo deployment
+        'http://fixam.maxcit.com',    // demo (non-https fallback)
+      ];
 
 app.use(cors({
     origin: function (origin, callback) {
-        // Allow requests with no origin (WhatsApp webhooks, server-to-server, curl)
+        // Allow requests with no origin (WhatsApp webhooks, server-to-server, curl, Postman)
         if (!origin) return callback(null, true);
         if (allowedOrigins.includes(origin)) {
             return callback(null, true);
         }
-        return callback(new Error(`CORS policy: origin ${origin} not allowed`));
+        // Log the rejection for debugging, then reject
+        console.warn(`CORS blocked origin: ${origin}. Add it to ALLOWED_ORIGINS env variable.`);
+        return callback(new Error(`CORS policy: origin ${origin} not allowed. Contact the administrator to add this origin.`));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Access'],
 }));
 
 app.use(bodyParser.json());
