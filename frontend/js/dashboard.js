@@ -42,13 +42,8 @@ function setupDateRestrictions() {
         }
     });
 
-    // Set defaults: last 6 months
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(today.getMonth() - 6);
-    
-    startPicker.setDate(sixMonthsAgo);
-    endPicker.setDate(today);
-    endPicker.set('minDate', sixMonthsAgo.toISOString().split('T')[0]);
+    // No default date range — show ALL data unless user explicitly filters.
+    // This avoids timezone mismatches hiding newly-reported issues.
 
     // Store pickers on elements for easy access if needed
     startDateInput._flatpickr = startPicker;

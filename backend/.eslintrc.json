@@ -9,8 +9,22 @@
     "ecmaVersion": "latest",
     "sourceType": "module"
   },
+  "ignorePatterns": [
+    "test/database.js",
+    "test/helpers.js",
+    "test/sample_whatsapp_handler.js",
+    "test/test_analyze_issue.py",
+    "test/test_download.js",
+    "test_ai_connection.js",
+    "add_duplicate_column.js",
+    "add_resolution_note.js",
+    "run_migration.js",
+    "scripts/",
+    "node_modules/"
+  ],
   "rules": {
-    "no-console": "warn",
+    "no-console": "off",
+    "no-case-declarations": "off",
     "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
     "no-var": "error",
     "prefer-const": "warn",

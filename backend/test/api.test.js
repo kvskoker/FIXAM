@@ -2,7 +2,6 @@
 // Tests for data export, data deletion, and configuration endpoints
 
 const request = require('supertest');
-const express = require('express');
 
 // We mock dependencies before requiring the router
 jest.mock('../db', () => ({

@@ -120,18 +120,16 @@ if (startDateInput && endDateInput) {
     startDateInput.max = todayStr;
     endDateInput.max = todayStr;
     
-    // Set defaults
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(today.getMonth() - 6);
-    
-    startDateInput.value = sixMonthsAgo.toISOString().split('T')[0];
-    endDateInput.value = todayStr;
+    // No default values — show ALL issues unless user explicitly filters
+    // This avoids timezone mismatches hiding newly-reported issues.
     
     // Ensure end date cannot be before start date
     startDateInput.addEventListener('change', () => {
         endDateInput.min = startDateInput.value;
     });
-    endDateInput.min = startDateInput.value;
+    endDateInput.addEventListener('change', () => {
+        startDateInput.max = endDateInput.value;
+    });
 }
 
 // Debounce helper
