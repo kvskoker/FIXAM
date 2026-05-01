@@ -124,7 +124,7 @@ class FixamHandler {
                 `📝 *Issues Reported:* ${data.issues_reported.length}\n` +
                 `🗳️ *Votes Cast:* ${data.votes_cast.length}\n` +
                 `🕒 *Exported:* ${new Date(data.exported_at).toLocaleString()}\n\n` +
-                `To download your full data, visit the website or reply *DELETE MY DATA* to erase your account permanently.`;
+                `Type *Hi* to return to the main menu, or *DELETE MY DATA* to erase your account permanently.`;
             await this.sendMessage(fromNumber, summary);
             return;
         }
@@ -176,7 +176,7 @@ class FixamHandler {
                              current_step: 'awaiting_consent',
                              data: { pending_vote_ticket: ticketId }
                          });
-                         await this.sendMessage(fromNumber, `Welcome to Fixam! 🏗️\n\nFixam helps citizens report and track infrastructure issues in Sierra Leone. We collect your phone number, name, location, and photos to process your reports.\n\n📄 Read our privacy policy: https://fixam.sl/privacy\n\nReply *YES* to agree and continue, or *NO* to decline.`);
+                         await this.sendMessage(fromNumber, this.getConsentMessage());
                      }
                      // If consent already pending, the general consent flow below handles it
                      return;
@@ -230,7 +230,7 @@ class FixamHandler {
                 await this.fixamDb.setPendingConsent(fromNumber, null, input);
                 await this.fixamDb.initializeConversationState(fromNumber);
                 await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_consent' });
-                await this.sendMessage(fromNumber, `Welcome to Fixam! 🏗️\n\nFixam helps citizens report and track infrastructure issues in Sierra Leone. We collect your phone number, name, location, and photos to process your reports.\n\n📄 Read our privacy policy: https://fixam.sl/privacy\n\nReply *YES* to agree and continue, or *NO* to decline.`);
+                await this.sendMessage(fromNumber, this.getConsentMessage());
                 return;
             }
 
@@ -485,7 +485,7 @@ class FixamHandler {
                                             `*Useful Commands:*\n` +
                                             `- Type *9* to Cancel any action.\n` +
                                             `- Type *Reset* to start over.\n\n` +
-                                            `For more support, contact: fixam@maxcit.com`;
+                                            `For more support, contact: ${process.env.FIXAM_CONTACT_EMAIL || 'fixam@maxcit.com'}`;
                             await this.sendMessage(fromNumber, helpMsg);
                             await this.sendMainMenu(fromNumber, user.name);
                             return;
@@ -546,7 +546,7 @@ class FixamHandler {
                                     `- Type *DELETE MY DATA* to erase your account.\n` +
                                     `- Type *9* to Cancel any action.\n` +
                                     `- Type *Reset* to start over.\n\n` +
-                                    `For more support, contact: fixam@maxcit.com`;
+                                    `For more support, contact: ${process.env.FIXAM_CONTACT_EMAIL || 'fixam@maxcit.com'}`;
                     await this.sendMessage(fromNumber, helpMsg);
                     await this.sendMainMenu(fromNumber, user.name);
                 } else if (input === '8' || lowerInput.includes('my data') || lowerInput.includes('mydata')) {
@@ -561,10 +561,9 @@ class FixamHandler {
                             `📝 *Issues Reported:* ${data.issues_reported.length}\n` +
                             `🗳️ *Votes Cast:* ${data.votes_cast.length}\n` +
                             `🕒 *Exported:* ${new Date(data.exported_at).toLocaleString()}\n\n` +
-                            `To download your full data, visit the website or reply *DELETE MY DATA* to erase your account permanently.`;
+                            `Type *Hi* to return to the main menu, or *DELETE MY DATA* to erase your account permanently.`;
                         await this.sendMessage(fromNumber, summary);
                     }
-                    await this.sendMainMenu(fromNumber, user.name);
                 } else {
                     await this.sendMessage(fromNumber, "I'm not sure what you mean. Please select an option from the menu (1-8) or try describing what you want to do.");
                     await this.sendMainMenu(fromNumber, user.name);
@@ -586,7 +585,7 @@ class FixamHandler {
                         await this.fixamDb.resetConversationState(fromNumber);
                         await this.sendMessage(fromNumber, "✅ Your account and all associated data have been permanently deleted.\n\nThank you for using Fixam. If you ever want to return, just say \"Hi\". 👋");
                     } else {
-                        await this.sendMessage(fromNumber, "❌ Sorry, we couldn't delete your account. Please try again later or contact privacy@fixam.sl.");
+                        await this.sendMessage(fromNumber, "❌ Sorry, we couldn't delete your account. Please try again later or contact " + (process.env.FIXAM_CONTACT_EMAIL || 'privacy@fixam.sl') + ".");
                     }
                 } else {
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category' });
@@ -1288,8 +1287,21 @@ class FixamHandler {
     }
 
     async sendMainMenu(fromNumber, name) {
-    await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today? (Reply with a number [1-8] or text keywords!)\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *Track/Endorse Issue* 🔍\n4️⃣ *Trending Issues* 🔥\n5️⃣ *My Points* 🏆\n6️⃣ *Feedback* 💬\n7️⃣ *Help & Info* ℹ️\n8️⃣ *My Data* 📊\n\nType *DELETE MY DATA* to erase your account permanently.`);
+    await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today? (Reply with a number [1-8] or text keywords!)\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *Track/Endorse Issue* 🔍\n4️⃣ *Trending Issues* 🔥\n5️⃣ *My Points* 🏆\n6️⃣ *Feedback* 💬\n7️⃣ *Help & Info* ℹ️\n8️⃣ *My Data* 📊`);
     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category' });
+    }
+
+    // ── DPG: Build privacy URL from env, falling back to the configured base URL ──
+    getPrivacyUrl() {
+        const base = process.env.FIXAM_BASE_URL || 'https://fixam.maxcit.com';
+        return `${base}/privacy`;
+    }
+
+    // ── DPG: Build instance-aware consent message ──────────────────────────────
+    getConsentMessage() {
+        const country = process.env.FIXAM_COUNTRY || 'Sierra Leone';
+        const privacyUrl = this.getPrivacyUrl();
+        return `Welcome to Fixam! 🏗️\n\nFixam helps citizens report and track infrastructure issues in ${country}. We collect your phone number, name, location, and photos to process your reports.\n\n📄 Read our privacy policy: ${privacyUrl}\n\nReply *YES* to agree and continue, or *NO* to decline.`;
     }
 
     async sendReportSummary(fromNumber, data) {

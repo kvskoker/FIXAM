@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS users (
     last_login TIMESTAMP,
     is_disabled BOOLEAN DEFAULT FALSE,
     points INTEGER DEFAULT 0,
+    consent_given BOOLEAN DEFAULT FALSE,
+    consent_timestamp TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -27,8 +29,18 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS points INTEGER DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS role_id INTEGER REFERENCES roles(id) ON DELETE SET NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_disabled BOOLEAN DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_given BOOLEAN DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_timestamp TIMESTAMP;
 
 CREATE INDEX IF NOT EXISTS idx_users_points ON users (points DESC);
+
+-- 2b. Pending Consent Table (DPG: tracks users who have not yet consented)
+CREATE TABLE IF NOT EXISTS pending_consent (
+    phone_number VARCHAR(20) PRIMARY KEY,
+    name VARCHAR(100),
+    first_message TEXT,
+    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
 -- 3. User Roles Table (Many-to-Many)
 CREATE TABLE IF NOT EXISTS user_roles (

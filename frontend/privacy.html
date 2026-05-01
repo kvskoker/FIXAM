@@ -124,12 +124,52 @@
         <p>When we update this policy, we will update the effective date and notify active users via WhatsApp. Continued use after notification constitutes acceptance.</p>
 
         <h2>12. Contact</h2>
-        <p>📧 <a href="mailto:privacy@fixam.sl">privacy@fixam.sl</a><br>
-        🌐 <a href="https://fixam.sl">https://fixam.sl</a><br>
-        📍 Freetown, Sierra Leone</p>
+        <p>📧 <a id="privacy-email" href="mailto:privacy@fixam.sl">privacy@fixam.sl</a><br>
+        🌐 <a id="privacy-website" href="https://fixam.sl">https://fixam.sl</a><br>
+        📍 <span id="privacy-location">Freetown, Sierra Leone</span></p>
 
         <hr>
-        <p><em>Fixam is committed to protecting your privacy while helping build better communities across Sierra Leone.</em></p>
+        <p><em id="privacy-footer">Fixam is committed to protecting your privacy while helping build better communities across Sierra Leone.</em></p>
     </div>
+
+    <script>
+    // ── DPG: Populate privacy page dynamically from instance config ────────
+    (async function() {
+        try {
+            const port = window.location.port === '3000' ? ':5000' : '';
+            const baseUrl = window.location.protocol + '//' + window.location.hostname + port;
+            const res = await fetch(baseUrl + '/api/config');
+            if (!res.ok) throw new Error('Config fetch failed');
+            const config = await res.json();
+            const inst = config.instance || {};
+
+            const country = inst.country || 'Sierra Leone';
+            const email = inst.contact_email || 'privacy@fixam.sl';
+            const website = inst.website || 'https://fixam.sl';
+            const location = country === 'Sierra Leone' ? 'Freetown, ' + country : country;
+
+            // Update contact section
+            const emailEl = document.getElementById('privacy-email');
+            if (emailEl) { emailEl.href = 'mailto:' + email; emailEl.textContent = email; }
+            const webEl = document.getElementById('privacy-website');
+            if (webEl) { webEl.href = website; webEl.textContent = website; }
+            const locEl = document.getElementById('privacy-location');
+            if (locEl) locEl.textContent = location;
+
+            // Update footer
+            const footerEl = document.getElementById('privacy-footer');
+            if (footerEl) footerEl.textContent = 'Fixam is committed to protecting your privacy while helping build better communities across ' + country + '.';
+
+            // Update inline mentions of Sierra Leone
+            document.querySelectorAll('.privacy-container').forEach(el => {
+                el.innerHTML = el.innerHTML.replace(/Sierra Leone/g, country);
+                el.innerHTML = el.innerHTML.replace(/Freetown/g, location);
+            });
+        } catch (e) {
+            // Leave defaults in place
+            console.warn('Could not load instance config for privacy page. Using defaults.', e);
+        }
+    })();
+    </script>
 </body>
 </html>

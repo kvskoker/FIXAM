@@ -26,9 +26,21 @@ function generateTicketId() {
 
 // GET /api/config - Public configuration
 router.get('/config', (req, res) => {
+    // Base URL: use explicit env var or derive from the request
+    const baseUrl = process.env.FIXAM_BASE_URL ||
+        `${req.protocol}://${req.get('host')}`;
+
     res.json({ 
         dev_mode: process.env.DEV_MODE === 'true',
-        maintenance_message: "The application has been closed to public use for now until the final Hackathon event day. Only admins are allowed to access the platform."
+        maintenance_message: "The application has been closed to public use for now until the final Hackathon event day. Only admins are allowed to access the platform.",
+        // ── DPG: Dynamic privacy / instance configuration ─────────────────
+        instance: {
+            country: process.env.FIXAM_COUNTRY || 'Sierra Leone',
+            contact_email: process.env.FIXAM_CONTACT_EMAIL || 'privacy@fixam.sl',
+            website: process.env.FIXAM_WEBSITE || 'https://fixam.sl',
+            base_url: baseUrl,
+            privacy_url: `${baseUrl}/privacy`,
+        }
     });
 });
 
