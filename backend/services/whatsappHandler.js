@@ -160,37 +160,44 @@ class FixamHandler {
         }
 
         // 1. User Registration
-        // 2. Global: Check for direct Vote Code (FIX-XXXXXX)
+        // 2. Global: Check for direct Ticket ID (FIX-XXXXXX)
+        //    But only intercept when user is NOT already in a track/vote flow
+        //    (the state machine handles those flows with proper context)
         const voteCodeMatch = input.toUpperCase().match(/^FIX-[A-Z0-9]{6}$/);
         if (voteCodeMatch) {
              const ticketId = voteCodeMatch[0];
              const issue = await this.fixamDb.getIssueByTicketId(ticketId);
-             if (issue) {
-                 if (!user) {
-                     // New user — route through consent; store intent for after consent
-                     const pendingConsent = await this.fixamDb.getPendingConsent(fromNumber);
-                     if (!pendingConsent) {
-                         await this.fixamDb.setPendingConsent(fromNumber, null, input);
-                         await this.fixamDb.initializeConversationState(fromNumber);
-                         await this.fixamDb.updateConversationState(fromNumber, {
-                             current_step: 'awaiting_consent',
-                             data: { pending_vote_ticket: ticketId }
-                         });
-                         await this.sendMessage(fromNumber, this.getConsentMessage());
-                     }
-                     // If consent already pending, the general consent flow below handles it
-                     return;
+             if (issue && !user) {
+                 // New user — route through consent; store intent for after consent
+                 const pendingConsent = await this.fixamDb.getPendingConsent(fromNumber);
+                 if (!pendingConsent) {
+                     await this.fixamDb.setPendingConsent(fromNumber, null, input);
+                     await this.fixamDb.initializeConversationState(fromNumber);
+                     await this.fixamDb.updateConversationState(fromNumber, {
+                         current_step: 'awaiting_consent',
+                         data: { pending_vote_ticket: ticketId }
+                     });
+                     await this.sendMessage(fromNumber, this.getConsentMessage());
+                 }
+                 return;
+             }
+             if (issue && user) {
+                 // Check current state — if in a track/vote flow, let the state machine handle it
+                 const currentState = await this.fixamDb.getConversationState(fromNumber);
+                 if (currentState && (currentState.current_step === 'awaiting_track_ticket_id' ||
+                                      currentState.current_step === 'awaiting_vote_ticket_id')) {
+                     // Don't intercept — fall through to state machine switch
                  } else {
-                     // Registered user: Proceed to vote
+                     // Catch-all: from main menu, route to vote
                      await this.fixamDb.updateConversationState(fromNumber, { 
                         current_step: 'awaiting_vote_confirmation',
                         data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
-                    });
-                    await this.sendMessage(fromNumber, `🗳️ *Vote Request Detected*\n\nFound Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
-                    return;
+                     });
+                     await this.sendMessage(fromNumber, `🗳️ *Vote Request Detected*\n\nFound Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                     return;
                  }
              }
-             // If not found, fall through
+             // If issue not found, fall through to state machine or other handlers
         }
 
         if (!user) {
@@ -528,8 +535,7 @@ class FixamHandler {
                     await this.sendMessage(fromNumber, "Please enter the name of the community or area you want to check (e.g. 'Lumley', 'Kissy'), or type *9* to cancel.");
                 } else if (input === '5' || lowerInput.includes('point')) {
                     const points = user.points || 0;
-                    await this.sendMessage(fromNumber, `🏆 *Your Citizen Score*\n\nYou currently have: *${points} Points* ⭐\n\n*How to earn points:*\n+10 pts: Report an Issue\n+50 pts: Issue Resolved\n+5 pts: Endorsing Resolution\n+1 pt: Getting Upvoted\n\nKeep participating to unlock future rewards! 🎁`);
-                    await this.sendMainMenu(fromNumber, user.name);
+                    await this.sendMessage(fromNumber, `🏆 *Your Citizen Score*\n\nYou currently have: *${points} Points* ⭐\n\n*How to earn points:*\n+10 pts: Report an Issue\n+50 pts: Issue Resolved\n+5 pts: Endorsing Resolution\n+1 pt: Getting Upvoted\n\nKeep participating to unlock future rewards! 🎁\n\nType *Hi* to return to the main menu.`);
                 } else if (input === '6' || lowerInput.includes('feedback')) {
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_feedback', data: {} });
                     await this.sendMessage(fromNumber, "We value your feedback! 💬\n\nPlease type your feedback or send a *Voice Note*.");
@@ -546,9 +552,9 @@ class FixamHandler {
                                     `- Type *DELETE MY DATA* to erase your account.\n` +
                                     `- Type *9* to Cancel any action.\n` +
                                     `- Type *Reset* to start over.\n\n` +
-                                    `For more support, contact: ${process.env.FIXAM_CONTACT_EMAIL || 'fixam@maxcit.com'}`;
+                                    `For more support, contact: ${process.env.FIXAM_CONTACT_EMAIL || 'fixam@maxcit.com'}\n\n` +
+                                    `Type *Hi* to return to the main menu.`;
                     await this.sendMessage(fromNumber, helpMsg);
-                    await this.sendMainMenu(fromNumber, user.name);
                 } else if (input === '8' || lowerInput.includes('my data') || lowerInput.includes('mydata')) {
                     const data = await this.fixamDb.getUserData(fromNumber);
                     if (!data || !data.profile) {
@@ -858,7 +864,7 @@ class FixamHandler {
                             await this.sendMessage(fromNumber, msg);
                         }
                     } else {
-                        msg += `Would you like to support this issue?\n\nType *1* to go to Voting 🗳️\nType *9* for Menu.`;
+                        msg += `Would you like to take further action?\n\nType *1* to Vote on this issue 🗳️\nType *2* to Follow Up / Alert Admins 🔔\nType *9* for Menu.`;
                         await this.fixamDb.updateConversationState(fromNumber, { 
                             current_step: 'awaiting_track_action_selection',
                             data: { issue_id: trackIssue.id, ticket_id: trackIssue.ticket_id, title: trackIssue.title }
@@ -877,6 +883,33 @@ class FixamHandler {
                         data: state.data
                     });
                     await this.sendMessage(fromNumber, `🗳️ *Voting for: ${state.data.title}*\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                } else if (input === '2') {
+                    // Follow up: log the follow-up in the tracker and alert admins
+                    try {
+                        await this.fixamDb.db.query(
+                            `INSERT INTO issue_tracker (issue_id, action, description, performed_by) VALUES ($1, 'citizen_followup', 'Citizen requested an update on this issue', $2)`,
+                            [state.data.issue_id, user.id]
+                        );
+                        await this.sendMessage(fromNumber, `🔔 *Follow-up Alert Sent*\n\nWe've notified the responsible team that you are following up on this issue. They will review and provide an update soon.\n\nThank you for staying engaged, citizen! 🫡`);
+                        
+                        // Alert relevant groups
+                        const trackIssue = await this.fixamDb.getIssueById(state.data.issue_id);
+                        if (trackIssue) {
+                            const groups = await this.fixamDb.getGroupsForCategory(trackIssue.category);
+                            for (const group of groups) {
+                                const members = await this.fixamDb.getGroupMembers(group.name);
+                                for (const member of members) {
+                                    try {
+                                        await this.sendMessage(member.phone_number, `🔔 *Citizen Follow-up*\n\nA citizen is requesting an update on:\n\n*${trackIssue.title}* (${trackIssue.ticket_id})\n*Status:* ${trackIssue.status}\n\nPlease review and provide an update.`);
+                                    } catch (e) { /* skip failed notifications */ }
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        logger.logError('handler', 'Error logging follow-up', e);
+                        await this.sendMessage(fromNumber, "Sorry, we couldn't process your follow-up request. Please try again later.");
+                    }
+                    await this.sendMainMenu(fromNumber, user.name);
                 } else {
                     await this.sendMainMenu(fromNumber, user.name);
                 }
