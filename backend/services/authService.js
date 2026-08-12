@@ -22,7 +22,14 @@ async function hashPassword(password) {
  */
 async function verifyPassword(password, storedHash) {
     if (!password || !storedHash) return false;
-    return await bcrypt.compare(password, storedHash);
+    try {
+        return await bcrypt.compare(password, storedHash);
+    } catch (err) {
+        // Legacy SHA-512 hashes are not valid bcrypt input. Treat a malformed
+        // hash as "no match" so the caller can fall back to
+        // verifyLegacyPassword() rather than the request erroring out.
+        return false;
+    }
 }
 
 /**

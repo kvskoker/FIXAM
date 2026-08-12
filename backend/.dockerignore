@@ -4,5 +4,5 @@ coverage/
 *.log
 .git/
 .gitignore
-.env
-.env.*
+**/.env
+**/.env.*

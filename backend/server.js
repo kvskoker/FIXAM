@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-require('dotenv').config();
+require('./loadEnv');
 
 const apiRoutes = require('./routes/api');
 const db = require('./db');
@@ -155,6 +155,10 @@ app.get('/', (req, res) => {
 });
 
 // Start Server
-app.listen(PORT, () => {
+const { ensureSuperAdmin } = require('./services/bootstrapAdmin');
+
+app.listen(PORT, async () => {
     console.log(`Server is running on port ${PORT}`);
+    // After listen, so a slow database cannot delay the port opening.
+    await ensureSuperAdmin(db);
 });

@@ -244,8 +244,9 @@ class FixamDatabase {
     // Create Issue
     async createIssue(issueData) {
         const sql = `
-            INSERT INTO issues (ticket_id, title, category, lat, lng, description, image_url, audio_url, reported_by, status, duplicate_of, urgency, address)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            INSERT INTO issues (ticket_id, title, category, lat, lng, description, image_url, audio_url, reported_by, status, duplicate_of, urgency, address,
+                                district, city, ward, constituency, location_source)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             RETURNING *
         `;
         const values = [
@@ -261,7 +262,12 @@ class FixamDatabase {
             issueData.status || 'critical',
             issueData.duplicate_of || null,
             issueData.urgency || 'medium',
-            issueData.address || null
+            issueData.address || null,
+            issueData.district || null,
+            issueData.city || null,
+            issueData.ward || null,
+            issueData.constituency || null,
+            issueData.location_source || 'geocoded'
         ];
 
         try {
@@ -310,29 +316,43 @@ class FixamDatabase {
     }
 
     // Find potential duplicates within radius (in meters) and timeframe (days)
-    async findPotentialDuplicates(lat, lng, radiusMeters, category = null, days = 30) {
-        let sql = `
-            SELECT i.*, 
-                   (6371000 * acos(cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2)) + sin(radians($1)) * sin(radians(lat)))) AS distance
+    /**
+     * Open reports near a point within the last `days`.
+     *
+     * `category` ranks rather than filters. Category comes from an AI
+     * classification of free text, so the same problem described twice can land
+     * in different buckets (or in "Uncategorized" whenever the AI service is
+     * briefly unavailable) -- filtering on it means the obvious duplicate is
+     * never shown. Same-category matches are listed first and the caller shows
+     * each one's category so the citizen can judge.
+     */
+    async findPotentialDuplicates(lat, lng, radiusMeters, category = null, days = 7) {
+        if (lat == null || lng == null) return [];
+
+        const windowDays = Number.isFinite(Number(days)) ? Math.floor(Number(days)) : 7;
+
+        const distanceExpr = `(6371000 * acos(LEAST(1, GREATEST(-1,
+            cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2))
+            + sin(radians($1)) * sin(radians(lat))
+        ))))`;
+
+        // LEAST/GREATEST clamp guards acos: for two points that are effectively
+        // identical the expression can round just past 1.0 and Postgres then
+        // raises "input is out of range", losing the very match we are after.
+        const sql = `
+            SELECT i.*, ${distanceExpr} AS distance
             FROM issues i
-            WHERE i.created_at >= CURRENT_TIMESTAMP - INTERVAL '${days} days'
-            AND i.status NOT IN ('fixed', 'spam')
-            AND i.duplicate_of IS NULL
+            WHERE i.created_at >= CURRENT_TIMESTAMP - ($4 || ' days')::interval
+              AND i.status NOT IN ('fixed', 'spam')
+              AND i.duplicate_of IS NULL
+              AND i.lat IS NOT NULL AND i.lng IS NOT NULL
+              AND ${distanceExpr} <= $3
+            ORDER BY (i.category IS DISTINCT FROM $5) ASC, distance ASC
+            LIMIT 3
         `;
-        
-        const values = [lat, lng, radiusMeters];
-        let paramCount = 4;
-
-        if (category) {
-            sql += ` AND i.category = $${paramCount++}`;
-            values.push(category);
-        }
-
-        sql += ` AND (6371000 * acos(cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2)) + sin(radians($1)) * sin(radians(lat)))) <= $3`;
-        sql += ` ORDER BY distance ASC LIMIT 3`;
 
         try {
-            const result = await this.db.query(sql, values);
+            const result = await this.db.query(sql, [lat, lng, radiusMeters, windowDays, category]);
             return result.rows;
         } catch (error) {
             this.debugLog('Error finding potential duplicates', { error: error.message, lat, lng });

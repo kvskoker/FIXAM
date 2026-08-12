@@ -1,10 +1,9 @@
 const axios = require('axios');
 const logger = require('./logger');
-const path = require('path');
 const db = require('../db');
 const TaskQueue = require('../utils/taskQueue');
 const FormData = require('form-data');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+require('../loadEnv');
 
 // Configuration
 const LOCAL_AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';

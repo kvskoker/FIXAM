@@ -157,6 +157,14 @@ CREATE INDEX IF NOT EXISTS idx_issues_reported_by ON issues (reported_by);
 
 -- Ensure columns exist if table was already created
 ALTER TABLE issues ADD COLUMN IF NOT EXISTS address TEXT;
+-- Structured location (see db/migration_location_details.sql for the rationale)
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS district VARCHAR(100);
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS city VARCHAR(100);
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS ward VARCHAR(100);
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS constituency VARCHAR(100);
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS location_source VARCHAR(20) DEFAULT 'geocoded';
+CREATE INDEX IF NOT EXISTS idx_issues_district ON issues (district);
+CREATE INDEX IF NOT EXISTS idx_issues_location_source ON issues (location_source);
 -- Voice-note reports: written by createIssue(), so a database created before
 -- this column existed fails every report submission with a bare "Error
 -- submitting report".

@@ -1,5 +1,5 @@
 const axios = require('axios');
-require('dotenv').config();
+require('../loadEnv');
 const logger = require('./logger');
 const simulator = require('./simulator');
 

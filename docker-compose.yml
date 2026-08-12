@@ -25,7 +25,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-F!x@m2025DJP}
       DB_PORT: 5432
       HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
-      WHISPER_MODEL: ${WHISPER_MODEL:-openai/whisper-base}
+      WHISPER_MODEL: ${WHISPER_MODEL:-openai/whisper-large-v3}
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,20 +44,22 @@ services:
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
       WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
-      APP_URL: ${APP_URL:-http://localhost:3000}
       HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
-      WHISPER_MODEL: ${WHISPER_MODEL:-openai/whisper-base}
+      WHISPER_MODEL: ${WHISPER_MODEL:-openai/whisper-large-v3}
       SUPER_ADMIN_PHONE: ${SUPER_ADMIN_PHONE:-23200000000}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-Adm1n@Fixam}
       BOT_PHONE_NUMBER: ${BOT_PHONE_NUMBER:-23233788736}
       DEV_MODE: ${DEV_MODE:-false}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost,http://localhost:80}
-      FIXAM_BASE_URL: ${FIXAM_BASE_URL:-http://localhost:3000}
+      # Public address citizens see in ticket/privacy links. The frontend
+      # container publishes on port 80, so that -- not the 3000 used by the
+      # non-Docker `serve` setup -- is the right default here.
+      FIXAM_BASE_URL: ${FIXAM_BASE_URL:-http://localhost}
       FIXAM_COUNTRY: ${FIXAM_COUNTRY:-Sierra Leone}
       FIXAM_CONTACT_EMAIL: ${FIXAM_CONTACT_EMAIL:-privacy@fixam.sl}
       FIXAM_WEBSITE: ${FIXAM_WEBSITE:-https://fixam.sl}
       UPLOADS_DIR: /data/uploads
-      SIMULATOR_ENABLED: ${SIMULATOR_ENABLED:-false}
+      SIMULATOR_ENABLED: ${SIMULATOR_ENABLED:-true}
       SIMULATOR_URL: ${SIMULATOR_URL:-http://simulator:4001}
       SIMULATOR_PORT: 4001
       SIMULATOR_PHONE: ${SIMULATOR_PHONE:-23272123456}
@@ -93,10 +95,14 @@ services:
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
       AI_SERVICE_URL: http://ai-engine:8000
       HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
-      WHISPER_MODEL: ${WHISPER_MODEL:-openai/whisper-base}
+      WHISPER_MODEL: ${WHISPER_MODEL:-openai/whisper-large-v3}
       SUPER_ADMIN_PHONE: ${SUPER_ADMIN_PHONE:-23200000000}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-Adm1n@Fixam}
-      APP_URL: ${APP_URL:-http://localhost:3000}
+      # The simulator runs the handler in-process, so it builds ticket links
+      # itself -- without this it would fall back to the hosted demo URL.
+      FIXAM_BASE_URL: ${FIXAM_BASE_URL:-http://localhost}
+      FIXAM_COUNTRY: ${FIXAM_COUNTRY:-Sierra Leone}
+      FIXAM_CONTACT_EMAIL: ${FIXAM_CONTACT_EMAIL:-privacy@fixam.sl}
       UPLOADS_DIR: /data/uploads
     volumes:
       - uploads-data:/data/uploads

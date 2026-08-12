@@ -304,6 +304,34 @@ function updatePaginationControls(pagination) {
     }
 }
 
+/**
+ * Location as an admin needs to read it.
+ *
+ * A report whose address could not be geocoded has no coordinates, so it never
+ * appears on the map -- it has to be visibly flagged here or it is invisible
+ * work. `detailed` adds the administrative area and is used in the modal.
+ */
+function formatIssueLocation(issue, { detailed = false } = {}) {
+    const hasPoint = issue.lat !== null && issue.lat !== undefined
+        && issue.lng !== null && issue.lng !== undefined;
+
+    let text = issue.address
+        || (hasPoint ? `${parseFloat(issue.lat).toFixed(4)}, ${parseFloat(issue.lng).toFixed(4)}` : 'No location given');
+
+    if (detailed) {
+        const area = [issue.ward, issue.city, issue.district].filter(Boolean).join(', ');
+        if (area) text += `<br><span style="color: var(--admin-text-muted); font-size: 0.85rem;">${area}</span>`;
+    }
+
+    if (issue.location_source === 'unresolved' || !hasPoint) {
+        text += ` <span title="Address could not be placed on the map — needs an admin to pinpoint it" style="background: var(--admin-warning); color: #1a202c; border-radius: 4px; padding: 1px 6px; font-size: 0.75rem; font-weight: 600; white-space: nowrap;">NOT ON MAP</span>`;
+    } else if (detailed && issue.location_source === 'gps') {
+        text += ` <span title="Citizen shared a GPS pin" style="color: var(--admin-success); font-size: 0.75rem; font-weight: 600;">GPS</span>`;
+    }
+
+    return text;
+}
+
 function renderIssuesTable(issues) {
     const tbody = document.getElementById('issues-table-body');
     tbody.innerHTML = '';
@@ -319,7 +347,7 @@ function renderIssuesTable(issues) {
             <td data-label="Issue ID" style="padding: 1rem; font-family: monospace;">${issue.ticket_id || 'N/A'}</td>
             <td data-label="Category" style="padding: 1rem;">${issue.category}</td>
             <td data-label="Title" style="padding: 1rem; font-weight: 500;">${issue.title}</td>
-            <td data-label="Location" style="padding: 1rem; color: var(--admin-text-muted);">${issue.address || `${parseFloat(issue.lat).toFixed(4)}, ${parseFloat(issue.lng).toFixed(4)}`}</td>
+            <td data-label="Location" style="padding: 1rem; color: var(--admin-text-muted);">${formatIssueLocation(issue)}</td>
             <td data-label="Votes" style="padding: 1rem;">${issue.upvotes || 0}</td>
             <td data-label="Status" style="padding: 1rem;"><span style="color: ${statusColors[issue.status] || 'white'}; font-weight: 600; text-transform: capitalize;">${issue.status}</span></td>
             <td data-label="Date" style="padding: 1rem; color: var(--admin-text-muted); font-size: 0.9rem;">${new Date(issue.created_at).toLocaleDateString('en-GB')}</td>
@@ -349,7 +377,7 @@ async function openIssueDetails(id) {
             document.getElementById('modal-category-badge').textContent = issue.category; // Ensure badge text is updated too
             document.getElementById('modal-title').textContent = issue.title;
             document.getElementById('modal-desc').textContent = issue.description;
-            document.getElementById('modal-location').textContent = issue.address || `${issue.lat}, ${issue.lng}`;
+            document.getElementById('modal-location').innerHTML = formatIssueLocation(issue, { detailed: true });
             
             // Audio Player
             const descContainer = document.getElementById('modal-desc');

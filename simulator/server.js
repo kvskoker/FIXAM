@@ -5,10 +5,10 @@ const fileUpload = require('express-fileupload');
 const { Pool } = require('pg');
 const axios = require('axios');
 
-// Load the backend's .env. Without this the simulator silently falls back to the
-// defaults below, which would connect somewhere unexpected the moment they
-// diverge from the real configuration.
-require('dotenv').config({ path: path.resolve(__dirname, '../backend/.env') });
+// Share the backend's configuration loader so both read the same root .env.
+// Without this the simulator silently falls back to the defaults below, which
+// would connect somewhere unexpected the moment they diverge.
+require('../backend/loadEnv');
 
 const FixamHandler = require('../backend/services/whatsappHandler');
 const simulator = require('../backend/services/simulator');
@@ -44,8 +44,8 @@ async function createServer() {
 
     if (!process.env.DB_PASSWORD) {
         throw new Error(
-            'DB_PASSWORD is not set. The simulator reads ../backend/.env -- check that the file '
-            + 'exists and defines DB_NAME, DB_USER and DB_PASSWORD.'
+            'DB_PASSWORD is not set. The simulator reads the repo-root .env -- copy .env.example '
+            + 'to .env and make sure it defines DB_NAME, DB_USER and DB_PASSWORD.'
         );
     }
 
@@ -67,7 +67,7 @@ async function createServer() {
     }
     if (!simulator.isEnabled()) {
         console.warn(
-            '\n  WARNING: SIMULATOR_ENABLED is not "true" in backend/.env.\n'
+            '\n  WARNING: SIMULATOR_ENABLED is not "true" in the root .env.\n'
             + '  The bot will not recognise simulated messages, so the DEV_MODE gate and the\n'
             + '  phone-number-ID check will reject them. Add SIMULATOR_ENABLED=true and restart.\n'
         );

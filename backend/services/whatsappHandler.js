@@ -18,6 +18,12 @@ const UPLOADS_ROOT = process.env.UPLOADS_DIR
     ? path.resolve(process.env.UPLOADS_DIR)
     : path.resolve(__dirname, '..', '..', 'frontend', 'uploads');
 
+// A report is treated as a possible duplicate when an open issue was filed this
+// close, this recently. Overridable per deployment: a dense city may want a
+// tighter radius than a rural district.
+const DUPLICATE_RADIUS_METERS = Number(process.env.DUPLICATE_RADIUS_METERS) || 100;
+const DUPLICATE_WINDOW_DAYS = Number(process.env.DUPLICATE_WINDOW_DAYS) || 7;
+
 class FixamHandler {
     constructor(whatsAppService, db, io, debugLog) {
         this.whatsAppService = whatsAppService;
@@ -362,11 +368,13 @@ class FixamHandler {
                             if (entities.location) {
                                 // Try to geocode
                                 try {
-                                    const locs = await this.helpers.geocodeAddress(entities.location + ", Sierra Leone");
+                                    const locs = (await this.helpers.geocodeAddress(entities.location)).results;
                                     if (locs.length > 0) {
                                         newData.lat = locs[0].latitude;
                                         newData.lng = locs[0].longitude;
                                         newData.address = locs[0].display_name;
+                                        newData.location_source = 'geocoded';
+                                        this.applyAdminAreas(newData, locs[0].admin);
                                     } else {
                                         newData.address = entities.location;
                                     }
@@ -429,7 +437,7 @@ class FixamHandler {
 
                              if (community) {
                                  // Trigger trending logic directly
-                                 const locations = await this.helpers.geocodeAddress(community + ", Sierra Leone");
+                                 const locations = (await this.helpers.geocodeAddress(community)).results;
                                  if (locations.length > 0) {
                                       const loc = locations[0];
                                       // Increased radius from 1km to 3km for better results in communities
@@ -644,35 +652,104 @@ class FixamHandler {
                 }
 
                 // Handle text address
-                const locations = await this.helpers.geocodeAddress(input);
-                if (locations.length === 0) {
-                    await this.sendMessage(fromNumber, "I couldn't find that address. Please try again or share your GPS location, or type *9* to cancel.");
-                } else if (locations.length === 1) {
-                    const loc = locations[0];
-                    const currentData = state.data || {};
-                    currentData.lat = loc.latitude;
-                    currentData.lng = loc.longitude;
-                    currentData.address = loc.display_name;
-                    
-                    await this.fixamDb.updateConversationState(fromNumber, { 
+                const currentData = state.data || {};
+
+                // Escape hatch offered after repeated failed lookups: file the
+                // report with the citizen's own wording and no coordinates.
+                const keepMatch = input.match(/^keep\s+(.{3,})$/i);
+                if (keepMatch) {
+                    currentData.address = keepMatch[1].trim();
+                    currentData.lat = null;
+                    currentData.lng = null;
+                    currentData.location_source = 'unresolved';
+                    delete currentData.address_attempts;
+
+                    await this.fixamDb.updateConversationState(fromNumber, {
                         current_step: 'awaiting_report_description',
                         data: currentData
                     });
-                    await this.sendMessage(fromNumber, `Location found: ${loc.display_name}\n\nPlease describe the issue (Text or Voice Note), or type *9* to cancel.`);
+                    await this.sendMessage(fromNumber,
+                        `✅ Noted: *${currentData.address}*\n\n`
+                        + `_An admin will pinpoint this on the map._\n\n`
+                        + `Please describe the issue (Text or Voice Note).`);
+                    break;
+                }
+
+                const lookup = await this.helpers.geocodeAddress(input);
+                const locations = lookup.results;
+
+                if (!lookup.ok) {
+                    // The geocoder is unreachable. Repeating "I couldn't find
+                    // that address" would be a lie and would trap the citizen in
+                    // a loop, so keep what they typed and let the report through
+                    // for admins to place manually.
+                    currentData.address = input.trim();
+                    currentData.lat = null;
+                    currentData.lng = null;
+                    currentData.location_source = 'unresolved';
+
+                    await this.fixamDb.updateConversationState(fromNumber, {
+                        current_step: 'awaiting_report_description',
+                        data: currentData
+                    });
+                    await this.sendMessage(fromNumber,
+                        `⚠️ I can't verify addresses at the moment, so I've noted your location as:\n*${currentData.address}*\n\n`
+                        + `An admin will confirm it. If you can, share your GPS location later for an exact position.\n\n`
+                        + `Please describe the issue (Text or Voice Note).`);
+                    break;
+                }
+
+                if (locations.length === 0) {
+                    const attempts = (currentData.address_attempts || 0) + 1;
+                    currentData.address_attempts = attempts;
+                    await this.fixamDb.updateConversationState(fromNumber, { data: currentData });
+
+                    if (attempts >= 3) {
+                        // Three misses usually means the place simply is not in
+                        // OSM. Offer the way out rather than looping forever.
+                        await this.sendMessage(fromNumber,
+                            `I still can't find "${input.trim()}" on the map.\n\n`
+                            + `📍 Share your GPS location (attachment icon > Location) for an exact position,\n`
+                            + `✏️ or type *KEEP ${input.trim()}* to file it with that description and let an admin place it.\n\n`
+                            + `Type *9* to cancel.`);
+                    } else {
+                        await this.sendMessage(fromNumber,
+                            `I couldn't find "${input.trim()}" in ${this.helpers.serviceArea.name}.\n\n`
+                            + `Try adding a nearby landmark or town (e.g. "Wilkinson Road, Freetown"), or share your GPS location.\n\n`
+                            + `Type *9* to cancel.`);
+                    }
+                } else if (locations.length === 1) {
+                    const loc = locations[0];
+                    currentData.lat = loc.latitude;
+                    currentData.lng = loc.longitude;
+                    currentData.address = loc.display_name;
+                    currentData.location_source = 'geocoded';
+                    this.applyAdminAreas(currentData, loc.admin);
+                    delete currentData.address_attempts;
+
+                    await this.fixamDb.updateConversationState(fromNumber, {
+                        current_step: 'awaiting_report_description',
+                        data: currentData
+                    });
+                    await this.sendMessage(fromNumber, `📍 Location found: ${loc.display_name}\n\nPlease describe the issue (Text or Voice Note), or type *9* to cancel.`);
                 } else {
-                    // Multiple locations - Ask user to select
-                    const currentData = state.data || {};
+                    // Several matches: the citizen has to disambiguate, so show
+                    // the district rather than three near-identical strings.
                     currentData.pending_addresses = locations;
-                    
-                    await this.fixamDb.updateConversationState(fromNumber, { 
+                    delete currentData.address_attempts;
+
+                    await this.fixamDb.updateConversationState(fromNumber, {
                         current_step: 'awaiting_address_selection',
                         data: currentData
                     });
 
-                    let msg = `I found ${locations.length} locations. Please reply with the number (e.g. 1) to select, or type *9* to cancel:\n\n`;
+                    let msg = `I found ${locations.length} places matching "${input.trim()}". Which one? Reply with the number, or type *9* to cancel:\n\n`;
                     locations.forEach((loc, i) => {
-                        msg += `${i + 1}. ${loc.display_name}\n`;
+                        const context = [loc.admin.ward, loc.admin.city, loc.admin.district]
+                            .filter(Boolean).join(', ');
+                        msg += `${i + 1}. *${context || loc.display_name}*\n   ${loc.display_name}\n\n`;
                     });
+                    msg += `Or share your GPS location for an exact position.`;
                     await this.sendMessage(fromNumber, msg);
                 }
                 break;
@@ -688,6 +765,8 @@ class FixamHandler {
                     currentData.lat = loc.latitude;
                     currentData.lng = loc.longitude;
                     currentData.address = loc.display_name;
+                    currentData.location_source = 'geocoded';
+                    this.applyAdminAreas(currentData, loc.admin);
                     delete currentData.pending_addresses; // Clean up
 
                     await this.fixamDb.updateConversationState(fromNumber, { 
@@ -733,35 +812,7 @@ class FixamHandler {
                 currentData.title = title;
                 currentData.urgency = urgency;
 
-                // Check for duplicates within 100m and 1 month
-                const duplicates = await this.fixamDb.findPotentialDuplicates(currentData.lat, currentData.lng, 100, category, 30);
-                
-                if (duplicates.length > 0) {
-                    currentData.potential_duplicates = duplicates;
-                    await this.fixamDb.updateConversationState(fromNumber, { 
-                        current_step: 'awaiting_duplicate_action',
-                        data: currentData
-                    });
-
-                    let msg = `🔍 *Similar issues found nearby:*\n\n`;
-                    duplicates.forEach((dup, i) => {
-                        msg += `📍 *${dup.title}* (${dup.ticket_id})\n`;
-                        msg += `   Status: ${dup.status}\n`;
-                    });
-                    msg += `\nIt seems this might have been reported already. What would you like to do? (Reply with the number)\n\n`;
-                    msg += `1️⃣ *View more details* of these issues\n`;
-                    msg += `2️⃣ *Report as a new* separate issue\n`;
-                    msg += `3️⃣ *Vote/Support* an existing issue\n\n`;
-                    msg += `Type *9* to cancel.`;
-                    
-                    await this.sendMessage(fromNumber, msg);
-                } else {
-                    await this.fixamDb.updateConversationState(fromNumber, { 
-                        current_step: 'awaiting_report_confirmation',
-                        data: currentData
-                    });
-                    await this.sendReportSummary(fromNumber, currentData);
-                }
+                await this.promptDuplicatesOrConfirm(fromNumber, currentData);
                 break;
 
             case 'awaiting_duplicate_action':
@@ -984,8 +1035,11 @@ class FixamHandler {
                 break;
             
             case 'awaiting_trending_community': {
-                const locations = await this.helpers.geocodeAddress(input + ", Sierra Leone"); // Append Country for better results
-                if (locations.length === 0) {
+                const communityLookup = await this.helpers.geocodeAddress(input);
+                const locations = communityLookup.results;
+                if (!communityLookup.ok) {
+                    await this.sendMessage(fromNumber, "⚠️ I can't look up places right now. Please try again in a moment, or type *9* to cancel.");
+                } else if (locations.length === 0) {
                     await this.sendMessage(fromNumber, "I couldn't find a community with that name. Please try again (e.g. 'Freetown', 'Bo'), or type *9* to cancel.");
                 } else {
                     // Use first match
@@ -1020,7 +1074,7 @@ class FixamHandler {
                 
                 if (!isNaN(tSelection) && tSelection >= 1 && tSelection <= tIssues.length) {
                     const tIssue = tIssues[tSelection - 1];
-                    const link = `https://fixam.maxcit.com/?ticket=${tIssue.ticket_id}`;
+                    const link = this.getIssueUrl(tIssue.ticket_id);
                     
                     const msg = `📌 *Issue Details*\n\n` +
                                 `*Title:* ${tIssue.title}\n` +
@@ -1042,7 +1096,7 @@ class FixamHandler {
                      await this.sendMainMenu(fromNumber, user.name);
                 } else {
                     // Treat as a new location search
-                    const locations = await this.helpers.geocodeAddress(input + ", Sierra Leone");
+                    const locations = (await this.helpers.geocodeAddress(input)).results;
                     if (locations.length === 0) {
                         await this.sendMessage(fromNumber, `I couldn't find "${input}". Please enter a valid number (1-${tIssues.length}), a valid community name, or 9 to cancel.`);
                     } else {
@@ -1083,25 +1137,62 @@ class FixamHandler {
 
     async handleLocationMessage(fromNumber, location) {
         let state = await this.fixamDb.getConversationState(fromNumber);
-        if (state && state.current_step === 'awaiting_report_location') {
-            const { latitude, longitude } = location;
-            // Reverse geocode
-            const addressInfo = await this.helpers.reverseGeocode(latitude, longitude);
-            const address = addressInfo ? addressInfo.display_name : `${latitude}, ${longitude}`;
-
-            const currentData = state.data || {};
-            currentData.lat = latitude;
-            currentData.lng = longitude;
-            currentData.address = address;
-
-            await this.fixamDb.updateConversationState(fromNumber, { 
-                current_step: 'awaiting_report_description',
-                data: currentData
-            });
-            await this.sendMessage(fromNumber, `Location received: ${address}\n\nPlease describe the issue (Text or Voice Note).`);
-        } else {
+        if (!state || state.current_step !== 'awaiting_report_location') {
             await this.sendMessage(fromNumber, "I'm not expecting a location right now.");
+            return;
         }
+
+        const area = this.helpers.serviceArea;
+        const point = this.helpers.parseCoordinates(location?.latitude, location?.longitude);
+
+        // A pin from outside the served area is a mis-tap, a spoofed client or a
+        // test. Storing it would put a marker on the map nobody can action and
+        // skew every distance calculation around it.
+        if (!point) {
+            logger.log('webhook', `Rejected out-of-area pin from ${fromNumber}: ${location?.latitude}, ${location?.longitude}`);
+            await this.sendMessage(fromNumber,
+                `📍 That location appears to be outside ${area.name}, so I can't attach it to a report.\n\n`
+                + `Please share a location within ${area.name}, or type the address instead (e.g. "Wilkinson Road, Freetown").\n\n`
+                + `Type *9* to cancel.`);
+            return;
+        }
+
+        const lookup = await this.helpers.reverseGeocode(point.latitude, point.longitude);
+        const currentData = state.data || {};
+        currentData.lat = point.latitude;
+        currentData.lng = point.longitude;
+        // A pin is the most precise thing we get, whether or not it has a name.
+        currentData.location_source = 'gps';
+
+        let confirmation;
+        if (lookup.result) {
+            currentData.address = lookup.result.display_name;
+            this.applyAdminAreas(currentData, lookup.result.admin);
+            confirmation = `📍 Location received: ${currentData.address}`;
+        } else {
+            // Either the point is genuinely unnamed in OSM (common outside
+            // Freetown) or the geocoder is unreachable. The coordinates are
+            // still good, so the report proceeds either way -- losing a valid
+            // pin because a third-party service is down would be the worse bug.
+            currentData.address = `${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`;
+            confirmation = lookup.ok
+                ? `📍 Location received: ${currentData.address}\n_(No street name is mapped here, so admins will see the coordinates.)_`
+                : `📍 Location received: ${currentData.address}\n_(Address lookup is unavailable right now; your exact position is still recorded.)_`;
+        }
+
+        await this.fixamDb.updateConversationState(fromNumber, {
+            current_step: 'awaiting_report_description',
+            data: currentData
+        });
+        await this.sendMessage(fromNumber, `${confirmation}\n\nPlease describe the issue (Text or Voice Note).`);
+    }
+
+    /** Copy resolved administrative areas onto the in-progress report. */
+    applyAdminAreas(currentData, admin) {
+        if (!admin) return;
+        currentData.district = admin.district || null;
+        currentData.city = admin.city || null;
+        currentData.ward = admin.ward || null;
     }
 
     async handleMediaMessage(fromNumber, message) {
@@ -1154,7 +1245,7 @@ class FixamHandler {
             let mediaUrl = '';
 
             if (downloadResult) {
-                const extension = downloadResult.mimeType ? downloadResult.mimeType.split('/')[1].split(';')[0] : 'bin';
+                const extension = this.helpers.extensionForMime(downloadResult.mimeType, 'bin');
                 const filename = `${crypto.randomUUID()}.${extension}`;
                 const folder = mediaType === 'image' ? 'images' : 'videos';
                 
@@ -1226,9 +1317,9 @@ class FixamHandler {
                 return; // Stop processing, do not save
             }
 
-            const extension = downloadResult.mimeType ? downloadResult.mimeType.split('/')[1].split(';')[0] : 'ogg';
+            const extension = this.helpers.extensionForMime(downloadResult.mimeType, 'ogg');
             const filename = `${crypto.randomUUID()}.${extension}`;
-            
+
             // Use frontend/uploads for web accessibility
             const uploadsDir = path.join(UPLOADS_ROOT, 'issues', 'audio');
             const filePath = path.join(uploadsDir, filename);
@@ -1289,11 +1380,7 @@ class FixamHandler {
             currentData.title = title;
             currentData.urgency = urgency;
 
-            await this.fixamDb.updateConversationState(fromNumber, { 
-                current_step: 'awaiting_report_confirmation',
-                data: currentData
-            });
-            await this.sendReportSummary(fromNumber, currentData);
+            await this.promptDuplicatesOrConfirm(fromNumber, currentData);
         } else if (state && state.current_step === 'awaiting_feedback') {
             const mediaId = message.voice ? message.voice.id : message.audio.id;
             const downloadResult = await this.whatsAppService.downloadMedia(mediaId);
@@ -1301,7 +1388,7 @@ class FixamHandler {
             let transcribedText = '[Transcription Unavailable]';
 
             if (downloadResult) {
-                const extension = downloadResult.mimeType ? downloadResult.mimeType.split('/')[1].split(';')[0] : 'ogg';
+                const extension = this.helpers.extensionForMime(downloadResult.mimeType, 'ogg');
                 const filename = `${crypto.randomUUID()}.${extension}`;
                 const uploadsDir = path.join(UPLOADS_ROOT, 'feedback', 'audio');
                 const filePath = path.join(uploadsDir, filename);
@@ -1341,10 +1428,26 @@ class FixamHandler {
     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category' });
     }
 
+    /**
+     * Public address of this instance, as citizens should see it.
+     *
+     * Set FIXAM_BASE_URL per environment (compose points it at the local
+     * frontend). The fallback is the hosted demo, so an instance deployed
+     * without the variable keeps behaving as it did before.
+     */
+    getBaseUrl() {
+        const base = process.env.FIXAM_BASE_URL || 'https://fixam.maxcit.com';
+        return base.replace(/\/+$/, '');
+    }
+
+    /** Citizen-facing link for one ticket. */
+    getIssueUrl(ticketId) {
+        return `${this.getBaseUrl()}/?ticket=${ticketId}`;
+    }
+
     // ── DPG: Build privacy URL from env, falling back to the configured base URL ──
     getPrivacyUrl() {
-        const base = process.env.FIXAM_BASE_URL || 'https://fixam.maxcit.com';
-        return `${base}/privacy`;
+        return `${this.getBaseUrl()}/privacy`;
     }
 
     // ── DPG: Build instance-aware consent message ──────────────────────────────
@@ -1352,6 +1455,73 @@ class FixamHandler {
         const country = process.env.FIXAM_COUNTRY || 'Sierra Leone';
         const privacyUrl = this.getPrivacyUrl();
         return `Welcome to Fixam! 🏗️\n\nFixam helps citizens report and track infrastructure issues in ${country}. We collect your phone number, name, location, and photos to process your reports.\n\n📄 Read our privacy policy: ${privacyUrl}\n\nReply *YES* to agree and continue, or *NO* to decline.`;
+    }
+
+    /**
+     * Last step before the confirmation summary: warn if this looks like an
+     * issue somebody already reported nearby, otherwise go straight to review.
+     *
+     * Every route into a report has to come through here. It used to live
+     * inline in the text-description branch only, so a report narrated as a
+     * voice note skipped the check entirely and duplicates went in unflagged.
+     *
+     * Flagging is deliberately not the final word -- the citizen can still say
+     * "report as new" and the issue is filed for admins to review.
+     */
+    async promptDuplicatesOrConfirm(fromNumber, currentData) {
+        let duplicates = [];
+        try {
+            duplicates = await this.fixamDb.findPotentialDuplicates(
+                currentData.lat,
+                currentData.lng,
+                DUPLICATE_RADIUS_METERS,
+                currentData.category,
+                DUPLICATE_WINDOW_DAYS
+            );
+        } catch (err) {
+            // A failure here must not cost the citizen their report.
+            logger.logError('handler', 'Duplicate lookup failed', err);
+        }
+
+        if (duplicates.length === 0) {
+            await this.fixamDb.updateConversationState(fromNumber, {
+                current_step: 'awaiting_report_confirmation',
+                data: currentData
+            });
+            await this.sendReportSummary(fromNumber, currentData);
+            return;
+        }
+
+        currentData.potential_duplicates = duplicates;
+        await this.fixamDb.updateConversationState(fromNumber, {
+            current_step: 'awaiting_duplicate_action',
+            data: currentData
+        });
+
+        let msg = `🔍 *Similar issues reported nearby recently:*\n\n`;
+        duplicates.forEach((dup) => {
+            const metres = Math.round(Number(dup.distance) || 0);
+            msg += `📍 *${dup.title}* (${dup.ticket_id})\n`;
+            msg += `   Category: ${dup.category || 'Uncategorized'}\n`;
+            msg += `   Status: ${dup.status}\n`;
+            msg += `   About ${metres}m away, ${this.describeAge(dup.created_at)}\n\n`;
+        });
+        msg += `It seems this might have been reported already. What would you like to do? (Reply with the number)\n\n`;
+        msg += `1️⃣ *View more details* of these issues\n`;
+        msg += `2️⃣ *Report as a new* separate issue\n`;
+        msg += `3️⃣ *Vote/Support* an existing issue\n\n`;
+        msg += `Type *9* to cancel.`;
+
+        await this.sendMessage(fromNumber, msg);
+    }
+
+    /** "today" / "3 days ago" -- enough for the citizen to judge recency. */
+    describeAge(createdAt) {
+        if (!createdAt) return 'recently';
+        const days = Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000);
+        if (days <= 0) return 'reported today';
+        if (days === 1) return 'reported yesterday';
+        return `reported ${days} days ago`;
     }
 
     async sendReportSummary(fromNumber, data) {
@@ -1362,10 +1532,17 @@ class FixamHandler {
             'critical': '🔴'
         };
         
-        await this.sendMessage(fromNumber, 
+        // Named area, when the geocoder gave us one. Citizens recognise
+        // "Wilberforce, Western Area Urban" far quicker than a full OSM string.
+        const area = [data.ward, data.city, data.district].filter(Boolean).join(', ');
+        const unresolved = data.location_source === 'unresolved';
+
+        await this.sendMessage(fromNumber,
             `Please review your report:\n\n` +
             `📋 *Title*: ${data.title || 'Untitled'}\n` +
             `📍 *Location*: ${data.address}\n` +
+            (area ? `🗺️ *Area*: ${area}\n` : '') +
+            (unresolved ? `⚠️ _Not pinpointed on the map yet — an admin will confirm._\n` : '') +
             `📂 *Category*: ${data.category || 'General'}\n` +
             `${urgencyEmoji[data.urgency] || '🟡'} *Urgency*: ${(data.urgency || 'medium').toUpperCase()}\n` +
             `📝 *Description*: ${data.description}\n` +
@@ -1388,13 +1565,19 @@ class FixamHandler {
             audio_url: data.audio_url || null,
             reported_by: userId,
             urgency: data.urgency || 'medium',
-            address: data.address
+            address: data.address,
+            district: data.district || null,
+            city: data.city || null,
+            ward: data.ward || null,
+            // Recorded so admins can see whether the pin is a citizen's GPS, a
+            // geocoder guess, or an address nobody has placed yet.
+            location_source: data.location_source || (data.lat != null ? 'geocoded' : 'unresolved')
         };
 
         const issue = await this.fixamDb.createIssue(issueData);
         if (issue) {
             // 1. Send Success Message
-            await this.sendMessage(fromNumber, `✅ *Report Submitted Successfully!*\n\nIssue ID: *${ticketId}*\n\nYou can track this issue here: https://fixam.maxcit.com/?ticket=${ticketId}`);
+            await this.sendMessage(fromNumber, `✅ *Report Submitted Successfully!*\n\nIssue ID: *${ticketId}*\n\nYou can track this issue here: ${this.getIssueUrl(ticketId)}`);
             
             // 2. Alert Operational Team if necessary
             await this.alertOperationalTeam(issue, data.address);
@@ -1443,7 +1626,7 @@ class FixamHandler {
                 `*Issue:* ${issue.title}\n` +
                 `*Loc:* ${address || `${issue.lat}, ${issue.lng}`}\n` +
                 `*ID:* ${issue.ticket_id}\n` +
-                `*Link:* https://fixam.maxcit.com/?ticket=${issue.ticket_id}`;
+                `*Link:* ${this.getIssueUrl(issue.ticket_id)}`;
 
             for (const member of members) {
                 try {

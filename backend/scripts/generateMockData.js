@@ -9,7 +9,7 @@ const categories = [
 ];
 
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
+require('../loadEnv');
 
 const cities = [
     { name: 'Freetown', lat: 8.48, lng: -13.23 },

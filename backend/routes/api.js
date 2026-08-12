@@ -548,8 +548,30 @@ router.post('/admin/login', async (req, res) => {
             return res.status(403).json({ success: false, message: 'Account is disabled. Please contact support.' });
         }
 
-        // Verify password
-        const isValid = authService.verifyPassword(password, phone, user.password);
+        // Verify password.
+        //
+        // This was calling verifyPassword(password, phone, user.password) without
+        // awaiting it. The function takes (password, storedHash) and is async, so
+        // it compared the password against the phone number and returned a
+        // Promise -- always truthy, so `!isValid` never fired and ANY password
+        // was accepted for an existing admin account.
+        let isValid = await authService.verifyPassword(password, user.password);
+
+        // Accounts created before the bcrypt switch still hold a SHA-512 hash.
+        // Verify against the old scheme once, then upgrade the stored hash so
+        // each legacy account converts on its next successful login.
+        if (!isValid && authService.verifyLegacyPassword(password, phone, user.password)) {
+            isValid = true;
+            try {
+                const upgraded = await authService.hashPassword(password);
+                await db.query('UPDATE users SET password = $1 WHERE id = $2', [upgraded, user.id]);
+                console.log(`Upgraded legacy password hash for user ${user.id}`);
+            } catch (rehashErr) {
+                // Login still succeeds; the upgrade retries next time.
+                console.error('Failed to upgrade legacy password hash:', rehashErr);
+            }
+        }
+
         if (!isValid) {
             return res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
@@ -1131,7 +1153,9 @@ router.post('/admin/users', async (req, res) => {
             return res.status(400).json({ error: 'A user with this phone number already exists' });
         }
 
-        const hashedPassword = password ? authService.hashPassword(password, phone_number) : null;
+        // hashPassword is async and takes only the password; calling it the old
+        // way stored the string "[object Promise]" as the account's password.
+        const hashedPassword = password ? await authService.hashPassword(password) : null;
 
         const userInsert = await db.query(
             'INSERT INTO users (phone_number, name, password) VALUES ($1, $2, $3) RETURNING id',
@@ -1187,7 +1211,7 @@ router.put('/admin/users/:id', async (req, res) => {
         const params = [name, phone_number, is_disabled, id];
         
         if (password) {
-            const hashedPassword = authService.hashPassword(password, phone_number);
+            const hashedPassword = await authService.hashPassword(password);
             updateQuery += ', password = $5 WHERE id = $4';
             params.push(hashedPassword);
         } else {
