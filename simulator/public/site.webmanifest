@@ -1,6 +1,6 @@
 {
-  "name": "FIXAM WhatsApp Simulator",
-  "short_name": "FIXAM WhatsApp Simulator",
+  "name": "WhatsApp Simulator",
+  "short_name": "WhatsApp Simulator",
   "icons": [
     {
       "src": "/web-app-manifest-192x192.png",
