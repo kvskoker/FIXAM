@@ -4,10 +4,19 @@ const crypto = require('crypto');
 const FixamDatabase = require('./fixamDatabase');
 const FixamHelpers = require('./fixamHelpers');
 const logger = require('./logger');
+const simulator = require('./simulator');
 const aiService = require('./aiService');
 const { analyzeIssue, analyzeIntent } = aiService; // Keep backward compatibility for existing calls
 const axios = require('axios');
 const FormData = require('form-data');
+
+// Where media the bot receives is written so the static frontend can serve it at
+// /uploads/... Resolved from this file rather than process.cwd(), so it lands in
+// the same place whether the process was started from backend/, the repo root,
+// or simulator/.
+const UPLOADS_ROOT = process.env.UPLOADS_DIR
+    ? path.resolve(process.env.UPLOADS_DIR)
+    : path.resolve(__dirname, '..', '..', 'frontend', 'uploads');
 
 class FixamHandler {
     constructor(whatsAppService, db, io, debugLog) {
@@ -24,17 +33,24 @@ class FixamHandler {
         logger.log('webhook', '========== Received webhook ==========');
         logger.logObject('webhook', 'Full webhook data', data);
 
+        // Is this the simulator driving us rather than Meta? Only ever true in
+        // development with SIMULATOR_ENABLED=true — see services/simulator.js.
+        const isSimulated = simulator.isSimulatedPayload(data);
+        if (isSimulated) {
+            logger.log('webhook', '🧪 Simulated message (source: WhatsApp simulator)');
+        }
+
         // Security Check: Verify Phone Number ID
         const value = data.entry?.[0]?.changes?.[0]?.value;
         const metadata = value?.metadata;
-        
-        if (process.env.WHATSAPP_PHONE_NUMBER_ID && metadata?.phone_number_id) {
+
+        if (!isSimulated && process.env.WHATSAPP_PHONE_NUMBER_ID && metadata?.phone_number_id) {
             if (metadata.phone_number_id !== process.env.WHATSAPP_PHONE_NUMBER_ID) {
                 logger.log('webhook', `⚠️ Use configured Phone ID: ${process.env.WHATSAPP_PHONE_NUMBER_ID}. Received ID: ${metadata.phone_number_id}. Ignoring.`);
                 return;
             }
         }
-        
+
         if (value?.messages?.[0]) {
             const message = data.entry[0].changes[0].value.messages[0];
             const fromNumber = message.from;
@@ -46,8 +62,9 @@ class FixamHandler {
                 return;
             }
 
-            // DEV MODE BLOCK
-            if (process.env.DEV_MODE === 'true') {
+            // DEV MODE BLOCK — skipped for the simulator, whose whole purpose is
+            // to exercise the citizen flows that this gate closes off.
+            if (process.env.DEV_MODE === 'true' && !isSimulated) {
                 const roles = await this.fixamDb.getUserRoles(fromNumber);
                 if (!roles.includes('Admin')) {
                     logger.log('webhook', `Blocked non-admin user in DEV_MODE: ${fromNumber}`);
@@ -1142,7 +1159,7 @@ class FixamHandler {
                 const folder = mediaType === 'image' ? 'images' : 'videos';
                 
                 // Use frontend/uploads for web accessibility
-                const uploadsDir = path.join(process.cwd(), 'frontend', 'uploads', 'issues', folder);
+                const uploadsDir = path.join(UPLOADS_ROOT, 'issues', folder);
                 const filePath = path.join(uploadsDir, filename);
                 
                 // Ensure directory exists
@@ -1213,7 +1230,7 @@ class FixamHandler {
             const filename = `${crypto.randomUUID()}.${extension}`;
             
             // Use frontend/uploads for web accessibility
-            const uploadsDir = path.join(process.cwd(), 'frontend', 'uploads', 'issues', 'audio');
+            const uploadsDir = path.join(UPLOADS_ROOT, 'issues', 'audio');
             const filePath = path.join(uploadsDir, filename);
             
             // Ensure directory exists
@@ -1286,7 +1303,7 @@ class FixamHandler {
             if (downloadResult) {
                 const extension = downloadResult.mimeType ? downloadResult.mimeType.split('/')[1].split(';')[0] : 'ogg';
                 const filename = `${crypto.randomUUID()}.${extension}`;
-                const uploadsDir = path.join(process.cwd(), 'frontend', 'uploads', 'feedback', 'audio');
+                const uploadsDir = path.join(UPLOADS_ROOT, 'feedback', 'audio');
                 const filePath = path.join(uploadsDir, filename);
                 
                 if (!fs.existsSync(uploadsDir)) {

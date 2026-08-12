@@ -1,6 +1,7 @@
 const axios = require('axios');
 require('dotenv').config();
 const logger = require('./logger');
+const simulator = require('./simulator');
 
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
@@ -25,6 +26,16 @@ async function sendMessage(to, body) {
     // Check if user is muted (Load Testing)
     if (mutedNumbers.has(to)) {
         console.log(`[Mock WhatsApp - SILENT] To ${to}: ${body}`);
+        return;
+    }
+
+    // Mirror into the WhatsApp simulator when one is running, so admin-side
+    // messages (status updates, group alerts) show up in the simulated chat.
+    // No-op unless SIMULATOR_ENABLED=true outside production. Only a number the
+    // simulator is actually driving short-circuits the real send.
+    const isSimulatedRecipient = await simulator.forwardMessage(to, body);
+    if (isSimulatedRecipient) {
+        console.log(`[Simulator] Delivered to ${to}: ${body}`);
         return;
     }
 

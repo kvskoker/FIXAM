@@ -31,3 +31,6 @@ Thumbs.db
 dist/
 build/
 coverage/
+
+# Media received from WhatsApp (and the simulator) — user data, served at /uploads
+frontend/uploads/

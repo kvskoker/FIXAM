@@ -157,6 +157,10 @@ CREATE INDEX IF NOT EXISTS idx_issues_reported_by ON issues (reported_by);
 
 -- Ensure columns exist if table was already created
 ALTER TABLE issues ADD COLUMN IF NOT EXISTS address TEXT;
+-- Voice-note reports: written by createIssue(), so a database created before
+-- this column existed fails every report submission with a bare "Error
+-- submitting report".
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS audio_url TEXT;
 
 -- 9. Votes Table
 CREATE TABLE IF NOT EXISTS votes (
