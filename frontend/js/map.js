@@ -490,7 +490,7 @@ async function vote(issueId, voteType) {
     if (!userPhone) return;
 
     try {
-        const response = await fetch(`http://localhost:5000/api/issues/${issueId}/vote`, {
+        const response = await fetch(`${API_BASE_URL}/issues/${issueId}/vote`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'

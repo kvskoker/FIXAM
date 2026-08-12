@@ -7,7 +7,7 @@ const FormData = require('form-data');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 // Configuration
-const LOCAL_AI_URL = 'http://localhost:8000';
+const LOCAL_AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const AI_TIMEOUT = 60000; // 60 seconds
 
 // Queue for heavy AI tasks (transcription, image analysis) - Max 1 at a time to prevent CPU choking

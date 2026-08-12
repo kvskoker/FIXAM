@@ -1,0 +1,127 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-fixam_db_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-F!x@m2025DJP}
+      POSTGRES_DB: ${DB_NAME:-fixam_db}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/db/init_db.sql:/docker-entrypoint-initdb.d/01-init.sql
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-fixam_db_admin} -d ${DB_NAME:-fixam_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ai-engine:
+    build: ./backend/ai_service
+    environment:
+      DB_USER: ${DB_USER:-fixam_db_admin}
+      DB_HOST: postgres
+      DB_NAME: ${DB_NAME:-fixam_db}
+      DB_PASSWORD: ${DB_PASSWORD:-F!x@m2025DJP}
+      DB_PORT: 5432
+      HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
+      WHISPER_MODEL: ${WHISPER_MODEL:-openai/whisper-base}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build: ./backend
+    environment:
+      PORT: 5000
+      NODE_ENV: ${NODE_ENV:-development}
+      DB_USER: ${DB_USER:-fixam_db_admin}
+      DB_HOST: postgres
+      DB_NAME: ${DB_NAME:-fixam_db}
+      DB_PASSWORD: ${DB_PASSWORD:-F!x@m2025DJP}
+      DB_PORT: 5432
+      AI_SERVICE_URL: http://ai-engine:8000
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
+      WHISPER_MODEL: ${WHISPER_MODEL:-openai/whisper-base}
+      SUPER_ADMIN_PHONE: ${SUPER_ADMIN_PHONE:-23200000000}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-Adm1n@Fixam}
+      BOT_PHONE_NUMBER: ${BOT_PHONE_NUMBER:-23233788736}
+      DEV_MODE: ${DEV_MODE:-false}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost,http://localhost:80}
+      FIXAM_BASE_URL: ${FIXAM_BASE_URL:-http://localhost:3000}
+      FIXAM_COUNTRY: ${FIXAM_COUNTRY:-Sierra Leone}
+      FIXAM_CONTACT_EMAIL: ${FIXAM_CONTACT_EMAIL:-privacy@fixam.sl}
+      FIXAM_WEBSITE: ${FIXAM_WEBSITE:-https://fixam.sl}
+      UPLOADS_DIR: /data/uploads
+      SIMULATOR_ENABLED: ${SIMULATOR_ENABLED:-false}
+      SIMULATOR_URL: ${SIMULATOR_URL:-http://simulator:4001}
+      SIMULATOR_PORT: 4001
+      SIMULATOR_PHONE: ${SIMULATOR_PHONE:-23272123456}
+    volumes:
+      - uploads-data:/data/uploads
+    ports:
+      - "${BACKEND_PORT:-5000}:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ai-engine:
+        condition: service_started
+
+  simulator:
+    build:
+      context: .
+      dockerfile: ./simulator/Dockerfile
+    environment:
+      PORT: 5000
+      NODE_ENV: ${NODE_ENV:-development}
+      DB_USER: ${DB_USER:-fixam_db_admin}
+      DB_HOST: postgres
+      DB_NAME: ${DB_NAME:-fixam_db}
+      DB_PASSWORD: ${DB_PASSWORD:-F!x@m2025DJP}
+      DB_PORT: 5432
+      SIMULATOR_PORT: 4001
+      SIMULATOR_PHONE: ${SIMULATOR_PHONE:-23272123456}
+      SIMULATOR_BACKEND_URL: http://backend:5000
+      SIMULATOR_ENABLED: "true"
+      BOT_PHONE_NUMBER: ${BOT_PHONE_NUMBER:-23233788736}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
+      AI_SERVICE_URL: http://ai-engine:8000
+      HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
+      WHISPER_MODEL: ${WHISPER_MODEL:-openai/whisper-base}
+      SUPER_ADMIN_PHONE: ${SUPER_ADMIN_PHONE:-23200000000}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-Adm1n@Fixam}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      UPLOADS_DIR: /data/uploads
+    volumes:
+      - uploads-data:/data/uploads
+    ports:
+      - "${SIMULATOR_PORT:-4001}:4001"
+    profiles:
+      - simulator
+    depends_on:
+      backend:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      NGINX_HOST: localhost
+      NGINX_PORT: "80"
+    volumes:
+      - uploads-data:/data/uploads
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_started
+
+volumes:
+  pgdata:
+  uploads-data:
