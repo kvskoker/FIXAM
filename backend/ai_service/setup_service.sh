@@ -35,7 +35,7 @@ SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
 
 sudo bash -c "cat > $SERVICE_FILE" <<EOL
 [Unit]
-Description=FIXAM AI Service (NudeNet, Whisper, EmbeddingGemma)
+Description=FIXAM AI Service (NudeNet, Parakeet ASR, Embeddings)
 After=network.target
 
 [Service]

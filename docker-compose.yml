@@ -25,7 +25,21 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-F!x@m2025DJP}
       DB_PORT: 5432
       HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
-      WHISPER_MODEL: ${WHISPER_MODEL:-openai/whisper-large-v3}
+      PARAKEET_MODEL: ${PARAKEET_MODEL:-nvidia/parakeet-tdt-0.6b-v3}
+      MINOR_DETECTION_ENABLED: ${MINOR_DETECTION_ENABLED:-true}
+      AGE_MODEL: ${AGE_MODEL:-prithivMLmods/Age-Classification-SigLIP2}
+      MINOR_AGE_CONFIDENCE: ${MINOR_AGE_CONFIDENCE:-0.5}
+      MINOR_FACE_CONFIDENCE: ${MINOR_FACE_CONFIDENCE:-0.3}
+    # Published so the engine can be exercised directly (Postman, curl,
+    # load tests). The backend reaches it over the compose network and does
+    # not need this; drop the mapping to keep it internal-only.
+    ports:
+      - "${AI_ENGINE_PORT:-8000}:8000"
+    # Model weights (~2.5 GB) live here. Without a volume they sit in the
+    # container filesystem and are re-downloaded every single time the
+    # service is recreated -- a rebuild, an env change, anything.
+    volumes:
+      - model-cache:/root/.cache
     depends_on:
       postgres:
         condition: service_healthy
@@ -45,7 +59,8 @@ services:
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
       WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
       HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
-      WHISPER_MODEL: ${WHISPER_MODEL:-openai/whisper-large-v3}
+      PARAKEET_MODEL: ${PARAKEET_MODEL:-nvidia/parakeet-tdt-0.6b-v3}
+      MINOR_DETECTION_ENABLED: ${MINOR_DETECTION_ENABLED:-true}
       SUPER_ADMIN_PHONE: ${SUPER_ADMIN_PHONE:-23200000000}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-Adm1n@Fixam}
       BOT_PHONE_NUMBER: ${BOT_PHONE_NUMBER:-23233788736}
@@ -95,7 +110,8 @@ services:
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
       AI_SERVICE_URL: http://ai-engine:8000
       HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
-      WHISPER_MODEL: ${WHISPER_MODEL:-openai/whisper-large-v3}
+      PARAKEET_MODEL: ${PARAKEET_MODEL:-nvidia/parakeet-tdt-0.6b-v3}
+      MINOR_DETECTION_ENABLED: ${MINOR_DETECTION_ENABLED:-true}
       SUPER_ADMIN_PHONE: ${SUPER_ADMIN_PHONE:-23200000000}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-Adm1n@Fixam}
       # The simulator runs the handler in-process, so it builds ticket links
@@ -131,3 +147,4 @@ services:
 volumes:
   pgdata:
   uploads-data:
+  model-cache:

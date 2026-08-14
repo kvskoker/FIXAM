@@ -126,7 +126,36 @@ async function classifyImage(buffer, contentType) {
 }
 
 /**
- * Transcribe Audio (Whisper).
+ * Child-safeguarding check on a photo.
+ * Uses Heavy Queue.
+ *
+ * Returns null when the check could not be run (service down, model not
+ * loaded). Callers must treat null as "unknown", never as "cleared" -- unlike
+ * the other checks here, failing open on this one means storing an image of a
+ * child, so the decision belongs to the caller.
+ */
+async function detectMinor(buffer, contentType) {
+    return heavyTaskQueue.add(async () => {
+        try {
+            const formData = new FormData();
+            formData.append('image', buffer, { filename: 'image.jpg', contentType });
+
+            const response = await axios.post(`${LOCAL_AI_URL}/detect-minor`, formData, {
+                headers: { ...formData.getHeaders() },
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity,
+                timeout: AI_TIMEOUT
+            });
+            return response.data;
+        } catch (error) {
+            logger.logError('ai_debug', 'Minor detection failed', error);
+            return null;
+        }
+    });
+}
+
+/**
+ * Transcribe Audio (Parakeet ASR in the local AI service).
  * Uses Heavy Queue.
  */
 async function transcribeAudio(buffer, filename, contentType) {
@@ -139,7 +168,7 @@ async function transcribeAudio(buffer, filename, contentType) {
                 headers: { ...formData.getHeaders() },
                 maxContentLength: Infinity,
                 maxBodyLength: Infinity,
-                timeout: AI_TIMEOUT * 2 // Give Whisper more time (2 mins)
+                timeout: AI_TIMEOUT * 2 // Transcription is the slowest call we make
             });
             return response.data.text;
         } catch (error) {
@@ -149,11 +178,12 @@ async function transcribeAudio(buffer, filename, contentType) {
     });
 }
 
-module.exports = { 
-    analyzeIssue, 
+module.exports = {
+    analyzeIssue,
     analyzeIntent,
     checkDuration,
     classifyImage,
+    detectMinor,
     transcribeAudio
 };
 

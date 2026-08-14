@@ -1,6 +1,8 @@
 import logging
 import torch
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline, AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from asr import create_engine
+from minor_detector import MinorDetector
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
@@ -31,8 +33,9 @@ env_path = os.path.join(current_dir, '..', '.env')
 load_dotenv(env_path)
 
 # Global variables
-transcription_pipe = None
+asr_engine = None
 nude_detector = None
+minor_detector = None
 intent_classifier = None
 categories_list = []
 category_embeddings = None
@@ -63,7 +66,7 @@ async def lifespan(app: FastAPI):
     """
     Load models when the server starts.
     """
-    global transcription_pipe, nude_detector, categories_list, intent_classifier
+    global asr_engine, nude_detector, minor_detector, categories_list, intent_classifier
     global category_embeddings, urgency_embeddings, urgency_list
     
     # --- Load Intent Classifier ---
@@ -110,61 +113,117 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Failed to compute embeddings: {e}")
 
-    # --- Load Whisper ---
-    device = "cuda:0" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-    
-    model_id = os.environ.get("WHISPER_MODEL", "openai/whisper-base")
-    
-    print(f"Loading Whisper model '{model_id}' on {device} ({torch_dtype})...")
-
+    # --- Load speech-to-text engine (Parakeet, see asr.py) ---
+    engine = create_engine()
+    print(f"Loading speech-to-text engine: {engine.name} ({engine.model_name})")
     try:
-        model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            model_id, 
-            torch_dtype=torch_dtype, 
-            low_cpu_mem_usage=True, 
-            use_safetensors=True
-        )
-        model.to(device)
-        
-        processor = AutoProcessor.from_pretrained(model_id)
-
-        transcription_pipe = pipeline(
-            "automatic-speech-recognition",
-            model=model,
-            tokenizer=processor.tokenizer,
-            feature_extractor=processor.feature_extractor,
-            max_new_tokens=128,
-            chunk_length_s=30,
-            batch_size=1,
-            return_timestamps=True,
-            torch_dtype=torch_dtype,
-            device=device,
-            generate_kwargs={
-                "task": "transcribe"
-            }
-        )
-        print("Whisper model loaded successfully!")
+        engine.load()
+        asr_engine = engine
+        print(f"{engine.name} loaded successfully!")
     except Exception as e:
-        print(f"Failed to load Whisper model: {e}")
-    
+        # Transcription is degraded, not fatal: the bot stores voice notes and
+        # keeps taking reports, so do not stop the rest of the service loading.
+        print(f"Failed to load {engine.name}: {type(e).__name__}: {e}".strip())
+        asr_engine = None
+
     # --- Load NudeNet ---
     print("Loading NudeNet detector...")
     try:
         nude_detector = NudeDetector()
         print("NudeNet detector loaded successfully!")
     except Exception as e:
-        print(f"Failed to load NudeNet detector: {e}")
+        print(f"Failed to load NudeNet detector: {type(e).__name__}: {e}".strip())
+
+    # --- Load age classifier (child-safeguarding check) ---
+    if os.environ.get("MINOR_DETECTION_ENABLED", "true").lower() == "true":
+        print("Loading age classifier...")
+        try:
+            detector = MinorDetector()
+            detector.load()
+            minor_detector = detector
+            print("Age classifier loaded successfully!")
+        except Exception as e:
+            print(f"Failed to load age classifier: {type(e).__name__}: {e}".strip())
+            minor_detector = None
+    else:
+        print("Age classifier disabled (MINOR_DETECTION_ENABLED=false)")
+        minor_detector = None
 
     yield
-    
+
     # Cleanup
-    del transcription_pipe
+    del asr_engine
     del nude_detector
+    del minor_detector
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.get("/")
+@app.get("/health")
+def health():
+    """
+    What is actually loaded, so a caller can tell "starting up" from "broken".
+
+    Every model here loads independently and is allowed to fail without taking
+    the service down -- the bot degrades rather than stops. That means a 200
+    from this endpoint is not enough on its own: check the individual flags.
+
+    `ready` is true only when the pieces the bot depends on are all up.
+    """
+    asr_ready = asr_engine is not None
+    nudenet_ready = nude_detector is not None
+    intent_ready = intent_classifier is not None and intent_classifier.model is not None
+    minor_ready = minor_detector is not None and minor_detector.loaded
+    minor_enabled = os.environ.get("MINOR_DETECTION_ENABLED", "true").lower() == "true"
+
+    # ffmpeg/ffprobe are what decode uploads and measure duration; without them
+    # transcription fails for every format while the model looks perfectly fine.
+    def _has(binary):
+        try:
+            subprocess.run([binary, "-version"], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, check=True)
+            return True
+        except Exception:
+            return False
+
+    ffmpeg_ready = _has("ffmpeg")
+    ffprobe_ready = _has("ffprobe")
+
+    return {
+        "status": "ok",
+        # A safeguarding model that failed to load must not read as healthy:
+        # the bot refuses every photo in that state, and an operator watching
+        # a green light would have no idea why reporting had stopped.
+        "ready": asr_ready and intent_ready and ffmpeg_ready and (minor_ready or not minor_enabled),
+        "models": {
+            "speech_to_text": {
+                "loaded": asr_ready,
+                "engine": asr_engine.name if asr_ready else None,
+                "model": asr_engine.model_name if asr_ready else os.environ.get(
+                    "PARAKEET_MODEL", "nvidia/parakeet-tdt-0.6b-v3"),
+            },
+            "image_safety": {"loaded": nudenet_ready, "model": "nudenet"},
+            "minor_detection": {
+                "loaded": minor_ready,
+                "model": minor_detector.model_id if minor_ready else None,
+                "enabled": minor_enabled,
+            },
+            "intent_classifier": {"loaded": intent_ready, "categories": len(categories_list)},
+        },
+        "media_tools": {"ffmpeg": ffmpeg_ready, "ffprobe": ffprobe_ready},
+        "endpoints": {
+            "POST /transcribe": "audio file -> text",
+            "POST /check-duration": "audio/video file -> duration in seconds",
+            "POST /classify-image": "image file -> safe|nude",
+            "POST /detect-minor": "image file -> is_minor, per-face age groups",
+            "POST /analyze-issue": "{description, categories} -> {summary, category, urgency}",
+            "POST /analyze-intent": "{text} -> {intent, entities}",
+        },
+    }
+
 
 def get_media_duration(file_path):
     try:
@@ -204,6 +263,7 @@ def classify_image(image: UploadFile = File(...)):
         tmp_path = tmp.name
 
     try:
+        _require_readable_image(tmp_path)
         detections = nude_detector.detect(tmp_path)
         is_nude = False
         
@@ -217,16 +277,71 @@ def classify_image(image: UploadFile = File(...)):
             "status": status,
             "detections": detections
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
+def _require_readable_image(path):
+    """
+    Reject anything that is not a decodable image with a clear 400.
+
+    Both detectors hand the path to OpenCV, which returns None for a file it
+    cannot decode and then fails deep inside with "'NoneType' object has no
+    attribute 'shape'" -- a 500 that tells the caller nothing.
+    """
+    from PIL import Image
+    try:
+        with Image.open(path) as img:
+            img.verify()
+    except Exception:
+        raise HTTPException(status_code=400, detail="File is not a readable image.")
+
+
+@app.post("/detect-minor")
+def detect_minor(image: UploadFile = File(...)):
+    """
+    Child-safeguarding check: is there a child's face in this photo?
+
+    Faces are located first and each one is age-classified separately. An image
+    with no face in it -- a pothole, a blocked drain, a dark street, which is
+    nearly everything citizens send -- comes back is_minor=false without the age
+    model ever running.
+
+    Returns 503 rather than a cleared verdict when the check cannot be
+    performed, so a caller is never told an unchecked image is safe.
+    """
+    if minor_detector is None or not minor_detector.loaded:
+        raise HTTPException(status_code=503, detail="Age classifier is not loaded.")
+    if nude_detector is None:
+        raise HTTPException(status_code=503, detail="Face detector is not loaded.")
+
+    suffix = f".{image.filename.split('.')[-1]}" if '.' in image.filename else ".jpg"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        shutil.copyfileobj(image.file, tmp)
+        tmp_path = tmp.name
+
+    try:
+        _require_readable_image(tmp_path)
+        result = minor_detector.detect(tmp_path, nude_detector)
+        result["filename"] = image.filename
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
 @app.post("/transcribe")
 def transcribe_audio(file: UploadFile = File(...)):
-    if not transcription_pipe:
-        raise HTTPException(status_code=500, detail="Whisper model is not loaded.")
+    if not asr_engine:
+        raise HTTPException(status_code=500, detail="Speech-to-text model is not loaded.")
 
     suffix = f".{file.filename.split('.')[-1]}" if '.' in file.filename else ".ogg"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -234,10 +349,11 @@ def transcribe_audio(file: UploadFile = File(...)):
         tmp_path = tmp.name
 
     try:
-        result = transcription_pipe(tmp_path)
+        text = asr_engine.transcribe(tmp_path)
         return {
             "filename": file.filename,
-            "text": result["text"].strip()
+            "text": text,
+            "engine": asr_engine.name,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

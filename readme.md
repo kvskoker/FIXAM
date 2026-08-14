@@ -31,7 +31,7 @@ Codebase/
 │   │   └── ...
 │   ├── ai_service/        # Local Python AI Microservices
 │   │   ├── main.py        # FastAPI Entrypoint
-│   │   └── ...            # Whisper, NudeNet, Embeddings
+│   │   └── ...            # Parakeet ASR, NudeNet, Embeddings
 │   └── ...
 │
 ├── simulator/             # WhatsApp Simulator (testing, no Meta account needed)
@@ -53,9 +53,10 @@ Codebase/
 The primary reporting channel, designed for accessibility and ease of use.
 - **Conversational Reporting**: Guided flow for citizens to report issues naturally.
 - **AI-Powered Analysis**: instant categorization, summarization, and urgency detection using Embeddings & TextRank.
-- **Voice-to-Text**: Native support for **Voice Notes** (Krio/English), transcribed locally via Whisper.
+- **Voice-to-Text**: Native support for **Voice Notes** (Krio/English), transcribed locally via NVIDIA Parakeet.
 - **Media Support**: Users can send photos or videos as evidence.
 - **Safety First**: Automated content moderation filters unsafe images (e.g., nudity) using local NudeNet.
+- **Child Safeguarding**: Photographs showing the face of a child (0-12) are refused and never stored. Faces are located first, then age-classified individually, so a photo with no people in it — nearly everything citizens send — is never affected.
 - **Location Intelligence**: GPS pins and typed addresses, reverse-geocoded into district/city/ward. Locations outside the served country are refused, and reports survive a geocoder outage by keeping the citizen's own wording for an admin to place.
 - **Duplicate Detection**: Open issues within 100 m reported in the last 7 days are shown to the citizen before they submit — configurable, and never blocking: they can still file it for admin review.
 - **Automated Feedback Loop**: Citizens receive real-time status updates via WhatsApp when their issue is acknowledged or resolved, keeping them informed without manual follow-ups.
@@ -119,7 +120,7 @@ That is the whole install. No `.env` is required to start: every value has a wor
 cp .env.example .env
 ```
 
-First run downloads the Whisper model (~3 GB with the default `large-v3`) and builds ~7 GB of images, so allow 15–25 minutes on a normal connection. Later starts take seconds. On a machine with less than 12 GB of RAM, set `WHISPER_MODEL=openai/whisper-base` before starting — see [System Requirements](#system-requirements).
+First run builds the images and downloads the speech model (~2.5 GB), so allow 30–60 minutes on a normal connection — the AI engine's dependency install is the slow part. Later starts take seconds. Consider [pre-downloading the model](#pre-downloading-the-speech-model) so the download is a visible, retryable step rather than a background one.
 
 ### Configuration
 
@@ -137,10 +138,11 @@ The variables you are most likely to change:
 | `SUPER_ADMIN_PHONE` / `SUPER_ADMIN_PASSWORD` | Creates the first admin account on boot. Change the password. |
 | `DB_PASSWORD` | Defaults to a public value. |
 | `FIXAM_BASE_URL` | The address citizens see in ticket links. Must match how the frontend is actually reachable. |
-| `WHISPER_MODEL` | Accuracy vs. RAM and speed — see [System Requirements](#system-requirements). |
+| `PARAKEET_MODEL` | Speech-to-text model. Changing it changes the RAM needed — see [System Requirements](#system-requirements). |
 | `DEV_MODE` | `true` hides the public site behind a maintenance screen and restricts the bot to admins. |
 | `SIMULATOR_ENABLED` | Lets the backend mirror admin notifications into the simulator. On by default; simulated traffic is refused when `NODE_ENV=production`. |
 | `DUPLICATE_RADIUS_METERS` / `DUPLICATE_WINDOW_DAYS` | Tune duplicate detection (default 100 m / 7 days). |
+| `MINOR_DETECTION_ENABLED` | Child-safeguarding image check. On by default; turning it off is a deliberate act. |
 
 ### What you get
 
@@ -181,52 +183,135 @@ docker compose build backend simulator && docker compose up -d backend simulator
 
 ## System Requirements
 
-**The Whisper model you choose decides everything here.** It is loaded into RAM for the life of the container, and the default — `whisper-large-v3`, chosen for transcription accuracy on Krio and accented English — is by far the largest component of the stack.
+All figures measured on the running stack, not estimated.
 
-All figures below are measured on the running stack, not estimated.
+### Memory
 
-### Memory by transcription model
-
-| `WHISPER_MODEL` | AI engine idle | Peak while transcribing | Download | Speed |
-|---|---|---|---|---|
-| `openai/whisper-large-v3` | **7.1 GB** | **9.7 GB** | ~3.0 GB | slowest |
-| `openai/whisper-base` *(default)* | 1.15 GB | ~1.2 GB | ~150 MB | ~15× faster |
-| `openai/whisper-tiny` | ~0.8 GB | ~0.9 GB | ~75 MB | fastest |
-
-Everything else in the stack is small and fixed: PostgreSQL ~50 MB, simulator ~40 MB, backend ~30 MB, frontend ~25 MB — about **145 MB combined**.
+| Component | RAM |
+|---|---|
+| AI engine (Parakeet + NudeNet + age classifier + embeddings) | **5.5 GB** idle, **5.8 GB** peak while transcribing |
+| PostgreSQL | ~50 MB |
+| Simulator | ~40 MB |
+| Backend API | ~30 MB |
+| Frontend (nginx) | ~25 MB |
+| **Total** | **~5.7 GB** |
 
 ### Host requirements
 
-| | With `large-v3` (default) | With `base` / `tiny` |
+| | Minimum | Recommended |
 |---|---|---|
-| RAM — minimum | 12 GB | 4 GB |
-| RAM — recommended | **16 GB** | **8 GB** |
-| CPU | 4 cores | 2 cores |
-| Disk | 15 GB | 10 GB |
+| RAM | 8 GB | **16 GB** |
+| CPU | 2 cores | 4 cores |
+| Disk | 15 GB | 20 GB |
 
-Transcription peaks at **9.7 GB** with `large-v3` — that is the number to size against, not the idle figure. A host with 8 GB will out-of-memory partway through a voice note. Add Docker Desktop's own VM overhead on Windows and macOS on top.
+The AI engine holds the speech model in memory for the life of the container,
+which is nearly all of the stack's footprint. Memory stays essentially flat
+during transcription (5.7 GB → 5.8 GB), so the idle figure is the one to size
+against. Add Docker Desktop's own VM overhead on Windows and macOS.
 
 Everything runs on CPU; no GPU is required, and none is used if present.
 
-### Choosing a model
+### Transcription performance
 
-`large-v3` buys accuracy at a real cost in latency. Measured on this stack, a 2-second clip took **19.4 s** to transcribe versus ~1.2 s on `base` — and transcription time scales with audio length, so a 30-second voice note can leave a citizen waiting minutes for the bot to reply.
+Measured on a 30-second ogg/opus voice note — the format WhatsApp actually
+sends:
 
-If your deployment is memory- or latency-constrained, or you are running the simulator on a laptop, switch in `.env`:
-
-```bash
-WHISPER_MODEL=openai/whisper-base
+```
+Transcribed 30.0s of audio in 1.50s (RTF 0.050)
 ```
 
-Then recreate the container: `docker compose up -d --force-recreate ai-engine`.
+An RTF of 0.05 means transcription is about **20× faster than real time**, so a
+citizen's voice note comes back in a second or two rather than minutes. Parakeet
+also returns empty text on non-speech audio instead of inventing a phrase, which
+matters here: a silent or noisy voice note produces no description rather than a
+fabricated one.
 
-**Not using the AI features at all?** `docker compose up -d postgres backend frontend` runs on ~200 MB. The bot still works — reports fall back to `Uncategorized`, voice notes are stored untranscribed, and image safety checks are skipped.
+**Not using the AI features at all?** `docker compose up -d postgres backend frontend`
+runs on ~200 MB. The bot still works — reports fall back to `Uncategorized`,
+voice notes are stored untranscribed, and image safety checks are skipped.
 
-> Models download on first start and live inside the container, so recreating `ai-engine` re-downloads them (3 GB for `large-v3`). Keep that in mind on a metered connection.
+### Pre-downloading the speech model
+
+The AI engine fetches its speech-to-text model (~2.5 GB) the first time it
+starts. That happens in the background, so a failed download leaves the
+container up and looking healthy while `/transcribe` returns 500. Pulling it as
+a foreground step first is easier to watch and safe to retry:
+
+```bash
+docker compose stop ai-engine
+docker compose run --rm ai-engine python download_model.py
+docker compose up -d ai-engine
+```
+
+Progress is shown as it downloads, and it retries automatically on the CDN
+drops that are common on a poor connection. Interrupting it is safe -- nothing
+is lost and re-running resumes from where it stopped.
+
+Everything the engine downloads lands in the `model-cache` Docker volume --
+speech (Parakeet), age classification (SigLIP2) and the intent embeddings
+(MiniLM) all cache under `HF_HOME`, which is pinned to the mount point. NudeNet
+needs no volume: its detector ships inside the pip package.
+
+So **this is a one-time cost**: rebuilds, restarts and container recreation all
+reuse it. Measured on a freshly recreated container, startup is **44 seconds**
+with no weights re-fetched. Only `docker compose down -v` clears the cache.
+
+### Checking the AI engine
+
+```bash
+curl http://localhost:8000/health
+```
+
+Each model loads independently and is allowed to fail without stopping the
+service, so a 200 response is not on its own proof that everything works --
+read the `ready` flag:
+
+```json
+{
+  "status": "ok",
+  "ready": true,
+  "models": {
+    "speech_to_text": { "loaded": true, "engine": "parakeet" },
+    "image_safety": { "loaded": true },
+    "minor_detection": { "loaded": true, "enabled": true },
+    "intent_classifier": { "loaded": true, "categories": 35 }
+  },
+  "media_tools": { "ffmpeg": true, "ffprobe": true }
+}
+```
+
+`ready` is false when speech-to-text, the intent classifier or ffmpeg is
+missing, **or** when child-safeguarding is enabled but its model failed to
+load. That last case matters: the bot refuses every photo in that state, so it
+must not report healthy. A deployment that has deliberately set
+`MINOR_DETECTION_ENABLED=false` still reads `ready: true`.
+
+`ready: false` with `loaded: false` on any model almost always means its
+download did not finish -- run the pre-download above.
+
+The engine is published on port 8000 (`AI_ENGINE_PORT`) so it can be exercised
+directly with curl or Postman:
+
+| Endpoint | Body | Field |
+|---|---|---|
+| `POST /transcribe` | form-data | `file` (audio) |
+| `POST /check-duration` | form-data | `file` (audio/video) |
+| `POST /classify-image` | form-data | `image` |
+| `POST /detect-minor` | form-data | `image` |
+| `POST /analyze-issue` | JSON | `{"description": "..."}` |
+| `POST /analyze-intent` | JSON | `{"text": "..."}` |
+
+```bash
+curl -F "file=@voice-note.mp3" http://localhost:8000/transcribe
+```
+
+The backend reaches the engine over the compose network, so this port mapping is
+only for testing -- remove it in `docker-compose.yml` to keep the engine
+internal on a public host.
 
 ### Running without Docker
 
-Requires Node.js 16+, PostgreSQL 12+, Python 3.8+, and **FFmpeg** (Whisper decodes every upload through it — without it, transcription fails for every audio format).
+Requires Node.js 16+, PostgreSQL 12+, Python 3.8+, and **FFmpeg** (audio is decoded through it — without it, transcription fails for every format).
 
 ```bash
 psql -U postgres -c "CREATE DATABASE fixam_db;"
@@ -251,7 +336,7 @@ It is behind a compose profile, so a plain `docker compose up -d` never starts i
 ### What you can test
 
 - **Full reporting flow** — greeting, consent, registration, evidence, location, description, duplicate check, confirmation.
-- **Media** — photos, videos, voice notes and documents by file upload. Voice notes are transcribed by the same Whisper service production uses.
+- **Media** — photos, videos, voice notes and documents by file upload. Voice notes are transcribed by the same AI engine production uses.
 - **GPS locations** — send exact coordinates, including out-of-area pins to check they are refused.
 - **Admin updates** — change an issue's status from the **+** menu ("Admin Status Update") and watch the citizen's notification arrive in the chat. This calls the real admin API, so it exercises the genuine notification path rather than a stub.
 - **Multiple citizens** — switch numbers with the **Use number** button; each number keeps its own conversation history, loaded from the message log.
@@ -278,7 +363,7 @@ Simulated webhooks carry a marker the handler checks. Recognised simulated traff
 - **Frontend**: Vanilla JS, Leaflet/Mapbox, Chart.js, CSS
 - **Backend**: Node.js, Express, Socket.io
 - **Database**: PostgreSQL
-- **AI/ML**: Python (FastAPI), Whisper (OpenAI), NudeNet, SentenceTransformers (Embeddings), Summa (TextRank)
+- **AI/ML**: Python (FastAPI), NVIDIA Parakeet TDT via NeMo (speech-to-text), NudeNet, SentenceTransformers (Embeddings), Summa (TextRank)
 - **Integration**: WhatsApp Business API (Meta), OpenStreetMap Nominatim
 - **Deployment**: Docker Compose (PostgreSQL, API, AI engine, nginx, simulator)
 

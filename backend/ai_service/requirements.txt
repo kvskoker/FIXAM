@@ -4,6 +4,12 @@ python-multipart
 nudenet
 torch
 transformers
+# Speech-to-text. NeMo powers the default Parakeet engine; transformers (above)
+# still provides Whisper when ASR_ENGINE=whisper. librosa/soundfile decode and
+# resample uploads to the 16 kHz mono Parakeet expects.
+nemo_toolkit[asr]
+librosa
+soundfile
 accelerate
 scipy
 python-dotenv
@@ -11,3 +17,4 @@ psycopg2-binary
 sentence-transformers
 scikit-learn
 summa
+pillow

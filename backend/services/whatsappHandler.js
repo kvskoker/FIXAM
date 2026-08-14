@@ -24,6 +24,10 @@ const UPLOADS_ROOT = process.env.UPLOADS_DIR
 const DUPLICATE_RADIUS_METERS = Number(process.env.DUPLICATE_RADIUS_METERS) || 100;
 const DUPLICATE_WINDOW_DAYS = Number(process.env.DUPLICATE_WINDOW_DAYS) || 7;
 
+// Refuse photographs showing a child's face. On by default: this is a
+// safeguarding control, so disabling it should be a deliberate act.
+const MINOR_DETECTION_ENABLED = process.env.MINOR_DETECTION_ENABLED !== 'false';
+
 class FixamHandler {
     constructor(whatsAppService, db, io, debugLog) {
         this.whatsAppService = whatsAppService;
@@ -1226,6 +1230,36 @@ class FixamHandler {
                 }
                 logger.log('media_handler', 'Image passed safety check matches');
 
+                // Child-safeguarding: refuse photographs showing a child's face.
+                // Runs before the file is written to disk, so a flagged image is
+                // never stored -- the whole point of the check.
+                if (MINOR_DETECTION_ENABLED) {
+                    const minorCheck = await aiService.detectMinor(
+                        downloadResult.buffer,
+                        downloadResult.mimeType || 'image/jpeg'
+                    );
+
+                    if (minorCheck && minorCheck.is_minor) {
+                        logger.log('media_handler',
+                            `Image rejected: child detected (${minorCheck.faces_found} face(s))`);
+                        await this.sendMessage(fromNumber,
+                            "⚠️ *Image not accepted*\n\n"
+                            + "This photo appears to show a child. To protect children's privacy we cannot store it.\n\n"
+                            + "Please send a photo of the issue itself, without people in the frame.");
+                        return;
+                    }
+
+                    if (!minorCheck) {
+                        // The check could not run. Not knowing is not the same as
+                        // being safe, so refuse rather than store an unchecked
+                        // image of a possible child.
+                        logger.log('media_handler', 'Minor detection unavailable; refusing image');
+                        await this.sendMessage(fromNumber,
+                            "⚠️ We can't verify this image right now. Please try sending it again in a moment, or type *skip* to continue without a photo.");
+                        return;
+                    }
+                }
+
             } else if (downloadResult && mediaType === 'video') {
                 // Check duration
                 logger.log('media_handler', 'Checking video duration...');
@@ -1332,7 +1366,7 @@ class FixamHandler {
             fs.writeFileSync(filePath, downloadResult.buffer);
             mediaUrl = `/uploads/issues/audio/${filename}`;
 
-            // Transcribe with Whisper
+            // Transcribe the voice note
             await this.sendMessage(fromNumber, "Transcribing your voice note... 🎙️");
             transcribedText = await aiService.transcribeAudio(
                 downloadResult.buffer, 
