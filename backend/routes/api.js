@@ -6,6 +6,7 @@ const authService = require('../services/authService');
 
 const whatsappService = require('../services/whatsappService');
 const FixamHandler = require('../services/whatsappHandler');
+const FixamHelpers = require('../services/fixamHelpers');
 
 // Initialize Handler
 const fixamHandler = new FixamHandler(whatsappService, db, null, console.log);
@@ -723,6 +724,67 @@ router.get('/admin/insights', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// PUT /api/admin/issues/:id/location - Place a report on the map by hand
+//
+// Reports whose address could not be geocoded are stored with the citizen's own
+// wording and no coordinates, which keeps the report but leaves it off the map.
+// This is how an admin resolves that: they can read the description and the
+// photo, and usually know the area far better than a geocoder does.
+router.put('/admin/issues/:id/location', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { lat, lng, address, district, city, ward, admin_id } = req.body;
+
+        const latitude = Number(lat);
+        const longitude = Number(lng);
+
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+            return res.status(400).json({ success: false, message: 'Valid lat and lng are required.' });
+        }
+
+        // Same service-area rule the bot applies to a citizen's GPS pin; an
+        // admin typo should not put a report in the sea either.
+        const helpers = new FixamHelpers(console.log);
+        if (!helpers.isWithinServiceArea(latitude, longitude)) {
+            return res.status(400).json({
+                success: false,
+                message: `Coordinates are outside ${helpers.serviceArea.name}.`
+            });
+        }
+
+        const existing = await db.query('SELECT id, address FROM issues WHERE id = $1', [id]);
+        if (existing.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Issue not found' });
+        }
+
+        await db.query(
+            `UPDATE issues
+             SET lat = $1, lng = $2,
+                 address = COALESCE($3, address),
+                 district = COALESCE($4, district),
+                 city = COALESCE($5, city),
+                 ward = COALESCE($6, ward),
+                 location_source = 'admin',
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $7`,
+            [latitude, longitude, address || null, district || null, city || null, ward || null, id]
+        );
+
+        // Recorded in the audit trail: someone changed where this issue is, and
+        // that should be as traceable as changing its status.
+        await db.query(
+            `INSERT INTO issue_tracker (issue_id, action, description, performed_by)
+             VALUES ($1, 'location_set', $2, $3)`,
+            [id, `Location set manually to ${latitude}, ${longitude}${address ? ` (${address})` : ''}`, admin_id || null]
+        );
+
+        res.json({ success: true, message: 'Location updated.' });
+    } catch (err) {
+        console.error('Manual location update failed:', err);
+        res.status(500).json({ success: false, message: 'Internal Server Error' });
     }
 });
 

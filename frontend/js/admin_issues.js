@@ -332,6 +332,117 @@ function formatIssueLocation(issue, { detailed = false } = {}) {
     return text;
 }
 
+/**
+ * Provenance badges for an evidence photo.
+ *
+ * Neither of these is a verdict — the platform does not judge whether an image
+ * is adequate evidence. They are facts an admin needs before deciding to mark a
+ * report as spam.
+ */
+function formatEvidenceFlags(issue, { detailed = false } = {}) {
+    const flags = [];
+    const badge = (bg, fg, text, title) =>
+        `<span title="${title}" style="background: ${bg}; color: ${fg}; border-radius: 4px; padding: 1px 6px; font-size: 0.75rem; font-weight: 600; white-space: nowrap;">${text}</span>`;
+
+    if (issue.image_reused_from) {
+        flags.push(badge('var(--admin-warning)', '#1a202c', 'REUSED PHOTO',
+            'This exact photo was already submitted on an earlier report'));
+    }
+
+    if (issue.image_forwarded === true) {
+        flags.push(badge('var(--admin-primary)', '#fff', 'FORWARDED',
+            'Sent as a forwarded WhatsApp message — the reporter did not take this photo in the moment'));
+    }
+
+    if (!flags.length) return '';
+
+    // In the modal the admin is deciding, not scanning, so spell out what the
+    // badge means and which report the photo came from.
+    if (detailed) {
+        const notes = [];
+        if (issue.image_reused_from) {
+            notes.push(`This photo was already used on issue #${issue.image_reused_from}.`);
+        }
+        if (issue.image_forwarded === true) {
+            notes.push('The photo was forwarded rather than taken by the reporter.');
+        }
+        return flags.join(' ')
+            + `<div style="margin-top: 0.4rem; font-size: 0.85rem; color: var(--admin-text-muted);">${notes.join(' ')}</div>`;
+    }
+
+    return flags.join(' ');
+}
+
+
+/**
+ * Lets an admin place a report that the geocoder could not.
+ *
+ * Only offered when there are no coordinates: those reports exist, hold a real
+ * description and photo, and are invisible on the map until somebody positions
+ * them. Local staff usually know exactly where "behind the big cotton tree at
+ * Mile 91 junction" is.
+ */
+function renderLocationFixer(issue) {
+    const host = document.getElementById('modal-evidence-flags');
+    if (!host) return;
+
+    const hasPoint = issue.lat !== null && issue.lat !== undefined
+        && issue.lng !== null && issue.lng !== undefined;
+    if (hasPoint) return;
+
+    const box = document.createElement('div');
+    box.style.cssText = 'margin-top: 0.75rem; padding: 0.75rem; border: 1px solid var(--admin-border); border-radius: 6px;';
+    box.innerHTML = `
+        <div style="font-size: 0.85rem; color: var(--admin-text-muted); margin-bottom: 0.5rem;">
+            This report has no map position. The citizen described it as:
+            <em>${issue.address ? String(issue.address).replace(/</g, '&lt;') : 'no address given'}</em>
+        </div>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+            <input id="fix-lat" placeholder="Latitude" style="width: 120px; padding: 6px; border: 1px solid var(--admin-border); border-radius: 4px;">
+            <input id="fix-lng" placeholder="Longitude" style="width: 120px; padding: 6px; border: 1px solid var(--admin-border); border-radius: 4px;">
+            <button id="fix-location-btn" style="background: var(--admin-primary); color: #fff; border: none; padding: 7px 14px; border-radius: 4px; cursor: pointer;">Set location</button>
+        </div>
+        <div id="fix-location-msg" style="margin-top: 0.5rem; font-size: 0.85rem;"></div>`;
+    host.appendChild(box);
+
+    document.getElementById('fix-location-btn').addEventListener('click', async () => {
+        const msg = document.getElementById('fix-location-msg');
+        const lat = document.getElementById('fix-lat').value.trim();
+        const lng = document.getElementById('fix-lng').value.trim();
+
+        if (!lat || !lng) {
+            msg.style.color = 'var(--admin-danger)';
+            msg.textContent = 'Enter both latitude and longitude.';
+            return;
+        }
+
+        msg.style.color = 'var(--admin-text-muted)';
+        msg.textContent = 'Saving...';
+
+        try {
+            const admin = JSON.parse(localStorage.getItem('fixam_admin_user') || '{}');
+            const res = await fetch(`${API_BASE_URL}/admin/issues/${issue.id}/location`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lat, lng, admin_id: admin.id || null })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                msg.style.color = 'var(--admin-success)';
+                msg.textContent = 'Location set. Refreshing...';
+                setTimeout(() => { closeModal(); loadIssues(); }, 900);
+            } else {
+                msg.style.color = 'var(--admin-danger)';
+                msg.textContent = data.message || 'Could not set the location.';
+            }
+        } catch (err) {
+            msg.style.color = 'var(--admin-danger)';
+            msg.textContent = 'Network error: ' + err.message;
+        }
+    });
+}
+
 function renderIssuesTable(issues) {
     const tbody = document.getElementById('issues-table-body');
     tbody.innerHTML = '';
@@ -346,7 +457,7 @@ function renderIssuesTable(issues) {
         tr.innerHTML = `
             <td data-label="Issue ID" style="padding: 1rem; font-family: monospace;">${issue.ticket_id || 'N/A'}</td>
             <td data-label="Category" style="padding: 1rem;">${issue.category}</td>
-            <td data-label="Title" style="padding: 1rem; font-weight: 500;">${issue.title}</td>
+            <td data-label="Title" style="padding: 1rem; font-weight: 500;">${issue.title} ${formatEvidenceFlags(issue)}</td>
             <td data-label="Location" style="padding: 1rem; color: var(--admin-text-muted);">${formatIssueLocation(issue)}</td>
             <td data-label="Votes" style="padding: 1rem;">${issue.upvotes || 0}</td>
             <td data-label="Status" style="padding: 1rem;"><span style="color: ${statusColors[issue.status] || 'white'}; font-weight: 600; text-transform: capitalize;">${issue.status}</span></td>
@@ -378,6 +489,11 @@ async function openIssueDetails(id) {
             document.getElementById('modal-title').textContent = issue.title;
             document.getElementById('modal-desc').textContent = issue.description;
             document.getElementById('modal-location').innerHTML = formatIssueLocation(issue, { detailed: true });
+            // Provenance belongs where the admin actually decides, not only
+            // in the list view they scrolled past to get here.
+            const flagsEl = document.getElementById('modal-evidence-flags');
+            if (flagsEl) flagsEl.innerHTML = formatEvidenceFlags(issue, { detailed: true });
+            renderLocationFixer(issue);
             
             // Audio Player
             const descContainer = document.getElementById('modal-desc');

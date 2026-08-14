@@ -165,6 +165,12 @@ ALTER TABLE issues ADD COLUMN IF NOT EXISTS constituency VARCHAR(100);
 ALTER TABLE issues ADD COLUMN IF NOT EXISTS location_source VARCHAR(20) DEFAULT 'geocoded';
 CREATE INDEX IF NOT EXISTS idx_issues_district ON issues (district);
 CREATE INDEX IF NOT EXISTS idx_issues_location_source ON issues (location_source);
+-- Image provenance (see db/migration_image_provenance.sql)
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS image_sha256 VARCHAR(64);
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS image_mime_type VARCHAR(100);
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS image_forwarded BOOLEAN;
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS image_reused_from INTEGER REFERENCES issues(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_issues_image_sha256 ON issues (image_sha256);
 -- Voice-note reports: written by createIssue(), so a database created before
 -- this column existed fails every report submission with a bare "Error
 -- submitting report".

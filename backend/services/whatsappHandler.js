@@ -28,6 +28,66 @@ const DUPLICATE_WINDOW_DAYS = Number(process.env.DUPLICATE_WINDOW_DAYS) || 7;
 // safeguarding control, so disabling it should be a deliberate act.
 const MINOR_DETECTION_ENABLED = process.env.MINOR_DETECTION_ENABLED !== 'false';
 
+/**
+ * The reporting flow as an ordered list, so "back" has something to walk.
+ *
+ * Each entry says which step to return to and what to clear on the way. Data is
+ * dropped deliberately: going back to the photo step while keeping the old
+ * photo would leave the citizen unable to tell whether their replacement took
+ * effect.
+ */
+const REPORT_STEPS = [
+    { step: 'awaiting_report_evidence', clears: ['image_url', 'image_sha256', 'image_mime_type', 'image_forwarded', 'image_reused_from'] },
+    { step: 'awaiting_report_location', clears: ['lat', 'lng', 'address', 'district', 'city', 'ward', 'location_source', 'pending_addresses', 'address_attempts'] },
+    { step: 'awaiting_report_description', clears: ['description', 'title', 'category', 'urgency'] },
+    { step: 'awaiting_report_confirmation', clears: ['potential_duplicates'] },
+];
+
+/**
+ * Appended to every prompt in the reporting flow that waits for an answer.
+ *
+ * The way out has to be on the message the citizen is looking at. Documenting
+ * "0" and "9" once at the start of the flow does not help somebody four
+ * questions in on a phone, and the commands are useless if nobody knows they
+ * exist at the moment they need them.
+ */
+const REPORT_NAV_FOOTER = '\n\n_↩️ *0* go back  •  ❌ *9* cancel_';
+
+// The first step of the report has nothing behind it, so offering "go back"
+// there advertises a command that cannot work.
+const REPORT_CANCEL_FOOTER = '\n\n_❌ *9* cancel_';
+
+/**
+ * Attach the navigation footer, unless it is already there.
+ * Pass { back: false } on the first step of the flow.
+ */
+function withNav(message, { back = true } = {}) {
+    if (message.includes('*9* cancel')) return message;
+    return `${message}${back ? REPORT_NAV_FOOTER : REPORT_CANCEL_FOOTER}`;
+}
+
+// What the bot says when it re-asks a step the citizen stepped back to.
+const REPORT_STEP_PROMPTS = {
+    awaiting_report_evidence: "📸 Please send a *Photo* or *Video* of the issue, or type *skip* if you don't have one.",
+    awaiting_report_location: "📍 Please share the *Location* of the issue.\n\nUse the attachment icon > Location, or type the address.",
+    awaiting_report_description: "📝 Please describe the issue (Text or Voice Note).",
+};
+
+const BACK_WORDS = ['back', 'previous', 'prev', 'go back', '0'];
+
+// Steps that ask the citizen to choose what to do about a problem with the
+// stage they are on. They are branches, not stages: "back" from one means "back
+// from the stage that raised it", so they resolve to their owner first.
+const BACK_STEP_ALIASES = {
+    awaiting_reused_photo_choice: 'awaiting_report_evidence',
+    awaiting_unresolved_location_choice: 'awaiting_report_location',
+    // Picking between several geocoder matches is still the location stage.
+    awaiting_address_selection: 'awaiting_report_location',
+    // The duplicate prompts follow the description, so back returns to it.
+    awaiting_duplicate_action: 'awaiting_report_confirmation',
+    awaiting_duplicate_selection_for_vote: 'awaiting_report_confirmation',
+};
+
 class FixamHandler {
     constructor(whatsAppService, db, io, debugLog) {
         this.whatsAppService = whatsAppService;
@@ -166,8 +226,18 @@ class FixamHandler {
                 current_step: 'awaiting_delete_confirmation',
                 data: {}
             });
-            await this.sendMessage(fromNumber, "⚠️ *Delete Account Confirmation*\n\nYou are about to permanently delete your account and ALL associated data. This action cannot be undone.\n\nType *YES* to confirm deletion\nType *9* to cancel.");
+            await this.sendMessage(fromNumber, "⚠️ *Delete Account Confirmation*\n\nYou are about to permanently delete your account and ALL associated data. This action cannot be undone.\n\nType *YES* to confirm deletion\n");
             return;
+        }
+
+        // Global: step back one stage of the report. Checked before the state
+        // machine so it works from any step, and before the greeting/
+        // acknowledgement handlers below so those cannot swallow it.
+        if (BACK_WORDS.includes(lowerInput) && user) {
+            const backState = await this.fixamDb.getConversationState(fromNumber);
+            if (backState && await this.goBackOneStep(fromNumber, backState)) {
+                return;
+            }
         }
 
         // Global Reset (skip if confirming deletion — let switch handle it)
@@ -220,7 +290,7 @@ class FixamHandler {
                         current_step: 'awaiting_vote_confirmation',
                         data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
                      });
-                     await this.sendMessage(fromNumber, `🗳️ *Vote Request Detected*\n\nFound Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                     await this.sendMessage(fromNumber, `🗳️ *Vote Request Detected*\n\nFound Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\n`);
                      return;
                  }
              }
@@ -249,7 +319,7 @@ class FixamHandler {
                             current_step: 'awaiting_vote_confirmation',
                             data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
                         });
-                        await this.sendMessage(fromNumber, `Thanks ${name}! ✅\n\nNow back to your vote:\n\n🗳️ *${issue.title}*\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                        await this.sendMessage(fromNumber, `Thanks ${name}! ✅\n\nNow back to your vote:\n\n🗳️ *${issue.title}*\nType *1* to Upvote 👍\nType *2* to Downvote 👎\n`);
                         return;
                     }
                 }
@@ -390,9 +460,10 @@ class FixamHandler {
                             let msg = "Great! Let's report an issue.";
                             if(newData.description) msg += `\n\n📝 I noted the description: "${newData.description}"`;
                             if(newData.address) msg += `\n📍 I noted the location: "${newData.address}"`;
-                            msg += "\n\nPlease send a *Photo* or *Video* of the issue as evidence, or type *9* to cancel.";
-                            
-                            await this.sendMessage(fromNumber, msg);
+                            msg += "\n\nPlease send a *Photo* or *Video* of the issue as evidence.";
+
+                            // First stage of the report: nothing to go back to.
+                            await this.sendMessage(fromNumber, withNav(msg, { back: false }));
                             return;
 
                         } else if (analysis.intent === 'vote_issue') {
@@ -413,7 +484,7 @@ class FixamHandler {
                                             current_step: 'awaiting_vote_confirmation',
                                             data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title, pre_vote: voteType }
                                          });
-                                         await this.sendMessage(fromNumber, `Found Issue: *${issue.title}* (${issue.ticket_id})\n\nI see you want to *${voteType}*.\n\nType *1* to Confirm Upvote 👍\nType *2* to Confirm Downvote 👎\nType *9* to cancel.`);
+                                         await this.sendMessage(fromNumber, `Found Issue: *${issue.title}* (${issue.ticket_id})\n\nI see you want to *${voteType}*.\n\nType *1* to Confirm Upvote 👍\nType *2* to Confirm Downvote 👎\n`);
                                      } else {
                                          // If it's just a ticket ID in a vote context but NO clear vote intent keywords,
                                          // maybe redirect to tracking instead? 
@@ -423,7 +494,7 @@ class FixamHandler {
                                             current_step: 'awaiting_vote_confirmation',
                                             data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
                                          });
-                                         await this.sendMessage(fromNumber, `Found Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                                         await this.sendMessage(fromNumber, `Found Issue: *${issue.title}* (${issue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\n`);
                                      }
                                  } else {
                                      await this.sendMessage(fromNumber, `Could not find issue with ID: ${ticketId}. Please check and try again.`);
@@ -431,7 +502,7 @@ class FixamHandler {
                                  }
                              } else {
                                 await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_vote_ticket_id', data: {} });
-                                await this.sendMessage(fromNumber, "Okay! Please enter the *Issue ID* of the issue you want to vote on, or type *9* to cancel.");
+                                await this.sendMessage(fromNumber, "Okay! Please enter the *Issue ID* of the issue you want to vote on.");
                              }
                              return;
 
@@ -457,7 +528,7 @@ class FixamHandler {
                                             msg += `   📍 ${issue.address || 'Location N/A'}\n`;
                                             msg += `   👍 ${issue.upvote_count} Upvotes\n\n`;
                                          });
-                                         msg += `Reply with the number (e.g. *1*) to view details and vote, or *9* to cancel.`;
+                                         msg += `Reply with the number (e.g. *1*) to view details and vote.`;
 
                                          await this.fixamDb.updateConversationState(fromNumber, { 
                                             current_step: 'awaiting_trending_selection',
@@ -466,11 +537,11 @@ class FixamHandler {
                                         await this.sendMessage(fromNumber, msg);
                                  } else {
                                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_trending_community', data: {} });
-                                    await this.sendMessage(fromNumber, `I couldn't find "${community}". Please enter the name of the community again (e.g. 'Lumley'), or type *9* to cancel.`);
+                                    await this.sendMessage(fromNumber, `I couldn't find "${community}". Please enter the name of the community again (e.g. 'Lumley').`);
                                  }
                              } else {
                                 await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_trending_community', data: {} });
-                                await this.sendMessage(fromNumber, "Please enter the name of the community or area you want to check (e.g. 'Lumley', 'Kissy'), or type *9* to cancel.");
+                                await this.sendMessage(fromNumber, "Please enter the name of the community or area you want to check (e.g. 'Lumley', 'Kissy').");
                              }
                              return;
 
@@ -492,7 +563,7 @@ class FixamHandler {
                                  return await this.handleTextMessage(fromNumber, ticketId);
                              } else {
                                 await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_track_ticket_id', data: {} });
-                                await this.sendMessage(fromNumber, "🔍 *Track/Endorse Issue*\n\nPlease enter the *Issue ID* you want to follow up on, or type *9* to cancel.");
+                                await this.sendMessage(fromNumber, "🔍 *Track/Endorse Issue*\n\nPlease enter the *Issue ID* you want to follow up on.");
                              }
                              return;
 
@@ -552,16 +623,16 @@ class FixamHandler {
                     }
 
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_report_evidence', data: {} });
-                    await this.sendMessage(fromNumber, "Great! Let's report an issue.\n\nPlease send a *Photo* or *Video* of the issue as evidence, or type *9* to cancel.");
+                    await this.sendMessage(fromNumber, withNav("Great! Let's report an issue.\n\nPlease send a *Photo* or *Video* of the issue as evidence.", { back: false }));
                 } else if (input === '2' || lowerInput.includes('vote')) {
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_vote_ticket_id', data: {} });
-                    await this.sendMessage(fromNumber, "Okay! Please enter the *Issue ID* of the issue you want to vote on, or type *9* to cancel.");
+                    await this.sendMessage(fromNumber, "Okay! Please enter the *Issue ID* of the issue you want to vote on.");
                 } else if (input === '3' || lowerInput.includes('track') || lowerInput.includes('endorse') || lowerInput.includes('status')) {
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_track_ticket_id', data: {} });
-                    await this.sendMessage(fromNumber, "🔍 *Track/Endorse Issue*\n\nPlease enter the *Issue ID* you want to follow up on, or type *9* to cancel.");
+                    await this.sendMessage(fromNumber, "🔍 *Track/Endorse Issue*\n\nPlease enter the *Issue ID* you want to follow up on.");
                 } else if (input === '4' || lowerInput.includes('trending')) {
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_trending_community', data: {} });
-                    await this.sendMessage(fromNumber, "Please enter the name of the community or area you want to check (e.g. 'Lumley', 'Kissy'), or type *9* to cancel.");
+                    await this.sendMessage(fromNumber, "Please enter the name of the community or area you want to check (e.g. 'Lumley', 'Kissy').");
                 } else if (input === '5' || lowerInput.includes('point')) {
                     const points = user.points || 0;
                     await this.sendMessage(fromNumber, `🏆 *Your Citizen Score*\n\nYou currently have: *${points} Points* ⭐\n\n*How to earn points:*\n+10 pts: Report an Issue\n+50 pts: Issue Resolved\n+5 pts: Endorsing Resolution\n+1 pt: Getting Upvoted\n\nKeep participating to unlock future rewards! 🎁\n\nType *Hi* to return to the main menu.`);
@@ -632,11 +703,109 @@ class FixamHandler {
             case 'awaiting_report_evidence':
                 if (lowerInput === 'skip') {
                      await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_report_location' });
-                     await this.sendMessage(fromNumber, "Okay, skipping evidence.\n\nNow, please share the *Location* of the issue.\n\n📍 Use the attachment icon > Location\n✏️ Or type the address (e.g., '5 Jabbiela Drive')\n\nType *9* to cancel.");
+                     await this.sendMessage(fromNumber, withNav("Okay, skipping evidence.\n\nNow, please share the *Location* of the issue.\n\n📍 Use the attachment icon > Location\n✏️ Or type the address (e.g., '5 Jabbiela Drive')\n\n"));
                 } else {
-                    await this.sendMessage(fromNumber, "Please send a *Photo* or *Video* (not text) to continue, or type 'skip' if you don't have one. Type *9* to cancel.");
+                    await this.sendMessage(fromNumber, withNav("Please send a *Photo* or *Video* (not text) to continue, or type 'skip' if you don't have one.", { back: false }));
                 }
                 break;
+
+            case 'awaiting_unresolved_location_choice': {
+                const unresolvedData = state.data || {};
+                const typedAddress = unresolvedData.unresolved_address || '';
+
+                if (input === '1' || lowerInput === 'keep') {
+                    // Filed with the citizen's own wording and no coordinates.
+                    // The report is worth more than the pin: an admin can place
+                    // it from the description and photo.
+                    unresolvedData.address = typedAddress;
+                    unresolvedData.lat = null;
+                    unresolvedData.lng = null;
+                    unresolvedData.location_source = 'unresolved';
+                    delete unresolvedData.unresolved_address;
+                    delete unresolvedData.address_attempts;
+
+                    await this.fixamDb.updateConversationState(fromNumber, {
+                        current_step: 'awaiting_report_description',
+                        data: unresolvedData
+                    });
+                    await this.sendMessage(fromNumber, withNav(
+                        `✅ Noted: *${typedAddress}*\n\n_An admin will pinpoint this on the map._\n\n`
+                        + `Please describe the issue (Text or Voice Note).`));
+                } else if (input === '2' || lowerInput === 'retry' || lowerInput === 'again') {
+                    delete unresolvedData.unresolved_address;
+                    await this.fixamDb.updateConversationState(fromNumber, {
+                        current_step: 'awaiting_report_location',
+                        data: unresolvedData
+                    });
+                    await this.sendMessage(fromNumber,
+                        "📍 Please share the location again.\n\n"
+                        + "Use the attachment icon > Location for an exact position, or type the address "
+                        + "with a nearby landmark or town (e.g. \"Wilkinson Road, Freetown\").");
+                } else if (input === '3') {
+                    delete unresolvedData.unresolved_address;
+                    await this.goBackOneStep(fromNumber, {
+                        current_step: state.current_step,
+                        data: unresolvedData
+                    });
+                } else {
+                    await this.sendMessage(fromNumber,
+                        "Please reply *1* to keep it as written, *2* to try the location again, *3* to go back.");
+                }
+                break;
+            }
+
+            case 'awaiting_reused_photo_choice': {
+                const reusedData = state.data || {};
+
+                if (input === '1' || lowerInput === 'use') {
+                    await this.fixamDb.updateConversationState(fromNumber, {
+                        current_step: 'awaiting_report_location',
+                        data: reusedData
+                    });
+                    await this.sendMessage(fromNumber,
+                        reusedData.address
+                            ? `Keeping that photo. 📸\n\nI previously noted the location: *${reusedData.address}*.\n\nType *Yes* to confirm, or share a new location.`
+                            : "Keeping that photo. 📸\n\nNow, please share the *Location* of the issue.\n\n📍 Use the attachment icon > Location\n✏️ Or type the address");
+                } else if (input === '2' || lowerInput === 'new' || lowerInput === 'different') {
+                    // Drop the flagged photo so there is no doubt about which one
+                    // ends up on the report.
+                    for (const key of ['image_url', 'image_sha256', 'image_mime_type', 'image_forwarded', 'image_reused_from']) {
+                        delete reusedData[key];
+                    }
+                    await this.fixamDb.updateConversationState(fromNumber, {
+                        current_step: 'awaiting_report_evidence',
+                        data: reusedData
+                    });
+                    await this.sendMessage(fromNumber,
+                        "👍 No problem. Please send the *Photo* or *Video* you meant to use, or type *skip* to continue without one.");
+                } else if (input === '3' || lowerInput === 'view') {
+                    // Hand over to the existing tracking flow, which already
+                    // shows status and offers voting or a follow-up.
+                    const ticket = reusedData.image_reused_from
+                        ? (await this.fixamDb.getIssueById(reusedData.image_reused_from))?.ticket_id
+                        : null;
+
+                    if (!ticket) {
+                        await this.sendMessage(fromNumber, "Sorry, I couldn't open that report. Type *1* to use your photo anyway, or *2* to send a different one.");
+                        break;
+                    }
+
+                    // Set the step in one write. Resetting first cleared the row,
+                    // so the ticket arrived with no state and the global
+                    // FIX-xxxxxx handler grabbed it into the voting flow instead
+                    // of showing the report's status.
+                    await this.fixamDb.updateConversationState(fromNumber, {
+                        current_step: 'awaiting_track_ticket_id',
+                        data: {}
+                    });
+                    await this.sendMessage(fromNumber, `Opening *${ticket}* — your draft report has been discarded.`);
+                    return await this.handleTextMessage(fromNumber, ticket);
+                } else {
+                    await this.sendMessage(fromNumber,
+                        "Please reply *1* to use the photo anyway, *2* to send a different one, *3* to view the earlier report.");
+                }
+                break;
+            }
 
             case 'awaiting_report_location': {
                 if (input.toLowerCase() === 'yes' && state.data && state.data.address) {
@@ -649,9 +818,9 @@ class FixamHandler {
                     if (state.data.description) {
                         msg += `\n(💡 I noted: "${state.data.description}". Type *Use* to keep this description)`;
                     } else {
-                        msg += `, or type *9* to cancel.`;
+                        msg += `.`;
                     }
-                    await this.sendMessage(fromNumber, msg);
+                    await this.sendMessage(fromNumber, withNav(msg));
                     break;
                 }
 
@@ -675,7 +844,8 @@ class FixamHandler {
                     await this.sendMessage(fromNumber,
                         `✅ Noted: *${currentData.address}*\n\n`
                         + `_An admin will pinpoint this on the map._\n\n`
-                        + `Please describe the issue (Text or Voice Note).`);
+                        + `Please describe the issue (Text or Voice Note).`
+                        + REPORT_NAV_FOOTER);
                     break;
                 }
 
@@ -699,7 +869,8 @@ class FixamHandler {
                     await this.sendMessage(fromNumber,
                         `⚠️ I can't verify addresses at the moment, so I've noted your location as:\n*${currentData.address}*\n\n`
                         + `An admin will confirm it. If you can, share your GPS location later for an exact position.\n\n`
-                        + `Please describe the issue (Text or Voice Note).`);
+                        + `Please describe the issue (Text or Voice Note).`
+                        + REPORT_NAV_FOOTER);
                     break;
                 }
 
@@ -708,20 +879,29 @@ class FixamHandler {
                     currentData.address_attempts = attempts;
                     await this.fixamDb.updateConversationState(fromNumber, { data: currentData });
 
-                    if (attempts >= 3) {
-                        // Three misses usually means the place simply is not in
-                        // OSM. Offer the way out rather than looping forever.
-                        await this.sendMessage(fromNumber,
-                            `I still can't find "${input.trim()}" on the map.\n\n`
-                            + `📍 Share your GPS location (attachment icon > Location) for an exact position,\n`
-                            + `✏️ or type *KEEP ${input.trim()}* to file it with that description and let an admin place it.\n\n`
-                            + `Type *9* to cancel.`);
-                    } else {
-                        await this.sendMessage(fromNumber,
-                            `I couldn't find "${input.trim()}" in ${this.helpers.serviceArea.name}.\n\n`
-                            + `Try adding a nearby landmark or town (e.g. "Wilkinson Road, Freetown"), or share your GPS location.\n\n`
-                            + `Type *9* to cancel.`);
-                    }
+                    // Offered as a choice from the first failure. The citizen
+                    // knows where they are far better than the geocoder does, so
+                    // making them fail repeatedly before mentioning they can file
+                    // it as written just loses reports.
+                    const typed = input.trim();
+                    currentData.unresolved_address = typed;
+
+                    await this.fixamDb.updateConversationState(fromNumber, {
+                        current_step: 'awaiting_unresolved_location_choice',
+                        data: currentData
+                    });
+
+                    const preamble = attempts >= 3
+                        ? `I still can't find "${typed}" on the map. Many places in ${this.helpers.serviceArea.name} aren't mapped, so this may well be one of them.`
+                        : `I couldn't find "${typed}" on the map.`;
+
+                    await this.sendMessage(fromNumber,
+                        `📍 *Location not found*\n\n${preamble}\n\n`
+                        + `What would you like to do?\n\n`
+                        + `1️⃣ *Keep it as written* — an admin will place it on the map\n`
+                        + `2️⃣ *Try again* — type it differently, or share your GPS location\n`
+                        + `3️⃣ *Go back* — change your photo`
+                        + REPORT_NAV_FOOTER);
                 } else if (locations.length === 1) {
                     const loc = locations[0];
                     currentData.lat = loc.latitude;
@@ -735,7 +915,7 @@ class FixamHandler {
                         current_step: 'awaiting_report_description',
                         data: currentData
                     });
-                    await this.sendMessage(fromNumber, `📍 Location found: ${loc.display_name}\n\nPlease describe the issue (Text or Voice Note), or type *9* to cancel.`);
+                    await this.sendMessage(fromNumber, withNav(`📍 Location found: ${loc.display_name}\n\nPlease describe the issue (Text or Voice Note).`));
                 } else {
                     // Several matches: the citizen has to disambiguate, so show
                     // the district rather than three near-identical strings.
@@ -747,13 +927,13 @@ class FixamHandler {
                         data: currentData
                     });
 
-                    let msg = `I found ${locations.length} places matching "${input.trim()}". Which one? Reply with the number, or type *9* to cancel:\n\n`;
+                    let msg = `I found ${locations.length} places matching "${input.trim()}". Which one? Reply with the number:\n\n`;
                     locations.forEach((loc, i) => {
                         const context = [loc.admin.ward, loc.admin.city, loc.admin.district]
                             .filter(Boolean).join(', ');
                         msg += `${i + 1}. *${context || loc.display_name}*\n   ${loc.display_name}\n\n`;
                     });
-                    msg += `Or share your GPS location for an exact position.`;
+                    msg += `Or share your GPS location for an exact position.` + REPORT_NAV_FOOTER;
                     await this.sendMessage(fromNumber, msg);
                 }
                 break;
@@ -777,9 +957,9 @@ class FixamHandler {
                         current_step: 'awaiting_report_description',
                         data: currentData
                     });
-                    await this.sendMessage(fromNumber, `Location confirmed: ${loc.display_name}\n\nPlease describe the issue (Text or Voice Note), or type *9* to cancel.`);
+                    await this.sendMessage(fromNumber, withNav(`Location confirmed: ${loc.display_name}\n\nPlease describe the issue (Text or Voice Note).`));
                 } else {
-                    await this.sendMessage(fromNumber, `Please reply with a valid number (1-${pendingAddresses.length}), or type *9* to cancel.`);
+                    await this.sendMessage(fromNumber, `Please reply with a valid number (1-${pendingAddresses.length}).`);
                 }
                 break;
 
@@ -867,7 +1047,7 @@ class FixamHandler {
                         current_step: 'awaiting_vote_confirmation',
                         data: { ...state.data, issue_id: selectedIssue.id, ticket_id: selectedIssue.ticket_id, title: selectedIssue.title }
                     });
-                    await this.sendMessage(fromNumber, `Found Issue: *${selectedIssue.title}* (${selectedIssue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                    await this.sendMessage(fromNumber, `Found Issue: *${selectedIssue.title}* (${selectedIssue.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\n`);
                 } else if (input === '9') {
                     await this.sendMessage(fromNumber, "Cancelled. Type 'Hi' for main menu.");
                     await this.fixamDb.resetConversationState(fromNumber);
@@ -895,9 +1075,9 @@ class FixamHandler {
                         current_step: 'awaiting_vote_confirmation',
                         data: { issue_id: issueVote.id, ticket_id: issueVote.ticket_id, title: issueVote.title }
                     });
-                    await this.sendMessage(fromNumber, `Found Issue: *${issueVote.title}* (${issueVote.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                    await this.sendMessage(fromNumber, `Found Issue: *${issueVote.title}* (${issueVote.ticket_id})\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\n`);
                 } else {
-                    await this.sendMessage(fromNumber, "Issue not found. Please check the Issue ID and try again, or type *9* to cancel.");
+                    await this.sendMessage(fromNumber, "Issue not found. Please check the Issue ID and try again.");
                 }
                 break;
 
@@ -944,7 +1124,7 @@ class FixamHandler {
                         await this.sendMessage(fromNumber, msg);
                     }
                 } else {
-                    await this.sendMessage(fromNumber, "Issue not found. Please check the Issue ID and try again, or type *9* to cancel.");
+                    await this.sendMessage(fromNumber, "Issue not found. Please check the Issue ID and try again.");
                 }
                 break;
 
@@ -954,7 +1134,7 @@ class FixamHandler {
                         current_step: 'awaiting_vote_confirmation',
                         data: state.data
                     });
-                    await this.sendMessage(fromNumber, `🗳️ *Voting for: ${state.data.title}*\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\nType *9* to cancel.`);
+                    await this.sendMessage(fromNumber, `🗳️ *Voting for: ${state.data.title}*\n\nType *1* to Upvote 👍\nType *2* to Downvote 👎\n`);
                 } else if (input === '2') {
                     // Follow up: log the follow-up in the tracker and alert admins
                     try {
@@ -1023,7 +1203,7 @@ class FixamHandler {
                             current_step: 'awaiting_vote_confirmation',
                             data: voteData
                         });
-                        await this.sendMessage(fromNumber, "⚠️ *Confirm Downvote*\n\nYour downvote will penalize the reporter (-2 Points). Please use this ONLY for:\n\n❌ Spam/Fake Reports\n❌ Abusive Content\n\nAbuse of downvoting may result in penalties to YOUR account.\n\nType *2* again to confirm, or *9* to cancel.");
+                        await this.sendMessage(fromNumber, "⚠️ *Confirm Downvote*\n\nYour downvote will penalize the reporter (-2 Points). Please use this ONLY for:\n\n❌ Spam/Fake Reports\n❌ Abusive Content\n\nAbuse of downvoting may result in penalties to YOUR account.\n\nType *2* again to confirm.");
                         return;
                     }
 
@@ -1042,9 +1222,9 @@ class FixamHandler {
                 const communityLookup = await this.helpers.geocodeAddress(input);
                 const locations = communityLookup.results;
                 if (!communityLookup.ok) {
-                    await this.sendMessage(fromNumber, "⚠️ I can't look up places right now. Please try again in a moment, or type *9* to cancel.");
+                    await this.sendMessage(fromNumber, "⚠️ I can't look up places right now. Please try again in a moment.");
                 } else if (locations.length === 0) {
-                    await this.sendMessage(fromNumber, "I couldn't find a community with that name. Please try again (e.g. 'Freetown', 'Bo'), or type *9* to cancel.");
+                    await this.sendMessage(fromNumber, "I couldn't find a community with that name. Please try again (e.g. 'Freetown', 'Bo').");
                 } else {
                     // Use first match
                     // Increased search radius from 1km to 5km to be more inclusive of community issues
@@ -1061,7 +1241,7 @@ class FixamHandler {
                        msg += `   📍 ${issue.address || 'Location N/A'}\n`;
                        msg += `   👍 ${issue.upvote_count} Upvotes\n\n`;
                     });
-                         msg += `Reply with the number (e.g. *1*) to view details and vote, type another community name to switch location, or *9* to cancel.`;
+                         msg += `Reply with the number (e.g. *1*) to view details and vote, type another community name to switch location.`;
 
                          await this.fixamDb.updateConversationState(fromNumber, { 
                             current_step: 'awaiting_trending_selection',
@@ -1108,7 +1288,7 @@ class FixamHandler {
                         const newTrending = await this.fixamDb.getTrendingIssues(loc.latitude, loc.longitude, 1000, 5); // 1km
 
                         if (newTrending.length === 0) {
-                             await this.sendMessage(fromNumber, `No trending issues found in *${loc.display_name}* (1km radius).\n\nType another location, or *9* to cancel.`);
+                             await this.sendMessage(fromNumber, `No trending issues found in *${loc.display_name}* (1km radius).\n\nType another location.`);
                              // Keep waiting for location or number (though number invalid now technically, but logic allows infinite loop of location searching)
                              // To be clean, we basically just stay in this state but with empty list? 
                              // Better: Just update the list to empty so next input must be location.
@@ -1122,7 +1302,7 @@ class FixamHandler {
                                 msg += `   📍 ${issue.address || 'Location N/A'}\n`;
                                 msg += `   👍 ${issue.upvote_count} Upvotes\n\n`;
                              });
-                             msg += `Reply with the number (e.g. *1*) to view details and vote, type another community name to switch location, or *9* to cancel.`;
+                             msg += `Reply with the number (e.g. *1*) to view details and vote, type another community name to switch location.`;
 
                              await this.fixamDb.updateConversationState(fromNumber, { 
                                 current_step: 'awaiting_trending_selection',
@@ -1141,7 +1321,10 @@ class FixamHandler {
 
     async handleLocationMessage(fromNumber, location) {
         let state = await this.fixamDb.getConversationState(fromNumber);
-        if (!state || state.current_step !== 'awaiting_report_location') {
+        // Also accepted while the citizen is deciding what to do about an
+        // address we could not resolve -- that prompt invites a GPS pin.
+        const acceptsLocation = ['awaiting_report_location', 'awaiting_unresolved_location_choice'];
+        if (!state || !acceptsLocation.includes(state.current_step)) {
             await this.sendMessage(fromNumber, "I'm not expecting a location right now.");
             return;
         }
@@ -1157,7 +1340,7 @@ class FixamHandler {
             await this.sendMessage(fromNumber,
                 `📍 That location appears to be outside ${area.name}, so I can't attach it to a report.\n\n`
                 + `Please share a location within ${area.name}, or type the address instead (e.g. "Wilkinson Road, Freetown").\n\n`
-                + `Type *9* to cancel.`);
+                + ``);
             return;
         }
 
@@ -1188,7 +1371,48 @@ class FixamHandler {
             current_step: 'awaiting_report_description',
             data: currentData
         });
-        await this.sendMessage(fromNumber, `${confirmation}\n\nPlease describe the issue (Text or Voice Note).`);
+        await this.sendMessage(fromNumber, withNav(`${confirmation}\n\nPlease describe the issue (Text or Voice Note).`));
+    }
+
+    /**
+     * Step back one stage in the reporting flow.
+     *
+     * Returns true when it handled the message. Answers that depended on the
+     * step being returned to are cleared, so the citizen is genuinely redoing it
+     * rather than editing around a stale value.
+     */
+    async goBackOneStep(fromNumber, state) {
+        const step = BACK_STEP_ALIASES[state.current_step] || state.current_step;
+        const index = REPORT_STEPS.findIndex((s) => s.step === step);
+
+        if (index < 0) return false;   // not in the reporting flow
+
+        if (index === 0) {
+            await this.sendMessage(fromNumber,
+                "You're at the first step of the report. Type *9* to cancel, or send your photo to continue.");
+            return true;
+        }
+
+        const target = REPORT_STEPS[index - 1];
+        const data = { ...(state.data || {}) };
+
+        // Clear this step's answer and everything after it, so stepping back two
+        // steps cannot leave a later answer stranded.
+        for (const s of REPORT_STEPS.slice(index - 1)) {
+            for (const key of s.clears) delete data[key];
+        }
+
+        await this.fixamDb.updateConversationState(fromNumber, {
+            current_step: target.step,
+            data
+        });
+
+        const prompt = REPORT_STEP_PROMPTS[target.step] || 'Please continue.';
+        // Landing on the first stage means there is nothing further back, so the
+        // footer drops that option rather than advertising a dead end.
+        await this.sendMessage(fromNumber,
+            withNav(`↩️ *Going back.*\n\n${prompt}`, { back: index - 1 > 0 }));
+        return true;
     }
 
     /** Copy resolved administrative areas onto the in-progress report. */
@@ -1276,6 +1500,49 @@ class FixamHandler {
                 }
             }
             
+            // Provenance, recorded for admins rather than acted on automatically.
+            // Whether an image is adequate evidence is a human judgement; these
+            // give a reviewer the facts behind it.
+            if (downloadResult && mediaType === 'image') {
+                const currentData = state.data || {};
+                currentData.image_sha256 = crypto
+                    .createHash('sha256')
+                    .update(downloadResult.buffer)
+                    .digest('hex');
+                currentData.image_mime_type = downloadResult.mimeType || null;
+
+                // WhatsApp marks forwarded messages, which means the reporter did
+                // not take this photo now. Absent on channels that do not report
+                // it (and in the simulator), so undefined is stored as NULL --
+                // "not reported" is not the same as "not forwarded".
+                const forwarded = message.context?.forwarded;
+                const frequentlyForwarded = message.context?.frequently_forwarded;
+                if (forwarded !== undefined || frequentlyForwarded !== undefined) {
+                    currentData.image_forwarded = Boolean(forwarded || frequentlyForwarded);
+                }
+
+                // Has this exact photo been submitted before? An exact answer,
+                // unlike anything a content model could offer.
+                const priorUse = await this.fixamDb.findIssueByImageHash(currentData.image_sha256);
+                if (priorUse) {
+                    currentData.image_reused_from = priorUse.id;
+                    logger.log('media_handler',
+                        `Image already used on ${priorUse.ticket_id} (issue ${priorUse.id})`);
+
+                    // Held for a decision rather than announced in passing. Most
+                    // reuse is honest -- re-reporting the same problem, or
+                    // picking the wrong photo from the gallery -- and both are
+                    // resolved by stopping to ask, not by carrying on. Recorded
+                    // here and acted on once the evidence is safely stored.
+                    currentData.reused_prompt = {
+                        ticket_id: priorUse.ticket_id,
+                        title: priorUse.title,
+                    };
+                }
+
+                state.data = currentData;
+            }
+
             let mediaUrl = '';
 
             if (downloadResult) {
@@ -1309,8 +1576,33 @@ class FixamHandler {
 
             const currentData = state.data || {};
             currentData.image_url = mediaUrl;
-            
-            await this.fixamDb.updateConversationState(fromNumber, { 
+
+            // This photo has been used on an earlier report. Stop and let the
+            // citizen decide, rather than moving them on to the next question:
+            // if they picked the wrong file, this is the moment to fix it, and
+            // if the problem is already reported they may want that one instead
+            // of filing a second.
+            if (currentData.reused_prompt) {
+                const prior = currentData.reused_prompt;
+                delete currentData.reused_prompt;
+
+                await this.fixamDb.updateConversationState(fromNumber, {
+                    current_step: 'awaiting_reused_photo_choice',
+                    data: currentData
+                });
+
+                await this.sendMessage(fromNumber,
+                    `📸 *This photo has been used before*\n\n`
+                    + `It was submitted with:\n*${prior.title}* (${prior.ticket_id})\n\n`
+                    + `What would you like to do?\n\n`
+                    + `1️⃣ *Use this photo anyway* and carry on\n`
+                    + `2️⃣ *Send a different photo* — just send it now\n`
+                    + `3️⃣ *View that report instead* — check its status or support it`
+                    + REPORT_NAV_FOOTER);
+                return;
+            }
+
+            await this.fixamDb.updateConversationState(fromNumber, {
                 current_step: 'awaiting_report_location',
                 data: currentData
             });
@@ -1319,7 +1611,7 @@ class FixamHandler {
             if (currentData.address) {
                 await this.sendMessage(fromNumber, `Evidence received! 📸\n\nI previously noted the location: *${currentData.address}*.\n\nIs this correct?\nType *Yes* to confirm, or share a new location/type address.`);
             } else {
-                await this.sendMessage(fromNumber, "Evidence received! 📸\n\nNow, please share the *Location* of the issue.\n\n📍 Use the attachment icon > Location\n✏️ Or type the address");
+                await this.sendMessage(fromNumber, withNav("Evidence received! 📸\n\nNow, please share the *Location* of the issue.\n\n📍 Use the attachment icon > Location\n✏️ Or type the address"));
             }
         } else {
             logger.log('media_handler', `User not in correct state. Current: ${state?.current_step || 'null'}, Expected: awaiting_report_evidence`);
@@ -1543,8 +1835,8 @@ class FixamHandler {
         msg += `It seems this might have been reported already. What would you like to do? (Reply with the number)\n\n`;
         msg += `1️⃣ *View more details* of these issues\n`;
         msg += `2️⃣ *Report as a new* separate issue\n`;
-        msg += `3️⃣ *Vote/Support* an existing issue\n\n`;
-        msg += `Type *9* to cancel.`;
+        msg += `3️⃣ *Vote/Support* an existing issue`;
+        msg += REPORT_NAV_FOOTER;
 
         await this.sendMessage(fromNumber, msg);
     }
@@ -1581,7 +1873,7 @@ class FixamHandler {
             `${urgencyEmoji[data.urgency] || '🟡'} *Urgency*: ${(data.urgency || 'medium').toUpperCase()}\n` +
             `📝 *Description*: ${data.description}\n` +
             `📸 *Evidence*: ${data.image_url ? 'Attached' : 'None'}\n\n` +
-            `Type the number *1* to confirm or *9* to cancel.`
+            `Type the number *1* to confirm.` + REPORT_NAV_FOOTER
         );
     }
 
@@ -1605,7 +1897,11 @@ class FixamHandler {
             ward: data.ward || null,
             // Recorded so admins can see whether the pin is a citizen's GPS, a
             // geocoder guess, or an address nobody has placed yet.
-            location_source: data.location_source || (data.lat != null ? 'geocoded' : 'unresolved')
+            location_source: data.location_source || (data.lat != null ? 'geocoded' : 'unresolved'),
+            image_sha256: data.image_sha256 || null,
+            image_mime_type: data.image_mime_type || null,
+            image_forwarded: data.image_forwarded,
+            image_reused_from: data.image_reused_from || null
         };
 
         const issue = await this.fixamDb.createIssue(issueData);

@@ -162,14 +162,14 @@ async function createServer() {
     });
 
     app.post('/simulate/media', async (req, res) => {
-        const { phone_number, media_id, media_type } = req.body;
+        const { phone_number, media_id, media_type, forwarded } = req.body;
 
         if (!phone_number || !media_id) {
             return res.status(400).json({ error: 'phone_number and media_id are required.' });
         }
 
         await dispatch(res, normalizePhone(phone_number), (phone) =>
-            buildMediaPayload(phone, media_id, media_type || 'image'));
+            buildMediaPayload(phone, media_id, media_type || 'image', forwarded));
     });
 
     // Called by the backend (services/simulator.js) to mirror messages sent from
@@ -474,13 +474,21 @@ function buildLocationPayload(phoneNumber, latitude, longitude) {
     });
 }
 
-function buildMediaPayload(phoneNumber, mediaId, mediaType = 'image') {
+function buildMediaPayload(phoneNumber, mediaId, mediaType = 'image', forwarded) {
     const msg = {
         from: phoneNumber,
         id: `sim-med-${Date.now()}`,
         timestamp: String(Math.floor(Date.now() / 1000)),
         type: mediaType,
     };
+
+    // Mirrors the `context` object WhatsApp attaches to a forwarded message, so
+    // the handler's provenance path can be exercised without a real device.
+    // Omitted entirely when not requested -- the handler distinguishes "not
+    // reported" from "reported as not forwarded".
+    if (forwarded !== undefined) {
+        msg.context = { forwarded: Boolean(forwarded), frequently_forwarded: false };
+    }
 
     if (mediaType === 'image') msg.image = { id: mediaId, mime_type: 'image/jpeg' };
     else if (mediaType === 'video') msg.video = { id: mediaId, mime_type: 'video/mp4' };

@@ -245,8 +245,9 @@ class FixamDatabase {
     async createIssue(issueData) {
         const sql = `
             INSERT INTO issues (ticket_id, title, category, lat, lng, description, image_url, audio_url, reported_by, status, duplicate_of, urgency, address,
-                                district, city, ward, constituency, location_source)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                                district, city, ward, constituency, location_source,
+                                image_sha256, image_mime_type, image_forwarded, image_reused_from)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
             RETURNING *
         `;
         const values = [
@@ -267,7 +268,13 @@ class FixamDatabase {
             issueData.city || null,
             issueData.ward || null,
             issueData.constituency || null,
-            issueData.location_source || 'geocoded'
+            issueData.location_source || 'geocoded',
+            issueData.image_sha256 || null,
+            issueData.image_mime_type || null,
+            // NULL, not false, when WhatsApp said nothing -- "not reported" and
+            // "reported as not forwarded" are different facts.
+            issueData.image_forwarded === undefined ? null : issueData.image_forwarded,
+            issueData.image_reused_from || null
         ];
 
         try {
@@ -280,6 +287,37 @@ class FixamDatabase {
             return issue;
         } catch (error) {
             this.debugLog('Error creating issue', { error: error.message });
+            return null;
+        }
+    }
+
+    /**
+     * The earliest report that already used this exact image, if any.
+     *
+     * Recycled evidence -- the same photo attached to several reports -- is a
+     * far more common abuse than anything a content model would catch, and a
+     * hash lookup answers it exactly rather than probabilistically. Spam and
+     * already-merged duplicates are excluded so an admin's earlier decision is
+     * not re-surfaced as a fresh finding.
+     */
+    async findIssueByImageHash(sha256, excludeIssueId = null) {
+        if (!sha256) return null;
+
+        const sql = `
+            SELECT i.id, i.ticket_id, i.title, i.created_at, i.reported_by, u.phone_number
+            FROM issues i
+            LEFT JOIN users u ON i.reported_by = u.id
+            WHERE i.image_sha256 = $1
+              AND i.status != 'spam'
+              AND ($2::int IS NULL OR i.id != $2::int)
+            ORDER BY i.created_at ASC
+            LIMIT 1
+        `;
+        try {
+            const result = await this.db.query(sql, [sha256, excludeIssueId]);
+            return result.rows.length > 0 ? result.rows[0] : null;
+        } catch (error) {
+            this.debugLog('Error looking up image hash', { error: error.message });
             return null;
         }
     }
@@ -317,14 +355,19 @@ class FixamDatabase {
 
     // Find potential duplicates within radius (in meters) and timeframe (days)
     /**
-     * Open reports near a point within the last `days`.
+     * Open reports of the SAME KIND near a point within the last `days`.
      *
-     * `category` ranks rather than filters. Category comes from an AI
-     * classification of free text, so the same problem described twice can land
-     * in different buckets (or in "Uncategorized" whenever the AI service is
-     * briefly unavailable) -- filtering on it means the obvious duplicate is
-     * never shown. Same-category matches are listed first and the caller shows
-     * each one's category so the citizen can judge.
+     * Category is a filter, not a ranking. It was briefly the latter, on the
+     * reasoning that AI misclassification could hide a real duplicate -- but
+     * that made proximity alone sufficient, so a report of street rubbish was
+     * offered a pothole and a broken streetlight as "similar issues". At a busy
+     * junction almost everything is within 100 m of something, and a prompt
+     * that is usually wrong trains people to dismiss it, including the one time
+     * it is right.
+     *
+     * The trade-off is accepted deliberately: a missed duplicate costs a
+     * redundant report that admins can merge, while a false one costs the
+     * citizen's trust in every future prompt.
      */
     async findPotentialDuplicates(lat, lng, radiusMeters, category = null, days = 7) {
         if (lat == null || lng == null) return [];
@@ -347,7 +390,8 @@ class FixamDatabase {
               AND i.duplicate_of IS NULL
               AND i.lat IS NOT NULL AND i.lng IS NOT NULL
               AND ${distanceExpr} <= $3
-            ORDER BY (i.category IS DISTINCT FROM $5) ASC, distance ASC
+              AND ($5::text IS NULL OR i.category = $5::text)
+            ORDER BY distance ASC
             LIMIT 3
         `;
 
