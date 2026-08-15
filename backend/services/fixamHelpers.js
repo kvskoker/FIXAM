@@ -272,6 +272,54 @@ class FixamHelpers {
      * pages. Only the types whose subtype is not the right extension need an
      * entry here.
      */
+    /**
+     * Work out what a file actually is from its first bytes.
+     *
+     * The declared MIME type is the sender's claim and is often missing: a
+     * video arrived with none, was written as `.bin`, and nginx then served it
+     * as application/octet-stream -- which browsers download rather than play.
+     * The bytes do not lie, so they are the better authority, and sniffing also
+     * means a file declared as one type but containing another is stored as
+     * what it really is.
+     *
+     * Returns null when the signature is not recognised, so the caller can
+     * decide rather than being handed a guess.
+     */
+    sniffMediaType(buffer) {
+        if (!buffer || buffer.length < 12) return null;
+
+        const startsWith = (...bytes) => bytes.every((b, i) => buffer[i] === b);
+        const asciiAt = (offset, text) =>
+            buffer.slice(offset, offset + text.length).toString('ascii') === text;
+
+        // Images
+        if (startsWith(0xFF, 0xD8, 0xFF)) return 'image/jpeg';
+        if (startsWith(0x89, 0x50, 0x4E, 0x47)) return 'image/png';
+        if (asciiAt(0, 'GIF8')) return 'image/gif';
+        if (asciiAt(0, 'RIFF') && asciiAt(8, 'WEBP')) return 'image/webp';
+
+        // Video and audio containers
+        if (startsWith(0x1A, 0x45, 0xDF, 0xA3)) {
+            // EBML: WebM and Matroska share it. The doctype follows shortly
+            // after; anything not announcing webm is treated as Matroska.
+            const head = buffer.slice(0, 64).toString('ascii');
+            return head.includes('webm') ? 'video/webm' : 'video/x-matroska';
+        }
+        if (asciiAt(4, 'ftyp')) {
+            const brand = buffer.slice(8, 12).toString('ascii');
+            if (brand.startsWith('qt')) return 'video/quicktime';
+            if (brand.startsWith('M4A')) return 'audio/mp4';
+            return 'video/mp4';
+        }
+        if (asciiAt(0, 'OggS')) return 'audio/ogg';
+        if (startsWith(0x49, 0x44, 0x33) || (buffer[0] === 0xFF && (buffer[1] & 0xE0) === 0xE0)) {
+            return 'audio/mpeg';
+        }
+        if (asciiAt(0, 'RIFF') && asciiAt(8, 'WAVE')) return 'audio/wav';
+
+        return null;
+    }
+
     extensionForMime(mimeType, fallback = 'bin') {
         if (!mimeType) return fallback;
 
@@ -285,6 +333,8 @@ class FixamHelpers {
             'audio/mp4': 'm4a',
             'video/quicktime': 'mov',
             'video/x-msvideo': 'avi',
+            'video/x-matroska': 'mkv',
+            'audio/wav': 'wav',
             'image/svg+xml': 'svg',
             'application/octet-stream': fallback,
         };

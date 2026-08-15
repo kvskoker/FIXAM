@@ -3,7 +3,24 @@ let currentIssueId = null;
 let issuePage = 1;
 const issueLimit = 8;
 
+/**
+ * Two pages share this script: the report list, and the single-report page it
+ * links to. Which one is running is decided by what is in the document rather
+ * than by the URL, so the branch cannot drift out of step with the markup.
+ *
+ * Kept as one file rather than split in two because the two views share most of
+ * their rendering -- location formatting, evidence flags, lifecycle badges --
+ * and duplicating those to separate the entry points would be the more
+ * expensive mistake.
+ */
+const isDetailPage = () => !!document.getElementById('issue-detail-card');
+
 document.addEventListener('DOMContentLoaded', () => {
+    if (isDetailPage()) {
+        initIssueDetailPage();
+        return;
+    }
+
     checkAuth(async () => {
         // Load categories first
         await loadCategories();
@@ -27,6 +44,9 @@ document.addEventListener('DOMContentLoaded', () => {
         syncFiltersToURL();
         loadIssues(); 
     }, 500));
+
+    const exportBtn = document.getElementById('btn-export-issues');
+    if (exportBtn) exportBtn.addEventListener('click', openExportModal);
 
     ['issue-filter-category', 'issue-filter-state', 'issue-filter-status', 'issue-filter-start', 'issue-filter-end', 'issue-sort'].forEach(id => {
         document.getElementById(id).addEventListener('change', () => { 
@@ -229,6 +249,131 @@ function syncFiltersToURL() {
         page: issuePage
     };
     updateURLParams(params);
+}
+
+/**
+ * Choosing what leaves the platform.
+ *
+ * An export is the point at which data stops being governed by the system that
+ * holds it -- it becomes a file on a laptop. Name and phone are offered
+ * separately because they are not the same disclosure: a list of names is a
+ * weaker thing to hold than a list of numbers that reach people.
+ *
+ * The checkboxes are a convenience, not the control. The server decides what a
+ * given account may export and refuses anything else, so a modified page gains
+ * nothing.
+ */
+function openExportModal() {
+    const fullAdmin = isFullAdmin();
+    const nameBox = document.getElementById('export-include-name');
+    const phoneBox = document.getElementById('export-include-phone');
+
+    nameBox.checked = false;
+    phoneBox.checked = false;
+    nameBox.disabled = !fullAdmin;
+    phoneBox.disabled = !fullAdmin;
+
+    // Say what the file will contain before it is asked for, so the count is
+    // not a surprise and a stray filter is noticed here rather than afterwards.
+    const scopeText = document.getElementById('export-scope-text');
+    const filters = describeActiveFilters();
+    scopeText.innerHTML = isFullAdmin()
+        ? `Exports <strong>all reports</strong>${filters}.`
+        : `Exports <strong>reports in your institution's categories</strong>${filters}.`;
+
+    document.getElementById('export-restricted-note').style.display = fullAdmin ? 'none' : 'block';
+    ['export-name-row', 'export-phone-row'].forEach((id) => {
+        const row = document.getElementById(id);
+        row.style.opacity = fullAdmin ? '1' : '0.5';
+        row.style.cursor = fullAdmin ? 'pointer' : 'not-allowed';
+    });
+
+    updateExportWarning();
+    nameBox.onchange = updateExportWarning;
+    phoneBox.onchange = updateExportWarning;
+
+    document.getElementById('export-modal').classList.add('active');
+}
+
+/** The filters currently narrowing the list, in words rather than query terms. */
+function describeActiveFilters() {
+    const parts = [];
+    const category = document.getElementById('issue-filter-category').value;
+    const state = document.getElementById('issue-filter-state').value;
+    const status = document.getElementById('issue-filter-status').value;
+    const search = document.getElementById('issue-search').value.trim();
+
+    if (category) parts.push(`category "${category}"`);
+    if (state === 'open') parts.push('open only');
+    else if (state === 'closed') parts.push('closed only');
+    else if (state === 'disputed') parts.push('disputed resolutions only');
+    if (status) parts.push(`status "${status}"`);
+    if (search) parts.push(`matching "${search}"`);
+
+    return parts.length ? `, filtered to ${parts.join(', ')}` : '';
+}
+
+function updateExportWarning() {
+    const name = document.getElementById('export-include-name').checked;
+    const phone = document.getElementById('export-include-phone').checked;
+    const warning = document.getElementById('export-personal-warning');
+    const text = document.getElementById('export-personal-warning-text');
+
+    if (!name && !phone) {
+        warning.style.display = 'none';
+        return;
+    }
+
+    const what = name && phone ? 'names and phone numbers'
+        : name ? 'names'
+        : 'phone numbers';
+    text.textContent = `This export will contain citizens' ${what}.`;
+    warning.style.display = 'block';
+}
+
+function closeExportModal() {
+    document.getElementById('export-modal').classList.remove('active');
+}
+
+async function runExport() {
+    const name = document.getElementById('export-include-name').checked;
+    const phone = document.getElementById('export-include-phone').checked;
+    const btn = document.getElementById('export-confirm-btn');
+    const original = btn.innerHTML;
+
+    const params = new URLSearchParams();
+    if (name) params.append('include_name', 'true');
+    if (phone) params.append('include_phone', 'true');
+    const query = params.toString();
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Preparing…';
+
+    try {
+        // Fetched rather than linked, so the session token travels with it and a
+        // refusal arrives as a message instead of a downloaded error page.
+        const res = await fetch(`${API_BASE_URL}/admin/export/issues.csv${query ? '?' + query : ''}`);
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            alert(body.message || `Export failed (${res.status}).`);
+            return;
+        }
+
+        const blob = await res.blob();
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `fixam-reports-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(link.href);
+        closeExportModal();
+    } catch (err) {
+        alert('Connection error while exporting.');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
 }
 
 async function loadIssues() {
@@ -654,7 +799,7 @@ function renderIssuesTable(issues) {
                 ${formatLifecycleFlags(issue)}
             </td>
             <td data-label="Date" style="padding: 1rem; color: var(--admin-text-muted); font-size: 0.9rem;">${new Date(issue.created_at).toLocaleDateString('en-GB')}</td>
-            <td data-label="Action" style="padding: 1rem;"><button onclick="openIssueDetails(${issue.id})" style="background: var(--admin-primary); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; width: 100%;">Manage</button></td>
+            <td data-label="Action" style="padding: 1rem;"><button onclick="manageIssue(${issue.id})" style="background: var(--admin-primary); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; width: 100%;">Manage</button></td>
         `;
         tbody.appendChild(tr);
     });
@@ -764,19 +909,223 @@ async function reopenIssueReport() {
     }
 }
 
+/**
+ * Who reported this, and how to reach them.
+ *
+ * An officer who cannot call the reporter back cannot ask which junction, or
+ * whether the problem has recurred -- so the responsible institution gets the
+ * contact details for its own reports. The server decides whether to send them;
+ * if it did not, this says so rather than rendering an empty field that looks
+ * like missing data.
+ */
+function renderReporter(issue) {
+    const el = document.getElementById('modal-reporter');
+    if (!el) return;
+
+    if (!issue.reported_by_name) {
+        el.innerHTML = '<span style="font-style: italic;">Anonymous — the reporter deleted their account</span>';
+        return;
+    }
+
+    const phone = issue.reported_by_phone
+        ? `<a href="https://wa.me/${issue.reported_by_phone}" target="_blank" rel="noopener"
+              style="color: var(--admin-primary); text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+             <i class="fa-brands fa-whatsapp"></i> ${issue.reported_by_phone}
+           </a>`
+        : '<span style="font-style: italic; font-size: 0.85rem;">Contact details are not available to your role</span>';
+
+    el.innerHTML = `
+        <div style="font-weight: 600; color: var(--admin-text); margin-bottom: 4px;">
+            <i class="fa-solid fa-user" style="margin-right: 6px;"></i>${issue.reported_by_name}
+        </div>
+        <div>${phone}</div>`;
+}
+
+/**
+ * Show the evidence attached to a report.
+ *
+ * What the file *is* comes from the type recorded when it was stored, not from
+ * its name. The extension used to be the only signal, and a video that arrived
+ * without a declared type was written as `.bin` -- so it was rendered as an
+ * image, failed, and the browser offered it as a download instead of playing
+ * it. The extension is still consulted as a fallback, for files stored before
+ * the type was being recorded.
+ */
+/**
+ * Full-screen view of a report's evidence.
+ *
+ * Photographs of infrastructure are the thing being judged -- whether a drain is
+ * really blocked, whether a repair holds -- and a 200px thumbnail in a column is
+ * not enough to judge from. Built on demand rather than kept in the markup so
+ * there is no hidden overlay sitting over every page waiting to be triggered.
+ */
+function openMediaViewer(url, isVideoMedia) {
+    const existing = document.getElementById('media-viewer');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'media-viewer';
+    overlay.style.cssText = `position: fixed; inset: 0; background: rgba(0,0,0,0.94);
+        display: flex; align-items: center; justify-content: center; z-index: 20000; padding: 2rem;`;
+
+    const media = document.createElement(isVideoMedia ? 'video' : 'img');
+    media.src = url;
+    media.style.cssText = 'max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px;';
+    if (isVideoMedia) {
+        media.controls = true;
+        media.autoplay = true;
+        media.playsInline = true;
+    } else {
+        media.alt = 'Report evidence';
+    }
+    // Clicking the picture itself should not dismiss the thing you opened.
+    media.addEventListener('click', (e) => e.stopPropagation());
+
+    const close = document.createElement('button');
+    close.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+    close.setAttribute('aria-label', 'Close');
+    close.style.cssText = `position: absolute; top: 1.25rem; right: 1.5rem; background: rgba(255,255,255,0.12);
+        border: none; color: #fff; width: 42px; height: 42px; border-radius: 50%; font-size: 1.2rem;
+        cursor: pointer; display: flex; align-items: center; justify-content: center;`;
+
+    const hint = document.createElement('div');
+    hint.textContent = 'Click anywhere or press Esc to close';
+    hint.style.cssText = `position: absolute; bottom: 1.25rem; left: 50%; transform: translateX(-50%);
+        color: rgba(255,255,255,0.55); font-size: 0.8rem;`;
+
+    const dismiss = () => {
+        document.removeEventListener('keydown', onKey);
+        overlay.remove();
+    };
+    const onKey = (e) => { if (e.key === 'Escape') dismiss(); };
+
+    overlay.addEventListener('click', dismiss);
+    close.addEventListener('click', dismiss);
+    document.addEventListener('keydown', onKey);
+
+    overlay.append(media, close, hint);
+    document.body.appendChild(overlay);
+}
+
+function renderIssueMedia(issue) {
+    const imgEl = document.getElementById('modal-image');
+    const videoEl = document.getElementById('modal-video');
+    const emptyEl = document.getElementById('modal-media-empty');
+    const expandBtn = document.getElementById('media-expand');
+    if (!imgEl || !videoEl) return;
+
+    // Reset first: this runs again after every status change, and a stale
+    // control left over from the previous render would be worse than none.
+    if (expandBtn) expandBtn.style.display = 'none';
+
+    const url = issue.image_url;
+    const mime = (issue.image_mime_type || '').toLowerCase();
+
+    const looksLikeVideo = mime.startsWith('video/')
+        || (!mime && /\.(mp4|mov|webm|mkv|avi|m4v|3gp)$/i.test(url || ''));
+
+    // Nothing attached. Say so plainly rather than showing a broken frame or
+    // pulling a placeholder image from an outside service.
+    if (!url) {
+        imgEl.style.display = 'none';
+        videoEl.style.display = 'none';
+        if (emptyEl) {
+            emptyEl.textContent = 'No photo or video was attached to this report.';
+            emptyEl.style.display = 'block';
+        }
+        return;
+    }
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    if (looksLikeVideo) {
+        imgEl.style.display = 'none';
+        imgEl.removeAttribute('src');
+
+        // `metadata` fetches enough for the first frame and the duration without
+        // pulling a whole video down for a report nobody opens.
+        videoEl.preload = 'metadata';
+        videoEl.controls = true;
+        videoEl.playsInline = true;
+        if (videoEl.getAttribute('src') !== url) videoEl.setAttribute('src', url);
+        videoEl.style.display = 'block';
+
+        const expand = document.getElementById('media-expand');
+        if (expand) {
+            expand.style.display = 'inline-flex';
+            expand.onclick = () => openMediaViewer(url, true);
+        }
+
+        videoEl.onerror = () => {
+            videoEl.style.display = 'none';
+            if (emptyEl) {
+                emptyEl.innerHTML = 'This video cannot be played in the browser. '
+                    + `<a href="${url}" target="_blank" rel="noopener" style="color: var(--admin-primary);">Open the file directly</a>.`;
+                emptyEl.style.display = 'block';
+            }
+        };
+        return;
+    }
+
+    videoEl.pause();
+    videoEl.style.display = 'none';
+    videoEl.removeAttribute('src');
+
+    imgEl.src = url;
+    imgEl.style.display = 'block';
+    imgEl.style.cursor = 'zoom-in';
+    imgEl.title = 'Click to view full screen';
+    imgEl.onclick = () => openMediaViewer(url, false);
+    imgEl.onerror = () => {
+        imgEl.style.display = 'none';
+        if (emptyEl) {
+            emptyEl.textContent = 'The attached file could not be displayed.';
+            emptyEl.style.display = 'block';
+        }
+    };
+}
+
+/**
+ * Name the report in the page heading.
+ *
+ * The subheading is seeded with "Loading…" in the markup, which is accurate for
+ * the moment before the fetch returns and wrong for every moment after it.
+ */
+function setDetailPageHeading(issue) {
+    const heading = document.getElementById('page-heading');
+    const sub = document.getElementById('page-subheading');
+    if (heading) heading.textContent = `Report ${issue.ticket_id}`;
+    if (sub) {
+        const reported = new Date(issue.created_at).toLocaleDateString('en-GB', {
+            day: 'numeric', month: 'long', year: 'numeric'
+        });
+        sub.textContent = `${issue.category} · reported ${reported}`;
+    }
+    document.title = `FIXAM - ${issue.ticket_id}`;
+}
+
 async function openIssueDetails(id) {
     currentIssueId = id;
     const modal = document.getElementById('issue-modal');
-    modal.classList.remove('hidden');
-    
-    // Update URL with ID
-    updateURLParams({ id: id });
+    if (modal) {
+        modal.classList.remove('hidden');
+        updateURLParams({ id: id });
+    }
 
     try {
         const allRes = await fetch(`${API_BASE_URL}/issues?limit=10000`);
         const responseData = await allRes.json();
         const allIssues = Array.isArray(responseData) ? responseData : responseData.data;
         const issue = allIssues.find(i => i.id === id);
+
+        // Not in the caller's scope, or not there at all. On the report page
+        // this must say so: leaving the page's placeholder markup on screen
+        // shows a report that does not exist, with a ticket number that is
+        // simply the default in the HTML.
+        if (!issue && isDetailPage()) {
+            showIssueUnavailable();
+            return;
+        }
+
         if (issue) {
             currentIssueData = issue;
             document.getElementById('modal-ticket').textContent = issue.ticket_id;
@@ -785,6 +1134,8 @@ async function openIssueDetails(id) {
             document.getElementById('modal-title').textContent = issue.title;
             document.getElementById('modal-desc').textContent = issue.description;
             document.getElementById('modal-location').innerHTML = formatIssueLocation(issue, { detailed: true });
+            renderReporter(issue);
+            setDetailPageHeading(issue);
             // Provenance belongs where the admin actually decides, not only
             // in the list view they scrolled past to get here.
             const flagsEl = document.getElementById('modal-evidence-flags');
@@ -829,26 +1180,7 @@ async function openIssueDetails(id) {
                     })
                     .catch(err => console.error('Geocoding error:', err));
             }
-            // Media Display Logic
-            const imgEl = document.getElementById('modal-image');
-            const videoEl = document.getElementById('modal-video');
-            const mediaUrl = issue.image_url;
-            
-            const isVideo = (url) => {
-                if (!url) return false;
-                return ['.mp4', '.mov', '.webm', '.ogg', '.avi'].some(ext => url.toLowerCase().endsWith(ext));
-            };
-
-            if (mediaUrl && isVideo(mediaUrl)) {
-                imgEl.style.display = 'none';
-                videoEl.src = mediaUrl;
-                videoEl.style.display = 'block';
-            } else {
-                videoEl.style.display = 'none';
-                if (videoEl.src) videoEl.pause();
-                imgEl.src = mediaUrl || 'https://via.placeholder.com/400x200?text=No+Image';
-                imgEl.style.display = 'block';
-            }
+            renderIssueMedia(issue);
 
             const statusEl = document.getElementById('modal-status');
             const statusColors = { 'critical': 'var(--admin-danger)', 'progress': 'var(--admin-warning)', 'fixed': 'var(--admin-success)', 'duplicate': 'var(--admin-warning)', 'spam': 'var(--admin-danger)' };
@@ -983,6 +1315,11 @@ function renderTimeline(logs) {
 }
 
 function closeModal() {
+    // On the report page, closing means going back to the list.
+    if (isDetailPage()) {
+        window.location.href = backToIssueList();
+        return;
+    }
     document.getElementById('issue-modal').classList.add('hidden');
     currentIssueId = null;
     // Clear URL param if present
@@ -1288,4 +1625,94 @@ async function executeSpamFlag(reason) {
         console.error('Error flagging spam:', err);
         alert('An error occurred.');
     }
+}
+
+// ── Single-report page ───────────────────────────────────────────────────────
+//
+// Managing a report means reading a timeline, writing a resolution note and
+// sometimes placing a pin on a map. That is more than a dialogue floating over
+// a list should carry, so it has a page and an address of its own: it can be
+// linked to, opened in a second tab, and left with the browser's back button.
+
+/** Where the list was when it handed over, so the back link returns there. */
+function backToIssueList() {
+    return sessionStorage.getItem('fixam_issue_list_url') || '/admin/issues';
+}
+
+function manageIssue(id) {
+    // The list keeps its filters in the URL, so remembering the address is
+    // enough to bring the user back to the view they left rather than to an
+    // unfiltered first page.
+    sessionStorage.setItem('fixam_issue_list_url', window.location.href);
+    window.location.href = `/admin/issue?id=${id}`;
+}
+
+function showIssueUnavailable(message) {
+    const card = document.getElementById('issue-detail-card');
+    const missing = document.getElementById('issue-not-found');
+    if (card) card.classList.add('hidden');
+    if (missing) missing.classList.remove('hidden');
+    if (message) {
+        const detail = document.getElementById('not-found-detail');
+        if (detail) detail.textContent = message;
+    }
+    const sub = document.getElementById('page-subheading');
+    if (sub) sub.textContent = '';
+}
+
+function initIssueDetailPage() {
+    checkAuth(async () => {
+        const back = document.getElementById('back-to-issues');
+        if (back) {
+            back.href = backToIssueList();
+            back.addEventListener('click', (e) => {
+                e.preventDefault();
+                window.location.href = backToIssueList();
+            });
+        }
+
+        // The close button belonged to the modal chrome.
+        const closeBtn = document.getElementById('close-modal');
+        if (closeBtn) closeBtn.style.display = 'none';
+
+        wireStatusConfirmation();
+
+        const id = parseInt(new URLSearchParams(window.location.search).get('id'), 10);
+        if (!Number.isFinite(id)) {
+            showIssueUnavailable('No report was specified.');
+            return;
+        }
+
+        await loadCategories();
+        await openIssueDetails(id);
+    });
+}
+
+/**
+ * The confirmation panel was wired up by the list page's initialiser, which
+ * does not run here.
+ */
+function wireStatusConfirmation() {
+    const yes = document.getElementById('confirm-yes-btn');
+    const no = document.getElementById('confirm-no-btn');
+    const overlay = document.getElementById('status-confirm-overlay');
+    if (!yes || !no || !overlay) return;
+
+    yes.addEventListener('click', () => {
+        const status = yes.getAttribute('data-pending-status');
+        const noteInput = document.getElementById('confirm-note-input');
+        const noteError = document.getElementById('confirm-note-error');
+        const note = noteInput.value.trim();
+
+        // Resolving publishes an explanation to the citizen, so it cannot be an
+        // unexplained assertion that the work is done.
+        if (status === 'fixed' && !note) {
+            noteError.style.display = 'block';
+            return;
+        }
+        overlay.classList.add('hidden');
+        executeStatusUpdate(status, note);
+    });
+
+    no.addEventListener('click', () => overlay.classList.add('hidden'));
 }

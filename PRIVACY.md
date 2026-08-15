@@ -85,9 +85,16 @@ All third-party service providers are contractually bound to protect your data a
 | Data | Retention |
 |------|-----------|
 | Active account data | Until you delete your account |
-| Reports (anonymised after deletion) | Indefinitely — civic infrastructure data is preserved without personal linkage |
-| Message logs | 90 days |
-| Deleted account personal data | Permanently deleted within 30 days |
+| Reports and report photographs (anonymised after deletion) | Indefinitely — civic infrastructure data is preserved without personal linkage |
+| Your WhatsApp message history with the bot | 90 days |
+| Unfinished reporting conversations | 7 days |
+| Consent records where sign-up was not completed | 30 days |
+| Voice notes you sent | Deleted with your account |
+| Deleted account personal data | Removed immediately; any remaining files within 24 hours |
+
+These periods are enforced automatically by a daily process, not applied on
+request. They can be shortened by the operator but not extended without a
+change to this policy.
 
 ---
 

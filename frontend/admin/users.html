@@ -88,6 +88,9 @@
                     <div class="tab-item active" data-tab="users">Users</div>
                     <div class="tab-item" data-tab="groups">Groups</div>
                     <div class="tab-item" data-tab="categories">Categories</div>
+                    <!-- Full Admin only: the log records who was granted access
+                         to what, so it is not shown to the accounts it governs. -->
+                    <div class="tab-item" data-tab="audit" data-admin-only>Audit Log</div>
                 </div>
 
                 <!-- USERS TAB -->
@@ -228,6 +231,37 @@
                             <button class="action-btn" id="category-prev-page" title="Previous"><i class="fa-solid fa-chevron-left"></i></button>
                             <button class="action-btn" id="category-next-page" title="Next"><i class="fa-solid fa-chevron-right"></i></button>
                         </div>
+                    </div>
+                </div>
+
+                <!-- AUDIT TAB -->
+                <div id="tab-audit-content" class="hidden">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 1rem;">
+                        <div>
+                            <h2 style="font-size: 1.25rem;">Administrative Audit Log</h2>
+                            <p style="color: var(--admin-text-muted); font-size: 0.85rem; margin: 0.25rem 0 0 0;">
+                                Account, role, group and category changes, sign-ins, and data exports.
+                                Actions on reports are recorded on each report's own timeline.
+                            </p>
+                        </div>
+                        <button class="btn btn-secondary" id="btn-export-audit">
+                            <i class="fa-solid fa-file-csv"></i> Export Audit Log
+                        </button>
+                    </div>
+
+                    <div class="admin-table-container">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>When</th>
+                                    <th>Who</th>
+                                    <th>Action</th>
+                                    <th>Target</th>
+                                    <th>Detail</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-list"></tbody>
+                        </table>
                     </div>
                 </div>
             </div>

@@ -12,6 +12,9 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initEventListeners() {
+    const auditExport = document.getElementById('btn-export-audit');
+    if (auditExport) auditExport.addEventListener('click', exportAuditLog);
+
     // Tab Switching
     document.querySelectorAll('.tab-item').forEach(tab => {
         tab.addEventListener('click', () => {
@@ -23,6 +26,7 @@ function initEventListeners() {
                 users: 'tab-users-content',
                 groups: 'tab-groups-content',
                 categories: 'tab-categories-content',
+                audit: 'tab-audit-content',
             };
             Object.entries(panels).forEach(([key, elId]) => {
                 const el = document.getElementById(elId);
@@ -32,6 +36,7 @@ function initEventListeners() {
             if (target === 'users') loadUsers();
             else if (target === 'groups') loadGroups();
             else if (target === 'categories') loadCategoryAdmin();
+            else if (target === 'audit') loadAuditLog();
         });
     });
 
@@ -1024,3 +1029,100 @@ document.addEventListener('DOMContentLoaded', () => {
         categoryView.page++; applyCategoryView();
     });
 });
+
+
+// ── Administrative audit log ─────────────────────────────────────────────────
+//
+// Separate from a report's own timeline, which records what happened to that
+// report. This records what happened to the platform: who was given an account,
+// whose role changed, which MDA had its categories altered, who signed in, who
+// exported data. Those are the actions that decide who can see what.
+
+const AUDIT_ACTION_LABELS = {
+    'user.create': 'Account created',
+    'user.update': 'Account changed',
+    'user.delete': 'Account deleted',
+    'group.create': 'MDA created',
+    'group.update': 'MDA changed',
+    'group.delete': 'MDA deleted',
+    'category.create': 'Category created',
+    'category.update': 'Category changed',
+    'category.delete': 'Category deleted',
+    'auth.login': 'Signed in',
+    'auth.login_failed': 'Sign-in refused',
+    'export.issues': 'Reports exported',
+    'export.audit': 'Audit log exported',
+    'export.refused': 'Export refused'
+};
+
+async function loadAuditLog() {
+    const list = document.getElementById('audit-list');
+    if (!list) return;
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/audit?limit=200`);
+        if (!res.ok) {
+            renderLoadError('audit-list', 5, res.status);
+            return;
+        }
+
+        const entries = await res.json();
+        list.innerHTML = '';
+
+        if (!Array.isArray(entries) || entries.length === 0) {
+            list.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--admin-text-muted);">No administrative activity recorded yet</td></tr>';
+            return;
+        }
+
+        entries.forEach((entry) => {
+            // Refusals and deletions are the entries someone scanning this page
+            // is looking for, so they are the ones that catch the eye.
+            const refused = entry.action === 'auth.login_failed'
+                || entry.action === 'export.refused'
+                || (entry.detail || '').startsWith('REFUSED');
+            const destructive = entry.action.endsWith('.delete');
+            const colour = refused ? 'var(--admin-danger)'
+                : destructive ? 'var(--admin-warning)'
+                : 'var(--admin-text)';
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td data-label="When" style="white-space: nowrap; color: var(--admin-text-muted); font-size: 0.85rem;">
+                    ${new Date(entry.created_at).toLocaleString('en-GB')}
+                </td>
+                <td data-label="Who">${entry.actor_name || '<span style="color: var(--admin-text-muted);">unauthenticated</span>'}</td>
+                <td data-label="Action" style="color: ${colour}; font-weight: 600;">
+                    ${AUDIT_ACTION_LABELS[entry.action] || entry.action}
+                </td>
+                <td data-label="Target">${entry.target_label || (entry.target_id ? `#${entry.target_id}` : '—')}</td>
+                <td data-label="Detail" style="color: var(--admin-text-muted); font-size: 0.85rem; max-width: 380px;">
+                    ${entry.detail || '—'}
+                </td>`;
+            list.appendChild(tr);
+        });
+    } catch (err) {
+        console.error('Error loading audit log:', err);
+        renderLoadError('audit-list', 5);
+    }
+}
+
+async function exportAuditLog() {
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/export/audit.csv`);
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            alert(body.message || `Export failed (${res.status}).`);
+            return;
+        }
+        const blob = await res.blob();
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `fixam-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(link.href);
+    } catch (err) {
+        alert('Connection error while exporting the audit log.');
+    }
+}

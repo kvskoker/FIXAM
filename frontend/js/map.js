@@ -229,10 +229,39 @@ async function fetchIssues() {
 }
 
 // Helper to check if url is video
-function isVideo(url) {
-    if (!url) return false;
-    const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov'];
-    return videoExtensions.some(ext => url.toLowerCase().endsWith(ext));
+/**
+ * Is this report's evidence a video?
+ *
+ * The type recorded when the file was stored is the authority; the extension is
+ * only a fallback for files saved before that was captured. Guessing from the
+ * name alone missed anything the extension list did not anticipate -- a
+ * Matroska video was rendered into an <img>, which simply failed, so the report
+ * appeared to have no evidence at all.
+ *
+ * Accepts either an issue or a bare URL, because the map calls it from places
+ * that only have one or the other.
+ */
+function isVideo(issueOrUrl) {
+    if (!issueOrUrl) return false;
+
+    if (typeof issueOrUrl === 'object') {
+        const mime = (issueOrUrl.image_mime_type || '').toLowerCase();
+        if (mime) return mime.startsWith('video/');
+        return isVideo(issueOrUrl.image_url);
+    }
+
+    return /\.(mp4|webm|ogg|mov|mkv|m4v|avi|3gp)$/i.test(issueOrUrl);
+}
+
+/** Markup for a report with no evidence attached, or evidence that failed. */
+function noMediaBlock(height) {
+    return `<div style="width: 100%; height: ${height}; display: flex; flex-direction: column;
+                 align-items: center; justify-content: center; gap: 6px; background: var(--background-color);
+                 border: 1px dashed var(--border-color); border-radius: 8px; margin-bottom: 8px;
+                 color: var(--text-secondary); font-size: 0.78rem;">
+                <i class="fa-regular fa-image" style="opacity: 0.4; font-size: 1.4rem;"></i>
+                <span>No photo or video</span>
+            </div>`;
 }
 
 // Global function to play video
@@ -372,7 +401,7 @@ function renderIssues(issues) {
             const currentColor = `rgb(${colors[currentStatusType].r}, ${colors[currentStatusType].g}, ${colors[currentStatusType].b})`;
             
             let mediaContent = '';
-            if (isVideo(issue.image_url)) {
+            if (isVideo(issue)) {
                 mediaContent = `
                     <div class="video-container" style="position: relative; width: 100%; height: 150px; margin-bottom: 0.5rem; border-radius: 0.5rem; overflow: hidden; background: #000;">
                         <video src="${issue.image_url}" style="width: 100%; height: 100%; object-fit: cover;" preload="metadata" onclick="playVideo(this.parentElement)"></video>
@@ -382,7 +411,11 @@ function renderIssues(issues) {
                     </div>
                 `;
             } else {
-                mediaContent = `<img src="${issue.image_url || 'https://via.placeholder.com/400'}" class="popup-image" alt="${issue.title}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 8px; margin-bottom: 8px;">`;
+                mediaContent = issue.image_url
+                    ? `<img src="${issue.image_url}" class="popup-image" alt="${issue.title}"
+                           style="width: 100%; height: 120px; object-fit: cover; border-radius: 8px; margin-bottom: 8px;"
+                           onerror="this.outerHTML = noMediaBlock('120px')">`
+                    : noMediaBlock('120px');
             }
 
             let audioContent = '';
@@ -719,17 +752,19 @@ async function viewTracker(issueId) {
                                 <i class="fa-solid fa-camera" style="color: var(--admin-primary);"></i> Media Evidence
                             </h3>
                             ${issue.image_url ? `
-                                <button onclick="window.fullScreenMedia('${issue.image_url}')" style="background: var(--admin-primary); border: none; color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 600; transition: opacity 0.2s;">
+                                <button onclick="window.fullScreenMedia('${issue.image_url}', ${isVideo(issue)})" style="background: var(--admin-primary); border: none; color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 600; transition: opacity 0.2s;">
                                     <i class="fa-solid fa-expand"></i> Open Full Screen
                                 </button>
                             ` : ''}
                         </div>
                         ${issue.image_url ? `
                             <div style="position: relative; width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--border-color);">
-                                ${isVideo(issue.image_url) ? `
-                                    <video src="${issue.image_url}" style="width: 100%; height: auto; display: block;" controls></video>
+                                ${isVideo(issue) ? `
+                                    <video src="${issue.image_url}" style="width: 100%; height: auto; display: block;"
+                                           controls playsinline preload="metadata"></video>
                                 ` : `
-                                    <img src="${issue.image_url}" style="width: 100%; height: auto; display: block;" alt="Issue evidence">
+                                    <img src="${issue.image_url}" style="width: 100%; height: auto; display: block; cursor: zoom-in;"
+                                         alt="Issue evidence" onclick="window.fullScreenMedia('${issue.image_url}', ${isVideo(issue)})">
                                 `}
                             </div>
                         ` : `
@@ -757,7 +792,7 @@ async function viewTracker(issueId) {
     }
 }
 
-window.fullScreenMedia = function(url) {
+window.fullScreenMedia = function(url, isVideoMedia) {
     const modal = document.createElement('div');
     modal.style.cssText = `
         position: fixed;
@@ -773,7 +808,9 @@ window.fullScreenMedia = function(url) {
         cursor: pointer;
     `;
     
-    if (isVideo(url)) {
+    // The caller knows the recorded type; fall back to the name only when it
+    // was not told.
+    if (isVideoMedia === undefined ? isVideo(url) : isVideoMedia) {
         const video = document.createElement('video');
         video.src = url;
         video.controls = true;

@@ -128,6 +128,11 @@
 
                     <div style="flex-grow: 1;"></div>
 
+                    <button id="btn-export-issues" class="filter-btn" title="Download these reports as CSV"
+                            style="display: flex; align-items: center; gap: 6px; padding: 0 12px;">
+                        <i class="fa-solid fa-file-csv"></i> Export
+                    </button>
+
                     <select id="issue-sort" class="filter-input">
                         <option value="newest">Newest First</option>
                         <option value="oldest">Oldest First</option>
@@ -171,211 +176,84 @@
         </main>
     </div>
 
-    <!-- Issue Details Modal -->
-    <div id="issue-modal" class="login-overlay hidden" style="z-index: 10000;">
-        <div class="login-card" style="max-width: 800px; text-align: left; position: relative; max-height: 90vh; overflow-y: auto;">
-            <!-- Confirmation Overlay inside Modal -->
-            <div id="status-confirm-overlay" class="hidden" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; border-radius: 12px; padding: 2rem; text-align: center;">
-                <div style="background: var(--admin-card-bg); padding: 2rem; border-radius: 12px; border: 1px solid var(--admin-border); max-width: 400px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);">
-                    <i class="fa-solid fa-circle-question" style="font-size: 3rem; color: var(--admin-primary); margin-bottom: 1rem;"></i>
-                    <h3 id="confirm-title" style="margin-bottom: 0.5rem; font-family: 'Outfit', sans-serif;">Confirm Action</h3>
-                    <p id="confirm-message" style="color: var(--admin-text-muted); margin-bottom: 1rem;">Are you sure you want to proceed?</p>
-                    
-                    <div id="confirm-note-container" style="margin-bottom: 1.5rem; text-align: left;">
-                        <label id="confirm-note-label" style="display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.5rem; color: var(--admin-text);">Note</label>
-                        <textarea id="confirm-note-input" class="form-control" rows="3" placeholder="Enter a note..." style="width: 100%; padding: 0.75rem; border: 1px solid var(--admin-border); border-radius: 6px; background: var(--admin-bg); color: var(--admin-text);"></textarea>
-                        <p id="confirm-note-error" style="color: var(--admin-danger); font-size: 0.8rem; margin-top: 0.25rem; display: none;">Please provide a resolution note.</p>
-                    </div>
-                    <div style="display: flex; gap: 1rem;">
-                        <button id="confirm-yes-btn" style="flex: 1; padding: 0.75rem; background: var(--admin-primary); color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Yes, Update</button>
-                        <button id="confirm-no-btn" style="flex: 1; padding: 0.75rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; font-weight: 600; cursor: pointer;">Cancel</button>
-                    </div>
+
+    <!-- Export options. A dialogue rather than a straight download because the
+         choice being made is what personal data leaves the platform, and that
+         deserves to be deliberate rather than a click. -->
+    <div id="export-modal" class="modal">
+        <div class="modal-content" style="max-width: 560px;">
+            <div class="modal-header">
+                <h2 style="font-size: 1.35rem;">Export Reports</h2>
+                <button class="action-btn" onclick="closeExportModal()" aria-label="Close">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div id="export-scope-note"
+                 style="background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.2); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.25rem; font-size: 0.88rem; display: flex; gap: 0.6rem; align-items: flex-start;">
+                <i class="fa-solid fa-circle-info" style="color: var(--admin-primary); margin-top: 2px;"></i>
+                <span id="export-scope-text">Preparing…</span>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 1.25rem;">
+                <label style="font-weight: 600; color: var(--admin-text); margin-bottom: 0.75rem;">
+                    Reporter details to include
+                </label>
+
+                <label id="export-name-row" class="export-option"
+                       style="display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.85rem; border: 1px solid var(--admin-border); border-radius: 8px; cursor: pointer; margin-bottom: 0.6rem;">
+                    <input type="checkbox" id="export-include-name" style="margin-top: 3px; width: 16px; height: 16px; cursor: pointer;">
+                    <span>
+                        <span style="display: block; font-weight: 600; color: var(--admin-text);">Include reporter names</span>
+                        <span style="display: block; font-size: 0.82rem; color: var(--admin-text-muted); margin-top: 2px;">
+                            Adds a "Reporter Name" column.
+                        </span>
+                    </span>
+                </label>
+
+                <label id="export-phone-row" class="export-option"
+                       style="display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.85rem; border: 1px solid var(--admin-border); border-radius: 8px; cursor: pointer;">
+                    <input type="checkbox" id="export-include-phone" style="margin-top: 3px; width: 16px; height: 16px; cursor: pointer;">
+                    <span>
+                        <span style="display: block; font-weight: 600; color: var(--admin-text);">Include phone numbers</span>
+                        <span style="display: block; font-size: 0.82rem; color: var(--admin-text-muted); margin-top: 2px;">
+                            Adds a "Reporter Phone" column.
+                        </span>
+                    </span>
+                </label>
+
+                <div id="export-restricted-note"
+                     style="display: none; font-size: 0.82rem; color: var(--admin-text-muted); margin-top: 0.6rem;">
+                    <i class="fa-solid fa-lock"></i>
+                    Reporter contact details can only be exported by a full Administrator. You can
+                    still see them on individual reports assigned to your institution.
                 </div>
             </div>
 
-            <button id="close-modal" style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; color: var(--admin-text-muted); font-size: 1.5rem; cursor: pointer;">&times;</button>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
-                <div>
-                    <!-- View Mode -->
-                    <div id="view-mode-container">
-                        <div style="margin-bottom: 1rem;">
-                            <span id="modal-ticket" style="background: rgba(59, 130, 246, 0.1); color: var(--admin-primary); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600;">FIX0000001</span>
-                            <span id="modal-status" style="margin-left: 0.5rem; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600;">Critical</span>
-                            <span id="modal-category-badge" style="margin-left: 0.5rem; background: var(--admin-bg); border: 1px solid var(--admin-border); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">Category</span>
-                        </div>
-                        <h2 id="modal-title" style="margin-bottom: 1rem;">Burst Pipe on Jomo Kenyatta Road</h2>
-                        <p id="modal-desc" style="color: var(--admin-text-muted); margin-bottom: 1.5rem; line-height: 1.6;">
-                            Large water pipe burst causing flooding in the intersection. Traffic is blocked.
-                        </p>
-                    </div>
+            <div id="export-personal-warning"
+                 style="display: none; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.3); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.25rem; font-size: 0.85rem;">
+                <i class="fa-solid fa-triangle-exclamation" style="color: var(--admin-warning);"></i>
+                <span id="export-personal-warning-text"></span>
+                This file leaves the platform and is no longer governed by it. The export is
+                recorded in the audit log against your account.
+            </div>
 
-                    <!-- Edit Mode -->
-                    <div id="edit-mode-container" class="hidden" style="background: var(--admin-bg); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--admin-border); margin-bottom: 1.5rem;">
-                        <h3 style="margin-bottom: 1rem;">Edit Issue Details</h3>
-                        
-                        <div style="margin-bottom: 1rem;">
-                            <label style="display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.5rem;">Category</label>
-                            <select id="edit-category" class="filter-input" style="width: 100%;">
-                                <option value="Water">Water Supply</option>
-                                <option value="Road">Roads & Infrastructure</option>
-                                <option value="Waste">Waste Management</option>
-                                <option value="Electricity">Electricity</option>
-                                <option value="Health">Health & Sanitation</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-
-                        <div style="margin-bottom: 1rem;">
-                            <label style="display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.5rem;">Title</label>
-                            <input type="text" id="edit-title" class="filter-input" style="width: 100%;">
-                        </div>
-
-                        <div style="margin-bottom: 1.5rem;">
-                            <label style="display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.5rem;">Description</label>
-                            <textarea id="edit-description" class="filter-input" rows="5" style="width: 100%;"></textarea>
-                        </div>
-
-                        <div style="display: flex; gap: 1rem;">
-                            <button onclick="saveIssueDetails()" style="background: var(--admin-primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Save Changes</button>
-                            <button onclick="toggleEditMode(false)" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.75rem 1.5rem; border-radius: 6px; cursor: pointer;">Cancel</button>
-                        </div>
-                    </div>
-                    
-                    <div style="margin-bottom: 1.5rem;">
-                        <h4 style="margin-bottom: 0.5rem;">Location</h4>
-                        <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--admin-text-muted);">
-                            <i class="fa-solid fa-location-dot"></i> <span id="modal-location">8.4845, -13.2345</span>
-                        </div>
-                        <div id="modal-evidence-flags" style="margin-top: 0.5rem;"></div>
-                    </div>
-
-                    <div style="margin-bottom: 1.5rem;">
-                        <h4 style="margin-bottom: 0.5rem;">Media</h4>
-                        <img id="modal-image" src="" alt="Issue Image" style="width: 100%; border-radius: 8px; max-height: 200px; object-fit: cover; background: #334155;">
-                        <video id="modal-video" src="" controls style="width: 100%; border-radius: 8px; max-height: 300px; background: #000; display: none;"></video>
-                    </div>
-                </div>
-
-                <div style="border-left: 1px solid var(--admin-border); padding-left: 2rem;">
-                    <h3 style="margin-bottom: 1rem;">Management</h3>
-                    
-                     <div style="margin-bottom: 2rem;">
-                         <button id="btn-edit-details" onclick="toggleEditMode(true)" style="width: 100%; padding: 0.75rem; background: var(--admin-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-weight: 500;">
-                            <i class="fa-solid fa-pen-to-square"></i> Edit Details
-                        </button>
-                    </div>
-
-                    <div style="margin-bottom: 2rem;">
-                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem;">Update Status</label>
-                        <div id="status-buttons-container" style="display: flex; gap: 0.5rem;">
-                            <button id="btn-status-acknowledged" onclick="updateStatus('acknowledged')" class="status-btn" style="flex: 1; padding: 0.5rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer;">Acknowledge</button>
-                            <button id="btn-status-progress" onclick="updateStatus('progress')" class="status-btn" style="flex: 1; padding: 0.5rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer;">In Progress</button>
-                            <button id="btn-status-fixed" onclick="updateStatus('fixed')" class="status-btn" style="flex: 1; padding: 0.5rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer;">Resolved</button>
-                        </div>
-                    </div>
-
-                    <div id="closure-section" style="margin-bottom: 2rem; border-top: 1px solid var(--admin-border); padding-top: 1.5rem;">
-                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600;">Report Lifecycle</label>
-                        <div id="closure-state-line" style="font-size: 0.85rem; color: var(--admin-text-muted); margin-bottom: 0.75rem;"></div>
-
-                        <!-- Closing without a repair. Kept separate from the status
-                             buttons because it is not a stage of the work: it is the
-                             institution saying nothing further will happen. -->
-                        <div id="close-controls">
-                            <select id="closure-reason" class="form-control" style="margin-bottom: 0.5rem;">
-                                <option value="">Why is this being closed?</option>
-                                <option value="no_longer_present">No longer present when attended</option>
-                                <option value="not_actionable">Not enough to act on</option>
-                                <option value="not_feasible">Cannot be addressed at present</option>
-                            </select>
-                            <textarea id="closure-note" class="form-control" rows="3"
-                                      placeholder="Explain to the citizen why nothing further will happen. This is sent to them and shown publicly."
-                                      style="margin-bottom: 0.5rem;"></textarea>
-                            <button id="btn-close-issue" onclick="closeIssueReport()" class="btn btn-secondary" style="width: 100%;">
-                                <i class="fa-solid fa-folder-closed"></i> Close Without Resolving
-                            </button>
-                        </div>
-
-                        <div id="reopen-controls" style="display: none;">
-                            <textarea id="reopen-note" class="form-control" rows="2"
-                                      placeholder="Why is this being reopened?"
-                                      style="margin-bottom: 0.5rem;"></textarea>
-                            <button id="btn-reopen-issue" onclick="reopenIssueReport()" class="btn btn-primary" style="width: 100%;">
-                                <i class="fa-solid fa-folder-open"></i> Reopen Report
-                            </button>
-                        </div>
-                    </div>
-
-                    <div id="duplicate-management-section" style="margin-bottom: 2rem; border-top: 1px solid var(--admin-border); padding-top: 1.5rem;">
-                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600;">Duplicate Management</label>
-                        
-                        <div id="link-duplicate-controls">
-                            <p style="font-size: 0.8rem; color: var(--admin-text-muted); margin-bottom: 0.75rem;">Link this report to an existing parent issue.</p>
-                            <div style="display: flex; gap: 0.5rem;">
-                                <input type="text" id="duplicate-ticket-input" placeholder="Ticket ID (e.g. ABC123XYZ)" style="flex: 1; background: var(--admin-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.5rem; border-radius: 6px; font-family: monospace;">
-                                <button onclick="markAsDuplicate()" style="background: var(--admin-warning); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Link</button>
-                            </div>
-                        </div>
-
-                        <div id="unlink-duplicate-controls" class="hidden">
-                            <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid var(--admin-warning); padding: 1rem; border-radius: 6px; margin-bottom: 1rem;">
-                                <p style="font-size: 0.85rem; color: var(--admin-warning); font-weight: 600; margin-bottom: 0.25rem;">Linked as Duplicate</p>
-                                <p style="font-size: 0.8rem; color: var(--admin-text-muted); margin-bottom: 1rem;">This issue inherits its status from the original report.</p>
-                                <button onclick="unlinkDuplicate()" style="width: 100%; background: var(--admin-danger); color: white; border: none; padding: 0.6rem; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem;">Unlink & Make Unique</button>
-                            </div>
-                        </div>
-                    </div>
-                    
-                     <div style="margin-bottom: 2rem; border-top: 1px solid var(--admin-border); padding-top: 1.5rem;">
-                        <button id="btn-flag-spam" onclick="flagAsSpam()" style="width: 100%; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--admin-danger); color: var(--admin-danger); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-weight: 500;">
-                            <i class="fa-solid fa-flag"></i> Flag as SPAM
-                        </button>
-                    </div>
-
-                    <h3 style="margin-bottom: 1rem;">Activity Timeline</h3>
-                    <div id="modal-timeline" style="position: relative; padding-left: 1rem; border-left: 2px solid var(--admin-border);">
-                        <!-- Populated by JS -->
-                    </div>
-                </div>
+            <div class="modal-footer" style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeExportModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" id="export-confirm-btn" onclick="runExport()">
+                    <i class="fa-solid fa-file-csv"></i> Download CSV
+                </button>
             </div>
         </div>
     </div>
 
     <!-- Flatpickr JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
     <!-- Scripts -->
     <script src="../js/theme.js"></script>
     <script src="../js/admin_common.js"></script>
     <script src="../js/admin_issues.js"></script>
-
-<!-- Manual location placement: shown for reports the geocoder could not place -->
-<!-- z-index sits above the issue modal (10000): this opens from inside it, so a
-     lower value leaves it hidden behind the very modal that launched it. -->
-<div id="location-picker-overlay" class="hidden" style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 10050; display: flex; align-items: center; justify-content: center; padding: 1rem;">
-  <div style="background: var(--admin-surface, #fff); color: var(--admin-text, #1a202c); border-radius: 10px; width: min(760px, 96vw); max-height: 94vh; overflow: auto; padding: 1.25rem;">
-    <h3 style="margin: 0 0 0.35rem;">Set issue location</h3>
-    <div id="lp-context" style="font-size: 0.87rem; color: var(--admin-text-muted); margin-bottom: 0.75rem;"></div>
-
-    <div id="lp-map" style="height: 380px; border-radius: 8px; border: 1px solid var(--admin-border);"></div>
-
-    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-top: 0.75rem;">
-      <label style="font-size: 0.85rem;">Latitude
-        <input id="lp-lat" type="text" inputmode="decimal" style="display:block; width: 150px; padding: 6px; border: 1px solid var(--admin-border); border-radius: 4px;">
-      </label>
-      <label style="font-size: 0.85rem;">Longitude
-        <input id="lp-lng" type="text" inputmode="decimal" style="display:block; width: 150px; padding: 6px; border: 1px solid var(--admin-border); border-radius: 4px;">
-      </label>
-      <div style="flex: 1 1 auto;"></div>
-      <button id="lp-cancel" style="background: transparent; color: var(--admin-text-muted); border: 1px solid var(--admin-border); padding: 8px 14px; border-radius: 4px; cursor: pointer;">Cancel</button>
-      <button id="lp-save" style="background: var(--admin-primary); color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Save location</button>
-    </div>
-
-    <div id="lp-msg" style="margin-top: 0.6rem; font-size: 0.86rem; min-height: 1.2em;"></div>
-  </div>
-</div>
 
 </body>
 </html>

@@ -1567,13 +1567,28 @@ class FixamHandler {
             // Provenance, recorded for admins rather than acted on automatically.
             // Whether an image is adequate evidence is a human judgement; these
             // give a reviewer the facts behind it.
+            // The sender's declared type is a claim and is sometimes absent
+            // entirely; the file's own signature is the better authority. A
+            // video that arrived with no MIME type was stored as `.bin`, which
+            // nginx serves as application/octet-stream -- so the browser
+            // downloaded it instead of playing it.
+            const sniffed = downloadResult
+                ? this.helpers.sniffMediaType(downloadResult.buffer)
+                : null;
+            const resolvedMime = sniffed || downloadResult?.mimeType || null;
+
+            if (sniffed && downloadResult?.mimeType && sniffed !== downloadResult.mimeType) {
+                logger.log('media_handler',
+                    `Declared ${downloadResult.mimeType} but the file is ${sniffed}; trusting the file.`);
+            }
+
             if (downloadResult && mediaType === 'image') {
                 const currentData = state.data || {};
                 currentData.image_sha256 = crypto
                     .createHash('sha256')
                     .update(downloadResult.buffer)
                     .digest('hex');
-                currentData.image_mime_type = downloadResult.mimeType || null;
+                currentData.image_mime_type = resolvedMime;
 
                 // WhatsApp marks forwarded messages, which means the reporter did
                 // not take this photo now. Absent on channels that do not report
@@ -1605,12 +1620,22 @@ class FixamHandler {
                 }
 
                 state.data = currentData;
+            } else if (downloadResult && mediaType === 'video') {
+                // A video only ever recorded its URL, so the portal had nothing
+                // to tell it apart from a photograph except the file extension
+                // -- which is exactly what was wrong in the first place.
+                const currentData = state.data || {};
+                currentData.image_mime_type = resolvedMime;
+                state.data = currentData;
             }
 
             let mediaUrl = '';
 
             if (downloadResult) {
-                const extension = this.helpers.extensionForMime(downloadResult.mimeType, 'bin');
+                const extension = this.helpers.extensionForMime(
+                    resolvedMime,
+                    mediaType === 'video' ? 'mp4' : 'jpg'
+                );
                 const filename = `${crypto.randomUUID()}.${extension}`;
                 const folder = mediaType === 'image' ? 'images' : 'videos';
                 

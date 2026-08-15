@@ -157,8 +157,13 @@ app.get('/', (req, res) => {
 // Start Server
 const { ensureSuperAdmin } = require('./services/bootstrapAdmin');
 
+const retention = require('./services/retention');
+
 app.listen(PORT, async () => {
     console.log(`Server is running on port ${PORT}`);
     // After listen, so a slow database cannot delay the port opening.
     await ensureSuperAdmin(db);
+
+    // The privacy policy states retention periods; this is what enforces them.
+    retention.schedule(db);
 });

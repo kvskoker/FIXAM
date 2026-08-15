@@ -107,6 +107,16 @@ class FixamDatabase {
             await client.query('DELETE FROM user_point_logs WHERE user_id = $1', [userId]);
             await client.query('DELETE FROM user_roles WHERE user_id = $1', [userId]);
             await client.query('DELETE FROM user_groups WHERE user_id = $1', [userId]);
+            // A voice note is a recording of the person's voice, so it goes
+            // with the account. Photographs of infrastructure do not: the
+            // report itself is anonymised and kept, because a pothole is a
+            // public record rather than personal data. The files are dropped
+            // by the retention sweep once nothing references them.
+            await client.query(
+                'UPDATE issues SET audio_url = NULL WHERE reported_by = $1 AND audio_url IS NOT NULL',
+                [userId]
+            );
+
             await client.query('DELETE FROM feedback WHERE user_id = $1', [userId]);
             await client.query('DELETE FROM conversation_state WHERE phone_number = $1', [phoneNumber]);
             await client.query('DELETE FROM message_logs WHERE phone_number = $1', [phoneNumber]);

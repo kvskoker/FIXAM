@@ -13,6 +13,7 @@ services:
       - ./backend/db/migration_pilot_routing.sql:/docker-entrypoint-initdb.d/02-pilot-routing.sql
       - ./backend/db/migration_feedback_routing.sql:/docker-entrypoint-initdb.d/03-feedback-routing.sql
       - ./backend/db/migration_issue_closure.sql:/docker-entrypoint-initdb.d/04-issue-closure.sql
+      - ./backend/db/migration_admin_audit.sql:/docker-entrypoint-initdb.d/05-admin-audit.sql
     ports:
       - "${DB_PORT:-5432}:5432"
     healthcheck:
@@ -83,6 +84,12 @@ services:
       FIXAM_CONTACT_EMAIL: ${FIXAM_CONTACT_EMAIL:-privacy@fixam.sl}
       FIXAM_WEBSITE: ${FIXAM_WEBSITE:-https://fixam.sl}
       UPLOADS_DIR: /data/uploads
+      # Retention windows, in days. Defaults match the published privacy
+      # policy; lowering them tightens it, raising them requires the policy
+      # to be updated too.
+      MESSAGE_LOG_RETENTION_DAYS: ${MESSAGE_LOG_RETENTION_DAYS:-90}
+      CONVERSATION_STATE_RETENTION_DAYS: ${CONVERSATION_STATE_RETENTION_DAYS:-7}
+      PENDING_CONSENT_RETENTION_DAYS: ${PENDING_CONSENT_RETENTION_DAYS:-30}
       SIMULATOR_ENABLED: ${SIMULATOR_ENABLED:-true}
       SIMULATOR_URL: ${SIMULATOR_URL:-http://simulator:4001}
       SIMULATOR_PORT: 4001

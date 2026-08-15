@@ -11,6 +11,7 @@ const { getServiceArea } = require('../services/countries');
 const aiService = require('../services/aiService');
 const { requireAdmin, requireFullAdmin } = require('../middleware/requireAdmin');
 const { getScope, attachScope, canAccessIssue } = require('../middleware/mdaScope');
+const auditLog = require('../services/auditLog');
 
 // Initialize Handler
 const fixamHandler = new FixamHandler(whatsappService, db, null, console.log);
@@ -28,6 +29,10 @@ function generateTicketId() {
     }
     return result;
 } 
+
+// Records administrative changes. Mounted before the routes so it applies to
+// every one of them, including any added later.
+router.use(auditLog.auditAdminMutations);
 
 // GET /api/config - Public configuration
 router.get('/config', (req, res) => {
@@ -120,6 +125,7 @@ router.get('/issues', async (req, res) => {
                 i.*,
                 i.resolution_note,
                 u.name as reported_by_name,
+                u.phone_number as reported_by_phone,
                 COALESCE(v.upvotes, 0) as upvotes,
                 COALESCE(v.downvotes, 0) as downvotes,
                 COALESCE(v.net_votes, 0) as votes,
@@ -222,8 +228,31 @@ router.get('/issues', async (req, res) => {
 
         const totalPages = Math.ceil(totalItems / limitNum);
 
+        // Three tiers, because "who reported this" is answered differently
+        // depending on who is asking.
+        //
+        //   Public          - nobody. A report is about a place and a problem.
+        //   MDA officer     - name and phone, but only for reports in their own
+        //                     categories. Following up with the citizen is the
+        //                     job; an officer who cannot call the reporter back
+        //                     cannot ask which junction, or whether it recurred.
+        //                     They still see nothing about other institutions'
+        //                     reports, so this widens what they see about their
+        //                     own work rather than widening their reach.
+        //   Administrator   - all reports.
+        //
+        // The query selects `i.*`, so any column added later would be public by
+        // default; redaction is applied here at the boundary rather than
+        // trusting the SELECT list to stay safe.
+        const rows = scope
+            ? result.rows
+            : result.rows.map(({ reported_by, reported_by_name, reported_by_phone, ...rest }) => ({
+                ...rest,
+                reported_by_name: reported_by_name ? 'Citizen' : null
+            }));
+
         res.json({
-            data: result.rows,
+            data: rows,
             pagination: {
                 current_page: pageNum,
                 per_page: limitNum,
@@ -277,20 +306,62 @@ router.post('/issues/:id/vote', async (req, res) => {
 });
 
 // GET /api/issues/:id/tracker - Get issue tracker logs
+/**
+ * A report's activity history.
+ *
+ * This endpoint is public, because the point of the platform is that anyone can
+ * see what happened to a report. It used to return every actor's name AND phone
+ * number, which meant the phone number of every citizen, MDA officer and
+ * administrator who had ever touched a report could be harvested by walking
+ * issue ids. Phone numbers are now never returned here at all.
+ *
+ * The public sees who acted in institutional terms -- "Freetown City Council",
+ * "Citizen", "Administrator" -- which is what accountability actually requires.
+ * Signed-in staff additionally see the individual's name, because internally it
+ * matters which officer acted.
+ */
 router.get('/issues/:id/tracker', async (req, res) => {
     try {
         const { id } = req.params;
         const result = await db.query(`
-            SELECT 
-                it.*,
-                u.name as performed_by_name,
-                u.phone_number as performed_by_phone
+            SELECT
+                it.id, it.issue_id, it.action, it.description, it.created_at,
+                u.id AS actor_id,
+                u.name AS actor_name,
+                COALESCE(
+                    (SELECT g.name FROM user_groups ug
+                     JOIN groups g ON g.id = ug.group_id
+                     WHERE ug.user_id = u.id
+                     ORDER BY g.id LIMIT 1),
+                    CASE WHEN EXISTS (
+                        SELECT 1 FROM user_roles ur
+                        JOIN roles r ON r.id = ur.role_id
+                        WHERE ur.user_id = u.id AND r.name = 'Admin'
+                    ) THEN 'Administrator' ELSE 'Citizen' END
+                ) AS actor_institution
             FROM issue_tracker it
             LEFT JOIN users u ON it.performed_by = u.id
             WHERE it.issue_id = $1
             ORDER BY it.created_at ASC
         `, [id]);
-        res.json(result.rows);
+
+        // Only a verified session gets individual names.
+        const staff = !!authService.verifyToken(
+            (req.headers.authorization || '').startsWith('Bearer ')
+                ? req.headers.authorization.slice(7).trim()
+                : null
+        );
+
+        res.json(result.rows.map((row) => ({
+            id: row.id,
+            issue_id: row.issue_id,
+            action: row.action,
+            description: row.description,
+            created_at: row.created_at,
+            performed_by_name: staff
+                ? (row.actor_name || 'System')
+                : (row.actor_institution || 'System')
+        })));
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });
@@ -2138,6 +2209,192 @@ router.post('/admin/feedback/:id/acknowledge', requireAdmin, attachScope, async 
         } else {
             res.status(400).json({ success: false, message: 'Failed to acknowledge feedback' });
         }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+
+/**
+ * Turn rows into CSV.
+ *
+ * Values are quoted and internal quotes doubled, and anything starting with
+ * =, +, - or @ is prefixed with a quote: spreadsheet software treats those as
+ * formulas, so a report description could otherwise execute when an officer
+ * opens the file.
+ */
+function toCsv(rows, columns) {
+    const escape = (value) => {
+        if (value === null || value === undefined) return '';
+        let text = value instanceof Date ? value.toISOString() : String(value);
+        if (/^[=+\-@]/.test(text)) text = `'${text}`;
+        return `"${text.replace(/"/g, '""')}"`;
+    };
+
+    const header = columns.map((c) => escape(c.label)).join(',');
+    const body = rows.map((row) => columns.map((c) => escape(row[c.key])).join(',')).join('\n');
+    return `${header}\n${body}\n`;
+}
+
+// GET /api/admin/export/issues.csv - Export reports.
+//
+// Scoped exactly like the portal: an MDA exports its own categories and nothing
+// else. Personal data is excluded unless a full Admin explicitly asks for it
+// via ?include_personal=true, because an export leaves the platform and stops
+// being governed by it -- it lands in a spreadsheet, an inbox, a laptop.
+router.get('/admin/export/issues.csv', requireAdmin, attachScope, async (req, res) => {
+    try {
+        // Name and phone are chosen independently. They are not the same
+        // disclosure: a list of names is a weaker thing to hold than a list of
+        // reachable phone numbers, and an export that only needs one should not
+        // carry the other.
+        const wantsName = req.query.include_name === 'true';
+        const wantsPhone = req.query.include_phone === 'true';
+        const isFullAdmin = req.scope.unrestricted;
+
+        if ((wantsName || wantsPhone) && !isFullAdmin) {
+            // Recorded, not just refused. Someone reaching for contact details
+            // they are not entitled to is precisely the event this log exists
+            // for, and a refusal leaves no other trace.
+            const asked = [wantsName && 'names', wantsPhone && 'phone numbers']
+                .filter(Boolean).join(' and ');
+            await auditLog.record(req, {
+                action: 'export.refused',
+                targetType: 'export',
+                targetLabel: `reporter ${asked}`,
+                detail: `REFUSED — ${(req.scope.groupNames || []).join(', ') || 'no institution'} `
+                    + `requested reporter ${asked} without the Admin role`
+            });
+            return res.status(403).json({
+                success: false,
+                message: 'Only a full Administrator may export reporter contact details.'
+            });
+        }
+
+        const params = [];
+        let where = '';
+        if (!req.scope.unrestricted) {
+            if (!req.scope.categories || req.scope.categories.length === 0) {
+                where = ' AND FALSE';
+            } else {
+                params.push(req.scope.categories);
+                where = ` AND i.category = ANY($${params.length})`;
+            }
+        }
+
+        const result = await db.query(`
+            SELECT i.ticket_id, i.title, i.description, i.category, i.status,
+                   i.district, i.city, i.ward, i.address, i.lat, i.lng,
+                   i.created_at, i.updated_at, i.closed_at, i.closure_reason,
+                   i.closure_note, i.resolution_note, i.dispute_count,
+                   u.name AS reporter_name, u.phone_number AS reporter_phone
+            FROM issues i
+            LEFT JOIN users u ON i.reported_by = u.id
+            WHERE 1=1${where}
+            ORDER BY i.created_at DESC
+        `, params);
+
+        const columns = [
+            { key: 'ticket_id', label: 'Ticket' },
+            { key: 'title', label: 'Title' },
+            { key: 'description', label: 'Description' },
+            { key: 'category', label: 'Category' },
+            { key: 'status', label: 'Status' },
+            { key: 'district', label: 'District' },
+            { key: 'city', label: 'City' },
+            { key: 'ward', label: 'Ward' },
+            { key: 'address', label: 'Address' },
+            { key: 'lat', label: 'Latitude' },
+            { key: 'lng', label: 'Longitude' },
+            { key: 'created_at', label: 'Reported At' },
+            { key: 'updated_at', label: 'Last Updated' },
+            { key: 'closed_at', label: 'Closed At' },
+            { key: 'closure_reason', label: 'Closure Reason' },
+            { key: 'closure_note', label: 'Closure Explanation' },
+            { key: 'resolution_note', label: 'Resolution Note' },
+            { key: 'dispute_count', label: 'Citizen Disputes' }
+        ];
+
+        if (wantsName) columns.push({ key: 'reporter_name', label: 'Reporter Name' });
+        if (wantsPhone) columns.push({ key: 'reporter_phone', label: 'Reporter Phone' });
+
+        // Recorded whether or not it contained personal data, naming exactly
+        // which fields: "who exported what, and did it include contact details"
+        // is the question this log exists to answer, and "personal data: yes"
+        // does not answer it precisely enough to be useful later.
+        const included = [wantsName && 'names', wantsPhone && 'phone numbers']
+            .filter(Boolean).join(' + ') || 'none';
+        await auditLog.record(req, {
+            action: 'export.issues',
+            targetType: 'export',
+            targetLabel: `${result.rows.length} reports`,
+            detail: `${result.rows.length} rows; personal data: ${included}; `
+                + `scope: ${req.scope.unrestricted ? 'all categories' : (req.scope.groupNames || []).join(', ') || 'none'}`
+        });
+
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition',
+            `attachment; filename="fixam-reports-${new Date().toISOString().slice(0, 10)}.csv"`);
+        res.send(toCsv(result.rows, columns));
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// GET /api/admin/export/audit.csv - Export the administrative audit trail.
+//
+// Full Admin only. The audit log records who was granted access to what, so
+// handing it to every account would defeat part of its purpose.
+router.get('/admin/export/audit.csv', requireFullAdmin, attachScope, async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT created_at, actor_name, actor_phone, action,
+                   target_type, target_id, target_label, detail, ip_address
+            FROM admin_audit
+            ORDER BY created_at DESC
+        `);
+
+        await auditLog.record(req, {
+            action: 'export.audit',
+            targetType: 'export',
+            targetLabel: `${result.rows.length} audit entries`,
+            detail: `${result.rows.length} rows`
+        });
+
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition',
+            `attachment; filename="fixam-audit-${new Date().toISOString().slice(0, 10)}.csv"`);
+        res.send(toCsv(result.rows, [
+            { key: 'created_at', label: 'When' },
+            { key: 'actor_name', label: 'Who' },
+            { key: 'actor_phone', label: 'Phone' },
+            { key: 'action', label: 'Action' },
+            { key: 'target_type', label: 'Target Type' },
+            { key: 'target_id', label: 'Target ID' },
+            { key: 'target_label', label: 'Target' },
+            { key: 'detail', label: 'Detail' },
+            { key: 'ip_address', label: 'IP Address' }
+        ]));
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// GET /api/admin/audit - Read the administrative audit trail. Full Admin only.
+router.get('/admin/audit', requireFullAdmin, attachScope, async (req, res) => {
+    try {
+        const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+        const result = await db.query(`
+            SELECT id, created_at, actor_name, action, target_type, target_id,
+                   target_label, detail
+            FROM admin_audit
+            ORDER BY created_at DESC
+            LIMIT $1
+        `, [limit]);
+        res.json(result.rows);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });
