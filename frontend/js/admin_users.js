@@ -19,15 +19,19 @@ function initEventListeners() {
             tab.classList.add('active');
             
             const target = tab.dataset.tab;
-            if (target === 'users') {
-                document.getElementById('tab-users-content').classList.remove('hidden');
-                document.getElementById('tab-groups-content').classList.add('hidden');
-                loadUsers();
-            } else {
-                document.getElementById('tab-users-content').classList.add('hidden');
-                document.getElementById('tab-groups-content').classList.remove('hidden');
-                loadGroups();
-            }
+            const panels = {
+                users: 'tab-users-content',
+                groups: 'tab-groups-content',
+                categories: 'tab-categories-content',
+            };
+            Object.entries(panels).forEach(([key, elId]) => {
+                const el = document.getElementById(elId);
+                if (el) el.classList.toggle('hidden', key !== target);
+            });
+
+            if (target === 'users') loadUsers();
+            else if (target === 'groups') loadGroups();
+            else if (target === 'categories') loadCategoryAdmin();
         });
     });
 
@@ -695,3 +699,315 @@ async function handlePenaltySubmit(e) {
 }
 
 window.penalizeUser = penalizeUser;
+
+// ── Category management ──────────────────────────────────────────────────────
+//
+// Categories decide how a report is classified and which MDA is alerted, so the
+// table shows both sides of that: which MDAs a category routes to, and how many
+// reports already use it. The second number is what makes a delete safe or not.
+
+let allCategoriesCache = [];
+
+async function loadCategoryAdmin() {
+    try {
+        const [catRes, groupRes, issueRes] = await Promise.all([
+            fetch(`${API_BASE_URL}/categories`),
+            fetch(`${API_BASE_URL}/admin/groups`),
+            fetch(`${API_BASE_URL}/issues?limit=10000&include_spam=true`)
+        ]);
+
+        if (!catRes.ok) {
+            renderLoadError('category-list', 4, catRes.status);
+            return;
+        }
+
+        const categories = await catRes.json();
+        const groups = groupRes.ok ? await groupRes.json() : [];
+        const issuePayload = issueRes.ok ? await issueRes.json() : { data: [] };
+        const issues = issuePayload.data || issuePayload.issues || [];
+
+        // Count reports per category so an admin can see what a delete affects.
+        const usage = {};
+        issues.forEach((i) => {
+            if (i.category) usage[i.category] = (usage[i.category] || 0) + 1;
+        });
+
+        // Invert the group mapping: the API gives categories per group.
+        const mdasByCategory = {};
+        (Array.isArray(groups) ? groups : []).forEach((g) => {
+            const cats = Array.isArray(g.categories) ? g.categories : [];
+            cats.forEach((c) => {
+                if (!mdasByCategory[c.id]) mdasByCategory[c.id] = [];
+                mdasByCategory[c.id].push({ name: g.name, role: c.role });
+            });
+        });
+
+        allCategoriesCache = categories;
+
+        // Decorate once, then search/filter/sort/paginate off this in the
+        // browser rather than re-fetching for every keystroke.
+        categoryView.rows = categories.map((cat) => ({
+            ...cat,
+            mdas: mdasByCategory[cat.id] || [],
+            reportCount: usage[cat.name] || 0,
+        }));
+        applyCategoryView();
+    } catch (err) {
+        console.error('Error loading categories:', err);
+        renderLoadError('category-list', 4);
+    }
+}
+
+// ── Category list: search, filter, sort, paginate ────────────────────────────
+//
+// Done in the browser rather than the API: the whole list is small (tens of
+// rows, not thousands) and is already fetched to compute MDA assignments and
+// report counts. Paging server-side would mean three round trips per keystroke
+// for no benefit at this size. Revisit if the list ever grows into the hundreds.
+
+const CATEGORY_PAGE_SIZE = 10;
+
+let categoryView = {
+    rows: [],          // decorated categories: {...cat, mdas, reportCount}
+    search: '',
+    filter: 'all',
+    sort: 'name',
+    page: 1,
+};
+
+function applyCategoryView() {
+    const term = categoryView.search.trim().toLowerCase();
+
+    let rows = categoryView.rows.filter((row) => {
+        if (term) {
+            const haystack = `${row.name} ${row.mdas.map((m) => m.name).join(' ')}`.toLowerCase();
+            if (!haystack.includes(term)) return false;
+        }
+        switch (categoryView.filter) {
+            case 'assigned':   return row.mdas.length > 0;
+            case 'unassigned': return row.mdas.length === 0;
+            case 'in_use':     return row.reportCount > 0;
+            case 'unused':     return row.reportCount === 0;
+            default:           return true;
+        }
+    });
+
+    rows = rows.slice().sort((a, b) => {
+        if (categoryView.sort === 'reports') return b.reportCount - a.reportCount || a.name.localeCompare(b.name);
+        if (categoryView.sort === 'unassigned_first') {
+            const diff = (a.mdas.length === 0 ? 0 : 1) - (b.mdas.length === 0 ? 0 : 1);
+            return diff || a.name.localeCompare(b.name);
+        }
+        return a.name.localeCompare(b.name);
+    });
+
+    const totalPages = Math.max(1, Math.ceil(rows.length / CATEGORY_PAGE_SIZE));
+    // A filter that shrinks the list can leave the current page past the end.
+    if (categoryView.page > totalPages) categoryView.page = totalPages;
+
+    const start = (categoryView.page - 1) * CATEGORY_PAGE_SIZE;
+    const pageRows = rows.slice(start, start + CATEGORY_PAGE_SIZE);
+
+    renderCategoryRows(pageRows, rows.length === 0);
+    renderCategoryPagination(rows.length, totalPages, start, pageRows.length);
+}
+
+function renderCategoryPagination(total, totalPages, start, shown) {
+    const info = document.getElementById('category-pagination-info');
+    const numbers = document.getElementById('category-pagination-numbers');
+    const prev = document.getElementById('category-prev-page');
+    const next = document.getElementById('category-next-page');
+    if (!info || !numbers) return;
+
+    info.textContent = total === 0
+        ? 'No categories match'
+        : `Showing ${start + 1}–${start + shown} of ${total} categor${total === 1 ? 'y' : 'ies'}`;
+
+    numbers.innerHTML = '';
+    for (let p = 1; p <= totalPages; p++) {
+        const btn = document.createElement('button');
+        btn.className = 'action-btn';
+        btn.textContent = p;
+        if (p === categoryView.page) {
+            btn.style.background = 'var(--admin-primary)';
+            btn.style.color = '#fff';
+        }
+        btn.addEventListener('click', () => {
+            categoryView.page = p;
+            applyCategoryView();
+        });
+        numbers.appendChild(btn);
+    }
+
+    if (prev) prev.disabled = categoryView.page <= 1;
+    if (next) next.disabled = categoryView.page >= totalPages;
+    [prev, next].forEach((b) => { if (b) b.style.opacity = b.disabled ? '0.4' : '1'; });
+}
+
+function renderCategoryRows(rows, noMatches) {
+    const list = document.getElementById('category-list');
+    list.innerHTML = '';
+
+    if (noMatches) {
+        list.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--admin-text-muted);">No categories match your search or filter</td></tr>';
+        return;
+    }
+
+    rows.forEach((cat) => {
+        // An unmapped category is not broken -- default recipients cover it --
+        // but it is configuration still to do, so it is called out.
+        const mdaHtml = cat.mdas.length
+            ? cat.mdas.map((m) => `<span style="background: rgba(37,99,235,0.1); color: var(--admin-primary); border:1px solid rgba(37,99,235,0.2); padding:3px 8px; border-radius:12px; font-size:0.75rem; font-weight:600; margin-right:6px; display:inline-block;">${m.name}${m.role === 'lead' ? ' · lead' : ''}</span>`).join('')
+            : '<span style="color: var(--admin-warning); font-size: 0.8rem;">Not assigned — goes to default recipients</span>';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td data-label="Category">
+                <span style="display:inline-flex; align-items:center; gap:8px;">
+                    <i class="fa-solid ${cat.icon || 'fa-tag'}" style="color: ${cat.color || '#64748b'};"></i>
+                    <strong>${cat.name}</strong>
+                </span>
+            </td>
+            <td data-label="Assigned MDAs">${mdaHtml}</td>
+            <td data-label="Reports">${cat.reportCount}</td>
+            <td data-label="Actions" style="text-align: right;">
+                <button class="action-btn" title="Edit" onclick='editCategory(${JSON.stringify({ id: cat.id, name: cat.name, icon: cat.icon, color: cat.color }).replace(/'/g, "&#39;")})'>
+                    <i class="fa-solid fa-pen"></i>
+                </button>
+                <button class="action-btn" title="${cat.reportCount > 0 ? 'In use by ' + cat.reportCount + ' report(s)' : 'Delete'}"
+                        onclick="deleteCategory(${cat.id}, '${String(cat.name).replace(/'/g, "\\'")}', ${cat.reportCount})"
+                        ${cat.reportCount > 0 ? 'style="opacity:0.4;"' : ''}>
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </td>`;
+        list.appendChild(tr);
+    });
+}
+
+function openCategoryModal() {
+    document.getElementById('category-form').reset();
+    document.getElementById('edit-category-id').value = '';
+    document.getElementById('category-modal-title').textContent = 'Create Category';
+    document.getElementById('category-icon').value = 'fa-tag';
+    document.getElementById('category-color').value = '#64748b';
+    document.getElementById('category-error').style.display = 'none';
+    openModal('category-modal');
+}
+
+function editCategory(cat) {
+    document.getElementById('category-form').reset();
+    document.getElementById('edit-category-id').value = cat.id;
+    document.getElementById('category-modal-title').textContent = 'Edit Category';
+    document.getElementById('category-name').value = cat.name;
+    document.getElementById('category-icon').value = cat.icon || 'fa-tag';
+    document.getElementById('category-color').value = cat.color || '#64748b';
+    document.getElementById('category-error').style.display = 'none';
+    openModal('category-modal');
+}
+
+async function handleCategorySubmit(e) {
+    e.preventDefault();
+    const id = document.getElementById('edit-category-id').value;
+    const name = document.getElementById('category-name').value.trim();
+    const icon = document.getElementById('category-icon').value.trim();
+    const color = document.getElementById('category-color').value;
+    const errorEl = document.getElementById('category-error');
+
+    try {
+        const response = await fetch(
+            id ? `${API_BASE_URL}/admin/categories/${id}` : `${API_BASE_URL}/admin/categories`,
+            {
+                method: id ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, icon, color })
+            }
+        );
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            closeModal('category-modal');
+            // The classifier reload can fail independently of the save; if it
+            // did, the category exists but nothing will be assigned to it yet.
+            if (data.classifier_updated === false) {
+                alert('Category saved, but the AI service could not be refreshed. '
+                    + 'It will pick up the change on its next restart.');
+            }
+            loadCategoryAdmin();
+        } else {
+            errorEl.textContent = data.error || 'Failed to save category';
+            errorEl.style.display = 'block';
+        }
+    } catch (err) {
+        errorEl.textContent = 'Connection error';
+        errorEl.style.display = 'block';
+    }
+}
+
+async function deleteCategory(id, name, count) {
+    if (count > 0) {
+        alert(`"${name}" is used by ${count} report(s). Reassign those reports before deleting it.`);
+        return;
+    }
+    if (!confirm(`Delete the category "${name}"? This also removes its MDA assignments.`)) return;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin/categories/${id}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (response.ok && data.success) {
+            loadCategoryAdmin();
+        } else {
+            alert(data.error || 'Could not delete the category.');
+        }
+    } catch (err) {
+        alert('Connection error while deleting the category.');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const addBtn = document.getElementById('btn-add-category');
+    if (addBtn) addBtn.addEventListener('click', openCategoryModal);
+
+    const form = document.getElementById('category-form');
+    if (form) form.addEventListener('submit', handleCategorySubmit);
+
+    const search = document.getElementById('category-search');
+    if (search) {
+        search.addEventListener('input', debounce(() => {
+            categoryView.search = search.value;
+            categoryView.page = 1;   // a new search starts at the beginning
+            applyCategoryView();
+        }, 250));
+    }
+
+    ['category-filter-assignment', 'category-sort'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('change', () => {
+            categoryView.filter = document.getElementById('category-filter-assignment').value;
+            categoryView.sort = document.getElementById('category-sort').value;
+            categoryView.page = 1;
+            applyCategoryView();
+        });
+    });
+
+    const reset = document.getElementById('category-reset-filters');
+    if (reset) {
+        reset.addEventListener('click', () => {
+            document.getElementById('category-search').value = '';
+            document.getElementById('category-filter-assignment').value = 'all';
+            document.getElementById('category-sort').value = 'name';
+            categoryView = { ...categoryView, search: '', filter: 'all', sort: 'name', page: 1 };
+            applyCategoryView();
+        });
+    }
+
+    const prev = document.getElementById('category-prev-page');
+    if (prev) prev.addEventListener('click', () => {
+        if (categoryView.page > 1) { categoryView.page--; applyCategoryView(); }
+    });
+
+    const next = document.getElementById('category-next-page');
+    if (next) next.addEventListener('click', () => {
+        categoryView.page++; applyCategoryView();
+    });
+});

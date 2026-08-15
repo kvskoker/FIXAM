@@ -87,6 +87,7 @@
                 <div class="tab-nav">
                     <div class="tab-item active" data-tab="users">Users</div>
                     <div class="tab-item" data-tab="groups">Groups</div>
+                    <div class="tab-item" data-tab="categories">Categories</div>
                 </div>
 
                 <!-- USERS TAB -->
@@ -168,8 +169,107 @@
                         </table>
                     </div>
                 </div>
+
+                <div id="tab-categories-content" class="hidden">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
+                        <h2 style="font-size: 1.25rem;">Issue Categories</h2>
+                        <button class="btn btn-primary" id="btn-add-category">
+                            <i class="fa-solid fa-plus"></i> Create Category
+                        </button>
+                    </div>
+                    <p style="color: var(--admin-text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">
+                        Categories drive how reports are classified and which MDA is alerted.
+                        A new category is available to the classifier immediately, and can be
+                        assigned to a group under the Groups tab.
+                    </p>
+
+                    <div style="display: flex; margin-bottom: 1.5rem; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                        <div style="position: relative; width: 300px;">
+                            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--admin-text-muted);"></i>
+                            <input type="text" id="category-search" placeholder="Search categories..." class="filter-input" style="padding-left: 36px; width: 100%;">
+                        </div>
+                        <select id="category-filter-assignment" class="filter-input" style="width: auto;">
+                            <option value="all">All categories</option>
+                            <option value="assigned">Assigned to an MDA</option>
+                            <option value="unassigned">Not assigned</option>
+                            <option value="in_use">Has reports</option>
+                            <option value="unused">No reports</option>
+                        </select>
+                        <select id="category-sort" class="filter-input" style="width: auto;">
+                            <option value="name">Sort: Name (A–Z)</option>
+                            <option value="reports">Sort: Most reports</option>
+                            <option value="unassigned_first">Sort: Unassigned first</option>
+                        </select>
+                        <button class="action-btn" id="category-reset-filters" title="Reset filters">
+                            <i class="fa-solid fa-rotate-left"></i>
+                        </button>
+                    </div>
+
+                    <div class="admin-table-container">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Assigned MDAs</th>
+                                    <th>Reports</th>
+                                    <th style="text-align: right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="category-list">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style="margin-top: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                        <span id="category-pagination-info" style="font-size: 0.9rem; color: var(--admin-text-muted);">Showing -- of --</span>
+                        <div id="category-pagination-numbers" style="display: flex; gap: 0.35rem; align-items: center;"></div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="action-btn" id="category-prev-page" title="Previous"><i class="fa-solid fa-chevron-left"></i></button>
+                            <button class="action-btn" id="category-next-page" title="Next"><i class="fa-solid fa-chevron-right"></i></button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
+    </div>
+
+    <!-- Category Modal -->
+    <div id="category-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="category-modal-title">Create Category</h2>
+                <button class="action-btn" onclick="closeModal('category-modal')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="category-form">
+                <input type="hidden" id="edit-category-id">
+                <div class="form-group">
+                    <label>Category Name</label>
+                    <input type="text" id="category-name" class="form-control" maxlength="50" required
+                           placeholder="e.g. Street Drainage">
+                    <small style="color: var(--admin-text-muted);">
+                        Use wording a citizen would recognise — the classifier matches reports
+                        against this name.
+                    </small>
+                </div>
+                <div class="form-group" style="display: flex; gap: 1rem;">
+                    <div style="flex: 1;">
+                        <label>Icon</label>
+                        <input type="text" id="category-icon" class="form-control" placeholder="fa-tag" value="fa-tag">
+                        <small style="color: var(--admin-text-muted);">Font Awesome class</small>
+                    </div>
+                    <div>
+                        <label>Colour</label>
+                        <input type="color" id="category-color" class="form-control" value="#64748b" style="height: 42px;">
+                    </div>
+                </div>
+                <p id="category-error" style="color: var(--admin-danger); display: none; margin-top: 0.5rem;"></p>
+                <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">Save Category</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('category-modal')">Cancel</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <!-- User Modal -->

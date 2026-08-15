@@ -302,6 +302,143 @@ router.get('/categories', async (req, res) => {
     }
 });
 
+
+// ── Category administration ──────────────────────────────────────────────────
+//
+// Categories drive both classification and MDA routing, so a change here has to
+// reach the AI engine as well as the database. The engine embeds the category
+// list at startup; without the reload below, a new category would appear in the
+// portal and be mappable to an MDA while the classifier never assigned anything
+// to it.
+
+const axios = require('axios');
+const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+
+async function reloadAiCategories() {
+    try {
+        const res = await axios.post(`${AI_URL}/reload-categories`, {}, { timeout: 15000 });
+        console.log(`AI engine reloaded ${res.data.count} categories`);
+        return true;
+    } catch (err) {
+        // Not fatal: the category exists and is mappable, it just will not be
+        // auto-assigned until the engine picks it up. Say so rather than fail
+        // the admin's action.
+        console.error('Could not reload categories on the AI engine:', err.message);
+        return false;
+    }
+}
+
+// POST /api/admin/categories - Create a category
+router.post('/admin/categories', requireFullAdmin, async (req, res) => {
+    try {
+        const { name, icon, color } = req.body;
+        const trimmed = (name || '').trim();
+
+        if (!trimmed) {
+            return res.status(400).json({ error: 'Category name is required' });
+        }
+        if (trimmed.length > 50) {
+            return res.status(400).json({ error: 'Category name must be 50 characters or fewer' });
+        }
+
+        const existing = await db.query('SELECT id FROM categories WHERE LOWER(name) = LOWER($1)', [trimmed]);
+        if (existing.rows.length > 0) {
+            return res.status(400).json({ error: 'A category with this name already exists' });
+        }
+
+        const result = await db.query(
+            'INSERT INTO categories (name, icon, color) VALUES ($1, $2, $3) RETURNING *',
+            [trimmed, icon || 'fa-tag', color || '#64748b']
+        );
+
+        const reloaded = await reloadAiCategories();
+        res.json({ success: true, category: result.rows[0], classifier_updated: reloaded });
+    } catch (err) {
+        console.error('Create category failed:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// PUT /api/admin/categories/:id - Rename or restyle a category
+router.put('/admin/categories/:id', requireFullAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, icon, color } = req.body;
+        const trimmed = (name || '').trim();
+
+        if (!trimmed) {
+            return res.status(400).json({ error: 'Category name is required' });
+        }
+
+        const current = await db.query('SELECT name FROM categories WHERE id = $1', [id]);
+        if (current.rows.length === 0) {
+            return res.status(404).json({ error: 'Category not found' });
+        }
+
+        const clash = await db.query(
+            'SELECT id FROM categories WHERE LOWER(name) = LOWER($1) AND id != $2', [trimmed, id]);
+        if (clash.rows.length > 0) {
+            return res.status(400).json({ error: 'Another category already uses this name' });
+        }
+
+        const previousName = current.rows[0].name;
+
+        await db.query(
+            'UPDATE categories SET name = $1, icon = $2, color = $3 WHERE id = $4',
+            [trimmed, icon || 'fa-tag', color || '#64748b', id]
+        );
+
+        // issues.category stores the name, not the id. Without this a rename
+        // orphans every existing report in that category: they keep the old
+        // string, disappear from category filters, and lose their MDA routing.
+        let updatedIssues = 0;
+        if (previousName !== trimmed) {
+            const upd = await db.query(
+                'UPDATE issues SET category = $1 WHERE category = $2', [trimmed, previousName]);
+            updatedIssues = upd.rowCount;
+        }
+
+        const reloaded = await reloadAiCategories();
+        res.json({ success: true, issues_updated: updatedIssues, classifier_updated: reloaded });
+    } catch (err) {
+        console.error('Update category failed:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// DELETE /api/admin/categories/:id
+router.delete('/admin/categories/:id', requireFullAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const current = await db.query('SELECT name FROM categories WHERE id = $1', [id]);
+        if (current.rows.length === 0) {
+            return res.status(404).json({ error: 'Category not found' });
+        }
+        const categoryName = current.rows[0].name;
+
+        // Reports keep the category as text, so deleting one in use would leave
+        // them pointing at something that no longer exists -- unfilterable and
+        // unroutable. Refuse and say how many are affected.
+        const inUse = await db.query('SELECT COUNT(*) AS count FROM issues WHERE category = $1', [categoryName]);
+        const count = parseInt(inUse.rows[0].count, 10);
+        if (count > 0) {
+            return res.status(400).json({
+                error: `Cannot delete: ${count} report(s) use this category. Reassign them first.`
+            });
+        }
+
+        await db.query('DELETE FROM category_groups WHERE category_id = $1', [id]);
+        await db.query('DELETE FROM categories WHERE id = $1', [id]);
+
+        const reloaded = await reloadAiCategories();
+        res.json({ success: true, classifier_updated: reloaded });
+    } catch (err) {
+        console.error('Delete category failed:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // GET /api/stats/trends - Daily reporting and resolution trends
 router.get('/stats/trends', async (req, res) => {
     try {

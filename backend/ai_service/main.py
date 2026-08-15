@@ -61,6 +61,62 @@ UNSAFE_LABELS = [
     "MALE_GENITALIA_EXPOSED"
 ]
 
+
+def load_categories():
+    """
+    Read the category list and recompute its embeddings.
+
+    Classification compares a report against these embeddings, so a category
+    added after startup is invisible to the classifier until this runs again --
+    it would appear in the admin portal, be mappable to an MDA, and never be
+    assigned to anything. The backend calls /reload-categories after any change
+    so the two stay in step.
+    """
+    global categories_list, category_embeddings, urgency_embeddings
+
+    print("Loading categories from database...")
+    try:
+        conn = psycopg2.connect(
+            host=os.environ.get("DB_HOST", "localhost"),
+            database=os.environ.get("DB_NAME", "fixam"),
+            user=os.environ.get("DB_USER", "postgres"),
+            password=os.environ.get("DB_PASSWORD", "password"),
+            port=os.environ.get("DB_PORT", "5432")
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM categories ORDER BY name;")
+        rows = cur.fetchall()
+        categories_list = [row[0] for row in rows]
+        print(f"Loaded {len(categories_list)} categories from database.")
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"Failed to fetch categories from DB: {e}")
+        if not categories_list:
+            # Only fall back on a cold start. Overwriting a good list with this
+            # stub because of a transient database blip would quietly degrade
+            # classification for every later report.
+            categories_list = [
+                "Electricity", "Water", "Road", "Transportation", "Drainage", "Waste",
+                "Housing", "Telecommunications", "Health", "Education", "Security"
+            ]
+            print("Using fallback categories.")
+        else:
+            print("Keeping the previously loaded categories.")
+        return False
+
+    if intent_classifier and intent_classifier.model:
+        try:
+            category_embeddings = intent_classifier.model.encode(categories_list)
+            urgency_embeddings = intent_classifier.model.encode(urgency_list)
+            print("Embeddings computed successfully.")
+        except Exception as e:
+            print(f"Failed to compute embeddings: {e}")
+            return False
+
+    return True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -77,41 +133,8 @@ async def lifespan(app: FastAPI):
         print(f"Failed to load Intent Classifier: {e}")
         intent_classifier = None
     
-    # --- Load Categories from DB ---
-    print("Loading categories from database...")
-    try:
-        conn = psycopg2.connect(
-            host=os.environ.get("DB_HOST", "localhost"),
-            database=os.environ.get("DB_NAME", "fixam"),
-            user=os.environ.get("DB_USER", "postgres"),
-            password=os.environ.get("DB_PASSWORD", "password"),
-            port=os.environ.get("DB_PORT", "5432")
-        )
-        cur = conn.cursor()
-        cur.execute("SELECT name FROM categories;")
-        rows = cur.fetchall()
-        categories_list = [row[0] for row in rows]
-        print(f"Loaded {len(categories_list)} categories from database.")
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print(f"Failed to fetch categories from DB: {e}")
-        # Fallback
-        categories_list = [
-            "Electricity", "Water", "Road", "Transportation", "Drainage", "Waste", 
-            "Housing", "Telecommunications", "Health", "Education", "Security"
-        ]
-        print("Using fallback categories.")
-
-    # --- Pre-compute Embeddings for Categories & Urgency ---
-    if intent_classifier and intent_classifier.model:
-        print("Pre-computing Category and Urgency embeddings...")
-        try:
-            category_embeddings = intent_classifier.model.encode(categories_list)
-            urgency_embeddings = intent_classifier.model.encode(urgency_list)
-            print("Embeddings computed successfully.")
-        except Exception as e:
-            print(f"Failed to compute embeddings: {e}")
+    # --- Load Categories from DB and embed them ---
+    load_categories()
 
     # --- Load speech-to-text engine (Parakeet, see asr.py) ---
     engine = create_engine()
@@ -299,6 +322,17 @@ def _require_readable_image(path):
             img.verify()
     except Exception:
         raise HTTPException(status_code=400, detail="File is not a readable image.")
+
+
+@app.post("/reload-categories")
+def reload_categories():
+    """Re-read categories and re-embed them, without restarting the service."""
+    ok = load_categories()
+    return {
+        "success": ok,
+        "count": len(categories_list),
+        "categories": categories_list,
+    }
 
 
 @app.post("/detect-minor")
