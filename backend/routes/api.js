@@ -12,6 +12,7 @@ const aiService = require('../services/aiService');
 const { requireAdmin, requireFullAdmin } = require('../middleware/requireAdmin');
 const { getScope, attachScope, canAccessIssue } = require('../middleware/mdaScope');
 const auditLog = require('../services/auditLog');
+const adminOtp = require('../services/adminOtp');
 
 // Initialize Handler
 const fixamHandler = new FixamHandler(whatsappService, db, null, console.log);
@@ -53,6 +54,10 @@ router.get('/config', (req, res) => {
             // Served area, so the admin map frames and constrains itself to the
             // same bounds the bot enforces rather than hardcoding a second copy.
             service_area: getServiceArea(),
+            // Shown on the sign-in page so an administrator knows where to send
+            // LOGIN for their code, rather than having to be told separately.
+            bot_number: process.env.BOT_PHONE_NUMBER || null,
+            admin_2fa: String(process.env.ADMIN_2FA_ENABLED ?? 'true').toLowerCase() !== 'false',
         }
     });
 });
@@ -799,6 +804,39 @@ router.post('/admin/login', async (req, res) => {
 
         if (!isValid) {
             return res.status(401).json({ success: false, message: 'Invalid credentials' });
+        }
+
+        // Second factor. Checked after the password, so a code alone is never
+        // enough and an attacker holding the phone learns nothing by trying.
+        if (adminOtp.isEnabled()) {
+            const supplied = (req.body.otp || '').trim();
+
+            if (!supplied) {
+                // Not an error: the password was right, and this says what to do
+                // next. The client shows the code field on seeing this.
+                return res.status(401).json({
+                    success: false,
+                    requires_otp: true,
+                    message: 'Send LOGIN to the FIXAM WhatsApp number to receive your sign-in code, then enter it below.'
+                });
+            }
+
+            const check = await adminOtp.verify(user.id, supplied);
+            if (!check.ok) {
+                const messages = {
+                    malformed: 'That code does not look right. Enter the 6-digit code from WhatsApp.',
+                    no_code: 'No sign-in code is waiting. Send LOGIN to the FIXAM WhatsApp number to get one.',
+                    expired: 'That code has expired. Send LOGIN on WhatsApp to get a new one.',
+                    too_many_attempts: 'Too many incorrect codes. Send LOGIN on WhatsApp to get a new one.',
+                    incorrect: 'That code is not correct.'
+                };
+                return res.status(401).json({
+                    success: false,
+                    requires_otp: true,
+                    otp_error: check.reason,
+                    message: messages[check.reason] || 'That code could not be verified.'
+                });
+            }
         }
 
         // Update last login

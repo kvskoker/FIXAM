@@ -188,20 +188,84 @@ function showDashboard() {
     }
 }
 
+/**
+ * Reveal the second-factor field, and say how to get a code.
+ *
+ * Built here rather than in the markup because five pages carry the sign-in
+ * form; one place to change beats five places to forget.
+ */
+async function showOtpStep(message) {
+    let wrapper = document.getElementById('otp-step');
+
+    if (!wrapper) {
+        const form = document.getElementById('login-form');
+        const submit = form.querySelector('button[type="submit"]');
+
+        wrapper = document.createElement('div');
+        wrapper.id = 'otp-step';
+        wrapper.style.cssText = 'text-align: left; margin-top: 0.5rem;';
+
+        // The number is fetched rather than hardcoded: a deployment that
+        // changes its WhatsApp number should not need a code change to keep
+        // its own sign-in instructions accurate.
+        let botNumber = '';
+        try {
+            const res = await fetch(`${API_BASE_URL}/config`);
+            if (res.ok) botNumber = (await res.json())?.instance?.bot_number || '';
+        } catch (err) { /* the instructions still make sense without it */ }
+
+        const target = botNumber
+            ? `<a href="https://wa.me/${botNumber}?text=LOGIN" target="_blank" rel="noopener" style="color: var(--admin-primary); font-weight: 600;">+${botNumber}</a>`
+            : 'the FIXAM WhatsApp number';
+
+        wrapper.innerHTML = `
+            <div style="background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.25);
+                        border-radius: 8px; padding: 0.75rem 0.9rem; margin-bottom: 0.75rem; font-size: 0.85rem;">
+                <i class="fa-brands fa-whatsapp" style="color: #25D366;"></i>
+                Send <strong>LOGIN</strong> to ${target} and it will reply with a 6-digit code.
+            </div>
+            <input type="text" id="admin-otp" placeholder="6-digit code" inputmode="numeric"
+                   autocomplete="one-time-code" maxlength="6"
+                   style="width: 100%; letter-spacing: 0.3em; text-align: center; font-size: 1.1rem;">`;
+
+        form.insertBefore(wrapper, submit);
+        submit.textContent = 'Verify and Sign In';
+    }
+
+    const field = document.getElementById('admin-otp');
+    field.value = '';
+    field.focus();
+
+    if (message) {
+        const errorMsg = document.getElementById('login-error');
+        errorMsg.textContent = message;
+        errorMsg.style.display = 'block';
+    }
+}
+
 async function handleLogin(e) {
     e.preventDefault();
     const phone = document.getElementById('admin-phone').value;
     const password = document.getElementById('admin-password').value;
+    const otpField = document.getElementById('admin-otp');
+    const otp = otpField ? otpField.value.trim() : '';
     const errorMsg = document.getElementById('login-error');
 
     try {
         const response = await fetch(`${API_BASE_URL}/admin/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone, password })
+            body: JSON.stringify({ phone, password, otp })
         });
 
         const data = await response.json();
+
+        // The password was right and a code is needed. Not a failure -- it is
+        // the next step, so it reads as an instruction rather than an error.
+        if (!data.success && data.requires_otp) {
+            await showOtpStep(data.message);
+            return;
+        }
 
         if (response.ok && data.success) {
             localStorage.setItem('fixam_admin_user', JSON.stringify(data.user));

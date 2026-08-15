@@ -53,12 +53,18 @@ async function createServer() {
     // SIMULATOR_DB_NAME at a scratch database to keep them out of the main one.
     const dbName = process.env.SIMULATOR_DB_NAME || process.env.DB_NAME;
 
+    // The simulator builds its own pool because it may point at a scratch
+    // database, but it must follow the same transport rule as everything else
+    // -- otherwise turning on encryption leaves one service quietly outside it.
     const db = new Pool({
         host: process.env.DB_HOST || 'localhost',
         user: process.env.DB_USER,
         password: process.env.DB_PASSWORD,
         database: dbName,
         port: process.env.DB_PORT || 5432,
+        ssl: String(process.env.DB_SSL || '').toLowerCase() === 'true'
+            ? { rejectUnauthorized: false }
+            : false,
     });
 
     console.log(`  Simulator database: ${dbName} @ ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || 5432} as ${process.env.DB_USER}`);

@@ -97,12 +97,16 @@ def load_categories():
 
     print("Loading categories from database...")
     try:
+        # sslmode=require when the deployment encrypts database traffic. The
+        # engine only reads category names, but a connection outside the policy
+        # is still a connection outside the policy.
         conn = psycopg2.connect(
             host=os.environ.get("DB_HOST", "localhost"),
             database=os.environ.get("DB_NAME", "fixam"),
             user=os.environ.get("DB_USER", "postgres"),
             password=os.environ.get("DB_PASSWORD", "password"),
-            port=os.environ.get("DB_PORT", "5432")
+            port=os.environ.get("DB_PORT", "5432"),
+            sslmode="require" if os.environ.get("DB_SSL", "").lower() == "true" else "prefer"
         )
         cur = conn.cursor()
         cur.execute("SELECT name FROM categories ORDER BY name;")

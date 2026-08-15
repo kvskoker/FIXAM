@@ -6,6 +6,7 @@ const FixamHelpers = require('./fixamHelpers');
 const logger = require('./logger');
 const simulator = require('./simulator');
 const aiService = require('./aiService');
+const adminOtp = require('./adminOtp');
 const { analyzeIssue, analyzeIntent } = aiService; // Keep backward compatibility for existing calls
 const axios = require('axios');
 const FormData = require('form-data');
@@ -192,6 +193,46 @@ class FixamHandler {
 
         // Check if user exists
         let user = await this.fixamDb.getUser(fromNumber);
+
+        // ── Administrator sign-in code ──────────────────────────────────────────
+        //
+        // The administrator asks; the bot answers. Doing it this way keeps the
+        // exchange inside WhatsApp's customer service window, so no approved
+        // template is needed and nothing depends on Meta's review queue.
+        if (['login', 'login code', 'otp', 'sign in', 'signin'].includes(lowerInput)) {
+            const result = await adminOtp.issue(fromNumber);
+
+            if (!result.ok && result.reason === 'not_portal_user') {
+                // Deliberately not "you are not an administrator": that would
+                // confirm which numbers are, to anyone who cares to ask.
+                await this.sendMessage(fromNumber,
+                    "This number is not set up for portal access.\n\nIf you should have an account, please contact your administrator.");
+                return;
+            }
+            if (!result.ok && result.reason === 'disabled') {
+                await this.sendMessage(fromNumber, "This account is disabled. Please contact your administrator.");
+                return;
+            }
+            if (!result.ok && result.reason === 'rate_limited') {
+                // Reaching this now means a run of codes was requested and none
+                // of them used, which is worth flagging. Ordinary signing in and
+                // out does not get here.
+                await this.sendMessage(fromNumber,
+                    "⏳ Several sign-in codes have been requested for this account and not used.\n\nIf you already have a code, it is still valid — use that one.\n\nIf you did not request these codes, tell your administrator: someone may know your password.");
+                return;
+            }
+            if (!result.ok) {
+                await this.sendMessage(fromNumber, "Sorry, the code could not be generated. Please try again shortly.");
+                return;
+            }
+
+            await this.sendMessage(fromNumber,
+                "🔐 *FIXAM sign-in code*\n\n"
+                + `*${result.code}*\n\n`
+                + `Enter it with your phone number and password to sign in. It expires in ${result.expiresInMinutes} minutes and works once.\n\n`
+                + "⚠️ FIXAM will never ask you for this code. If you did not try to sign in, ignore this message and tell your administrator.");
+            return;
+        }
 
         // ── DPG: Global data commands (available to all users) ───────────────────
         if (lowerInput === 'my data' || lowerInput === 'mydata') {

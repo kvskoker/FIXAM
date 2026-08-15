@@ -127,9 +127,14 @@ function auditAdminMutations(req, res, next) {
 
         // A rejected sign-in is the entry a security review most wants, so it
         // is recorded under its own action rather than as a failed login.
-        const action = match.action === 'auth.login' && failed
-            ? 'auth.login_failed'
-            : match.action;
+        // A refused sign-in is recorded under its own action. A failed second
+        // factor is recorded separately again: it means someone had the
+        // password, which is a materially different event from a wrong password
+        // and the one worth looking into.
+        let action = match.action;
+        if (match.action === 'auth.login' && failed) {
+            action = body && body.requires_otp ? 'auth.otp_failed' : 'auth.login_failed';
+        }
 
         // The login body carries the password and, on failure, an attacker's
         // guess at a phone number; only the identity attempted is useful.

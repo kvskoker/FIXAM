@@ -19,8 +19,10 @@ const logger = require('./logger');
  *   and whether it was fixed. Reports are anonymised when an account is deleted
  *   rather than removed.
  *
- *   The audit trail. Who did what to a report has to outlive the working data,
- *   or accountability lasts only as long as the retention window.
+ *   The audit trail outlives the working data it describes -- two years by
+ *   default rather than the 90 days applied to conversations -- because the
+ *   questions an audit answers are asked after the fact. It is trimmed on its
+ *   own schedule rather than never, so "how long is it kept" has an answer.
  *
  * Windows are configurable so the deployment can be tightened without a code
  * change, but they default to what the policy says.
@@ -44,11 +46,19 @@ const WINDOWS = {
     conversationState: () => days('CONVERSATION_STATE_RETENTION_DAYS', 7),
 
     // Consent records for people who never completed sign-up.
-    pendingConsent: () => days('PENDING_CONSENT_RETENTION_DAYS', 30)
+    pendingConsent: () => days('PENDING_CONSENT_RETENTION_DAYS', 30),
+
+    // The administrative audit trail: who was given access, who signed in, who
+    // exported data. Far longer than the working data it describes, because an
+    // audit answers questions asked after the fact -- often long after. Two
+    // years covers the pilot and any review of it, and is a stated limit rather
+    // than "forever", which is not a retention policy.
+    adminAudit: () => days('ADMIN_AUDIT_RETENTION_DAYS', 730)
 };
 
 async function purgeOnce(db) {
-    const result = { message_logs: 0, conversation_state: 0, pending_consent: 0, orphan_media: 0 };
+    const result = { message_logs: 0, conversation_state: 0, pending_consent: 0,
+                     admin_audit: 0, orphan_media: 0 };
 
     const step = async (label, fn) => {
         try {
@@ -75,6 +85,12 @@ async function purgeOnce(db) {
         `DELETE FROM pending_consent
          WHERE sent_at < NOW() - ($1 || ' days')::INTERVAL`,
         [WINDOWS.pendingConsent()]
+    )).rowCount);
+
+    await step('admin_audit', async () => (await db.query(
+        `DELETE FROM admin_audit
+         WHERE created_at < NOW() - ($1 || ' days')::INTERVAL`,
+        [WINDOWS.adminAudit()]
     )).rowCount);
 
     await step('orphan_media', () => purgeOrphanMedia(db));
@@ -160,7 +176,8 @@ function schedule(db) {
 
     logger.log('retention', `Retention scheduled: message logs ${WINDOWS.messageLogs()}d, `
         + `conversation state ${WINDOWS.conversationState()}d, `
-        + `pending consent ${WINDOWS.pendingConsent()}d`);
+        + `pending consent ${WINDOWS.pendingConsent()}d, `
+        + `audit trail ${WINDOWS.adminAudit()}d`);
 }
 
 module.exports = { schedule, purgeOnce, purgeOrphanMedia, WINDOWS };

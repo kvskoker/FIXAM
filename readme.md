@@ -373,6 +373,11 @@ We welcome contributions to make FIXAM better as an open-source Digital Public G
 We expect all contributors to adhere to our [Code of Conduct](CODE_OF_CONDUCT.md). 
 For security concerns, please review our [Security Policy](SECURITY.md).
 
+Before deploying beyond a pilot, read [docs/ENCRYPTION.md](docs/ENCRYPTION.md).
+Database connections are encrypted by the platform; HTTPS for the public site
+and volume encryption for the database and uploads are deployment controls the
+platform cannot apply for you.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

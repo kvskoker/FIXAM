@@ -1,6 +1,17 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    # Stock postgres plus the openssl tool, so the entrypoint can generate a
+    # certificate. Encrypts backend-to-database traffic; a deployment with its
+    # own CA should mount its key and certificate over /var/lib/postgresql/tls.
+    build: ./backend/db
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/var/lib/postgresql/tls/server.crt
+      - -c
+      - ssl_key_file=/var/lib/postgresql/tls/server.key
     environment:
       POSTGRES_USER: ${DB_USER:-fixam_db_admin}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-F!x@m2025DJP}
@@ -14,6 +25,8 @@ services:
       - ./backend/db/migration_feedback_routing.sql:/docker-entrypoint-initdb.d/03-feedback-routing.sql
       - ./backend/db/migration_issue_closure.sql:/docker-entrypoint-initdb.d/04-issue-closure.sql
       - ./backend/db/migration_admin_audit.sql:/docker-entrypoint-initdb.d/05-admin-audit.sql
+      - ./backend/db/migration_admin_otp.sql:/docker-entrypoint-initdb.d/06-admin-otp.sql
+      - ./backend/db/migration_otp_verified.sql:/docker-entrypoint-initdb.d/07-otp-verified.sql
     ports:
       - "${DB_PORT:-5432}:5432"
     healthcheck:
@@ -30,6 +43,7 @@ services:
       DB_NAME: ${DB_NAME:-fixam_db}
       DB_PASSWORD: ${DB_PASSWORD:-F!x@m2025DJP}
       DB_PORT: 5432
+      DB_SSL: ${DB_SSL:-true}
       HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
       PARAKEET_MODEL: ${PARAKEET_MODEL:-nvidia/parakeet-tdt-0.6b-v3}
       MINOR_DETECTION_ENABLED: ${MINOR_DETECTION_ENABLED:-true}
@@ -60,6 +74,10 @@ services:
       DB_NAME: ${DB_NAME:-fixam_db}
       DB_PASSWORD: ${DB_PASSWORD:-F!x@m2025DJP}
       DB_PORT: 5432
+      # Encrypt the connection to the database. Must match how postgres was
+      # started; both are on by default here.
+      DB_SSL: ${DB_SSL:-true}
+      DB_SSL_CA: ${DB_SSL_CA:-}
       AI_SERVICE_URL: http://ai-engine:8000
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
@@ -71,6 +89,12 @@ services:
       # generates a new key and logs every admin out.
       SECRET: ${SECRET:-}
       ADMIN_SESSION_HOURS: ${ADMIN_SESSION_HOURS:-12}
+      # Second factor for portal sign-in. The administrator requests a code
+      # from the bot over WhatsApp; set to false only to recover from a
+      # lock-out, and set it back afterwards.
+      ADMIN_2FA_ENABLED: ${ADMIN_2FA_ENABLED:-true}
+      ADMIN_OTP_TTL_MINUTES: ${ADMIN_OTP_TTL_MINUTES:-10}
+      ADMIN_OTP_MAX_PER_HOUR: ${ADMIN_OTP_MAX_PER_HOUR:-10}
       SUPER_ADMIN_PHONE: ${SUPER_ADMIN_PHONE:-23200000000}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-Adm1n@Fixam}
       BOT_PHONE_NUMBER: ${BOT_PHONE_NUMBER:-23233788736}
@@ -90,6 +114,7 @@ services:
       MESSAGE_LOG_RETENTION_DAYS: ${MESSAGE_LOG_RETENTION_DAYS:-90}
       CONVERSATION_STATE_RETENTION_DAYS: ${CONVERSATION_STATE_RETENTION_DAYS:-7}
       PENDING_CONSENT_RETENTION_DAYS: ${PENDING_CONSENT_RETENTION_DAYS:-30}
+      ADMIN_AUDIT_RETENTION_DAYS: ${ADMIN_AUDIT_RETENTION_DAYS:-730}
       SIMULATOR_ENABLED: ${SIMULATOR_ENABLED:-true}
       SIMULATOR_URL: ${SIMULATOR_URL:-http://simulator:4001}
       SIMULATOR_PORT: 4001
@@ -116,6 +141,8 @@ services:
       DB_NAME: ${DB_NAME:-fixam_db}
       DB_PASSWORD: ${DB_PASSWORD:-F!x@m2025DJP}
       DB_PORT: 5432
+      DB_SSL: ${DB_SSL:-true}
+      DB_SSL_CA: ${DB_SSL_CA:-}
       SIMULATOR_PORT: 4001
       SIMULATOR_PHONE: ${SIMULATOR_PHONE:-23272123456}
       SIMULATOR_BACKEND_URL: http://backend:5000
@@ -132,6 +159,12 @@ services:
       # generates a new key and logs every admin out.
       SECRET: ${SECRET:-}
       ADMIN_SESSION_HOURS: ${ADMIN_SESSION_HOURS:-12}
+      # Second factor for portal sign-in. The administrator requests a code
+      # from the bot over WhatsApp; set to false only to recover from a
+      # lock-out, and set it back afterwards.
+      ADMIN_2FA_ENABLED: ${ADMIN_2FA_ENABLED:-true}
+      ADMIN_OTP_TTL_MINUTES: ${ADMIN_OTP_TTL_MINUTES:-10}
+      ADMIN_OTP_MAX_PER_HOUR: ${ADMIN_OTP_MAX_PER_HOUR:-10}
       SUPER_ADMIN_PHONE: ${SUPER_ADMIN_PHONE:-23200000000}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-Adm1n@Fixam}
       # The simulator runs the handler in-process, so it builds ticket links
