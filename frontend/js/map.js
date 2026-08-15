@@ -1,3 +1,12 @@
+
+// Closing a report without fixing it is a public statement, so the reason is
+// written the way it would be said to the person who reported it.
+const CLOSURE_LABELS = {
+    no_longer_present: 'the problem was no longer there when the team attended',
+    not_actionable: 'there was not enough to act on',
+    not_feasible: 'it cannot be addressed at present'
+};
+
 /**
  * Badge showing how far the speech engine trusted its own transcription.
  *
@@ -665,6 +674,18 @@ async function viewTracker(issueId) {
                                     </div>
                                 </div>
                                 <div style="color: var(--text-primary); font-size: 0.95rem; line-height: 1.5;">${issue.resolution_note}</div>
+                            </div>
+                        ` : ''}
+
+                        ${issue.closed_at && issue.closure_reason !== 'resolved'
+                          && issue.closure_reason !== 'duplicate' && issue.closure_reason !== 'spam'
+                          && issue.closure_note ? `
+                            <div style="background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 12px; padding: 1.25rem;">
+                                <div style="color: var(--admin-warning); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+                                    <i class="fa-solid fa-folder-closed"></i>
+                                    Closed without a repair · ${CLOSURE_LABELS[issue.closure_reason] || 'reason not recorded'}
+                                </div>
+                                <div style="color: var(--text-primary); font-size: 0.95rem; line-height: 1.5;">${issue.closure_note}</div>
                             </div>
                         ` : ''}
 

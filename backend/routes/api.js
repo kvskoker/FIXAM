@@ -185,6 +185,14 @@ router.get('/issues', async (req, res) => {
             }
         }
 
+        // Lifecycle state, which is a different question from status: 'open'
+        // is what is still someone's work, 'closed' is what is finished with,
+        // whether or not it was fixed.
+        const state = req.query.state;
+        if (state === 'open') where += ' AND i.closed_at IS NULL';
+        else if (state === 'closed') where += ' AND i.closed_at IS NOT NULL';
+        else if (state === 'disputed') where += ' AND i.dispute_count > 0';
+
         if (ticket) add(' AND i.ticket_id = $?', ticket);
         if (req.query.start_date) add(' AND i.created_at >= $?', req.query.start_date);
         if (req.query.end_date) add(' AND i.created_at <= $?', `${req.query.end_date} 23:59:59`);
@@ -981,7 +989,7 @@ router.put('/admin/issues/:id/status', requireAdmin, attachScope, async (req, re
         }
 
         // 0. Check if this is a duplicate issue or already has the same status
-        const checkIssue = await db.query('SELECT duplicate_of, status FROM issues WHERE id = $1', [id]);
+        const checkIssue = await db.query('SELECT duplicate_of, status, closed_at FROM issues WHERE id = $1', [id]);
         if (checkIssue.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Issue not found' });
         }
@@ -1000,15 +1008,52 @@ router.put('/admin/issues/:id/status', requireAdmin, attachScope, async (req, re
             return res.status(400).json({ success: false, message: `Issue is already in ${status} status.` });
         }
 
+        // A closed report is finished with. Moving it along without reopening
+        // it first would leave a report that is simultaneously closed and in
+        // progress, and would notify the citizen about work on something they
+        // were told was over.
+        if (currentIssue.closed_at) {
+            return res.status(409).json({
+                success: false,
+                message: 'This report is closed. Reopen it before changing its status.'
+            });
+        }
+
+        if (status === 'fixed' && !note) {
+            return res.status(400).json({
+                success: false,
+                message: 'A resolution note is required when resolving a report. It is sent to the citizen and shown publicly.'
+            });
+        }
+
         // 1. Update Issue Status
-        if (status === 'fixed' && note) {
-            await db.query('UPDATE issues SET status = $1, resolution_note = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3', [status, note, id]);
-            
-            // 1.b Propagation: Update all duplicates of this issue
-            await db.query('UPDATE issues SET status = $1, resolution_note = $2, updated_at = CURRENT_TIMESTAMP WHERE duplicate_of = $3', [status, note, id]);
+        //
+        // Resolving closes the report in the same step: an institution that has
+        // fixed something should not also have to declare it finished, and a
+        // resolved report left open would sit in the MDA's queue as outstanding
+        // work that no longer exists.
+        if (status === 'fixed') {
+            await db.query(
+                `UPDATE issues
+                 SET status = $1, resolution_note = $2, updated_at = CURRENT_TIMESTAMP,
+                     closed_at = CURRENT_TIMESTAMP, closed_by = $3,
+                     closure_reason = 'resolved', closure_note = $2
+                 WHERE id = $4`,
+                [status, note, req.admin.id, id]
+            );
+
+            // 1.b Propagation: duplicates follow their original.
+            await db.query(
+                `UPDATE issues
+                 SET status = $1, resolution_note = $2, updated_at = CURRENT_TIMESTAMP,
+                     closed_at = CURRENT_TIMESTAMP, closed_by = $3,
+                     closure_reason = 'resolved', closure_note = $2
+                 WHERE duplicate_of = $4`,
+                [status, note, req.admin.id, id]
+            );
         } else {
             await db.query('UPDATE issues SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
-            
+
             // 1.b Propagation: Update all duplicates of this issue
             await db.query('UPDATE issues SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE duplicate_of = $2', [status, id]);
         }
@@ -1055,7 +1100,21 @@ router.put('/admin/issues/:id/status', requireAdmin, attachScope, async (req, re
             const friendlyStatus = (statusMap[status] || status).toUpperCase();
 
             for (const row of reportersResult.rows) {
-                const message = `🔔 *Issue Update*\n\nThe status of your report *${row.title}* (#${row.ticket_id}) has been updated to: *${friendlyStatus}*.\n\nThank you for helping us make our community better! 🌟`;
+                let message = `🔔 *Issue Update*\n\nThe status of your report *${row.title}* (#${row.ticket_id}) has been updated to: *${friendlyStatus}*.`;
+
+                if (status === 'fixed') {
+                    // The resolution note is the substance of the update -- it
+                    // is what the institution says it did. Sending "Resolved"
+                    // without it tells the citizen an outcome they cannot check.
+                    if (note) message += `\n\n📝 *What was done:*\n${note}`;
+
+                    // And ask them, rather than waiting for them to come back:
+                    // a resolution nobody verified is only a claim.
+                    message += `\n\nIs it actually fixed? Reply *3*, then send *${row.ticket_id}* to confirm the repair — or to tell us it is not fixed.`;
+                } else {
+                    message += `\n\nThank you for helping us make our community better! 🌟`;
+                }
+
                 await whatsappService.sendMessage(row.phone_number, message);
                 
                 // Gamification: Award 50 points to reporter for resolution (if not already awarded)
@@ -1088,6 +1147,181 @@ router.put('/admin/issues/:id/status', requireAdmin, attachScope, async (req, re
 
         res.json({ success: true, message: 'Status updated successfully' });
 
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
+});
+
+/**
+ * Reasons a report can be closed without being fixed.
+ *
+ * A fixed vocabulary rather than free text, so "how many reports were closed
+ * unresolved, and why" is a question the pilot can answer. 'resolved',
+ * 'duplicate' and 'spam' are set by their own flows and are not offered here.
+ */
+const CLOSURE_REASONS = {
+    no_longer_present: 'The problem was no longer there when the team attended',
+    not_actionable: 'Not enough to act on, or not a report of a public problem',
+    not_feasible: 'Real, but cannot be addressed at present'
+};
+
+// POST /api/admin/issues/:id/close - Close a report without resolving it.
+//
+// Available to MDAs and Admins alike: an institution that cannot fix something
+// should be able to say so and explain, rather than leave the report open for
+// ever. Both a reason and a written explanation are required, because closing
+// a report unresolved tells a citizen that nothing further will happen about a
+// problem they took the trouble to report -- that is precisely when an
+// explanation is owed.
+router.post('/admin/issues/:id/close', requireAdmin, attachScope, async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!(await canAccessIssue(req.scope, id))) {
+            return res.status(403).json({
+                success: false,
+                message: 'This report is not assigned to your institution.'
+            });
+        }
+
+        const { reason, note } = req.body;
+
+        if (!CLOSURE_REASONS[reason]) {
+            return res.status(400).json({
+                success: false,
+                message: `Choose a closure reason: ${Object.keys(CLOSURE_REASONS).join(', ')}.`
+            });
+        }
+        if (!note || !note.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'An explanation is required. It is sent to the citizen and shown on the public map.'
+            });
+        }
+
+        const check = await db.query('SELECT status, closed_at, duplicate_of FROM issues WHERE id = $1', [id]);
+        if (check.rows.length === 0) return res.status(404).json({ success: false, message: 'Issue not found' });
+        if (check.rows[0].closed_at) {
+            return res.status(409).json({ success: false, message: 'This report is already closed.' });
+        }
+        if (check.rows[0].duplicate_of) {
+            return res.status(400).json({
+                success: false,
+                message: 'This is a duplicate. Close the original report instead.'
+            });
+        }
+
+        const explanation = note.trim();
+
+        await db.query(
+            `UPDATE issues
+             SET closed_at = CURRENT_TIMESTAMP, closed_by = $1,
+                 closure_reason = $2, closure_note = $3, updated_at = CURRENT_TIMESTAMP
+             WHERE id = $4 OR duplicate_of = $4`,
+            [req.admin.id, reason, explanation, id]
+        );
+
+        await db.query(
+            `INSERT INTO issue_tracker (issue_id, action, description, performed_by)
+             VALUES ($1, 'closed', $2, $3)`,
+            [id, `Closed without resolution (${reason}): ${explanation}`, req.admin.id]
+        );
+
+        // Tell everyone who reported it. A report that goes quiet is worse than
+        // one that is refused with a reason.
+        try {
+            const reporters = await db.query(`
+                SELECT i.ticket_id, i.title, u.phone_number
+                FROM issues i
+                JOIN users u ON i.reported_by = u.id
+                WHERE (i.id = $1 OR i.duplicate_of = $1) AND u.phone_number IS NOT NULL
+            `, [id]);
+
+            for (const row of reporters.rows) {
+                await whatsappService.sendMessage(row.phone_number,
+                    `📁 *Report Closed*\n\nYour report *${row.title}* (#${row.ticket_id}) has been closed without a repair.\n\n`
+                    + `*Reason:* ${CLOSURE_REASONS[reason]}\n\n`
+                    + `📝 *Explanation:*\n${explanation}\n\n`
+                    + `If the problem is still there, please send a new report and we will look again.`);
+            }
+        } catch (notifyErr) {
+            console.error('Error notifying reporters of closure:', notifyErr);
+        }
+
+        res.json({ success: true, message: 'Report closed' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
+});
+
+// POST /api/admin/issues/:id/reopen - Reopen a closed report.
+//
+// Whoever can close can reopen, so a wrongly closed report is fixable by the
+// people who noticed rather than waiting on an escalation. The status returns
+// to Acknowledged: the institution has demonstrably seen this report, so
+// sending it back to newly-reported would misstate where it stands.
+router.post('/admin/issues/:id/reopen', requireAdmin, attachScope, async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!(await canAccessIssue(req.scope, id))) {
+            return res.status(403).json({
+                success: false,
+                message: 'This report is not assigned to your institution.'
+            });
+        }
+
+        const { note } = req.body;
+        if (!note || !note.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'A note is required when reopening a report, so the record shows why.'
+            });
+        }
+
+        const check = await db.query('SELECT closed_at, status FROM issues WHERE id = $1', [id]);
+        if (check.rows.length === 0) return res.status(404).json({ success: false, message: 'Issue not found' });
+        if (!check.rows[0].closed_at) {
+            return res.status(409).json({ success: false, message: 'This report is already open.' });
+        }
+        if (check.rows[0].status === 'spam') {
+            return res.status(403).json({ success: false, message: 'Unflag the report as spam before reopening it.' });
+        }
+
+        const reason = note.trim();
+
+        await db.query(
+            `UPDATE issues
+             SET closed_at = NULL, closed_by = NULL, closure_reason = NULL, closure_note = NULL,
+                 resolution_note = NULL, status = 'acknowledged', updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1 OR duplicate_of = $1`,
+            [id]
+        );
+
+        await db.query(
+            `INSERT INTO issue_tracker (issue_id, action, description, performed_by)
+             VALUES ($1, 'reopened', $2, $3)`,
+            [id, `Reopened: ${reason}`, req.admin.id]
+        );
+
+        try {
+            const reporters = await db.query(`
+                SELECT i.ticket_id, i.title, u.phone_number
+                FROM issues i
+                JOIN users u ON i.reported_by = u.id
+                WHERE (i.id = $1 OR i.duplicate_of = $1) AND u.phone_number IS NOT NULL
+            `, [id]);
+
+            for (const row of reporters.rows) {
+                await whatsappService.sendMessage(row.phone_number,
+                    `🔄 *Report Reopened*\n\nYour report *${row.title}* (#${row.ticket_id}) has been reopened and is being looked at again.\n\n`
+                    + `📝 *Reason:*\n${reason}`);
+            }
+        } catch (notifyErr) {
+            console.error('Error notifying reporters of reopening:', notifyErr);
+        }
+
+        res.json({ success: true, message: 'Report reopened' });
     } catch (err) {
         console.error(err);
         res.status(500).json({ success: false, message: 'Internal Server Error' });
@@ -1127,7 +1361,13 @@ router.post('/admin/issues/:id/mark-duplicate', requireAdmin, attachScope, async
         const { ticket_id: originalTicketId, status: originalStatus } = originalIssue.rows[0];
 
         // 1. Update issue: Set duplicate_of AND sync status
-        await db.query('UPDATE issues SET duplicate_of = $1, status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3', [original_issue_id, originalStatus, id]);
+        await db.query(
+            `UPDATE issues
+             SET duplicate_of = $1, status = $2, updated_at = CURRENT_TIMESTAMP,
+                 closed_at = CURRENT_TIMESTAMP, closed_by = $3, closure_reason = 'duplicate'
+             WHERE id = $4`,
+            [original_issue_id, originalStatus, req.admin.id, id]
+        );
 
         // 3. Log to Tracker
         const description = note || `Marked as duplicate of ticket ${originalTicketId}`;
@@ -1164,21 +1404,51 @@ router.put('/admin/issues/:id/details', requireAdmin, attachScope, async (req, r
         }
 
         // Check if issue is spam
-        const check = await db.query('SELECT status FROM issues WHERE id = $1', [id]);
+        const check = await db.query('SELECT status, category FROM issues WHERE id = $1', [id]);
         if (check.rows.length === 0) return res.status(404).json({ success: false, message: 'Issue not found' });
         if (check.rows[0].status === 'spam') {
              return res.status(403).json({ success: false, message: 'Cannot edit details of a SPAM issue.' });
         }
+        const previousCategory = check.rows[0].category;
 
         // Update issue
         const sql = `UPDATE issues SET title = $1, description = $2, category = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4`;
         await db.query(sql, [title, description, category, id]);
 
         // Log to tracker
+        const reassigned = previousCategory !== category;
         await db.query(`
             INSERT INTO issue_tracker (issue_id, action, description, performed_by)
-            VALUES ($1, 'edited', 'Issue details updated by admin', $2)
-        `, [id, req.admin.id]);
+            VALUES ($1, $2, $3, $4)
+        `, [
+            id,
+            reassigned ? 'reassigned' : 'edited',
+            reassigned
+                ? `Reassigned from ${previousCategory} to ${category}`
+                : 'Issue details updated by admin',
+            req.admin.id
+        ]);
+
+        // Changing the category changes which institution is responsible. The
+        // new MDA had no way of knowing that until now -- the report simply
+        // appeared in their list, with nobody told it had arrived.
+        if (reassigned) {
+            try {
+                const moved = await db.query('SELECT id, ticket_id, title, category, address, lat, lng FROM issues WHERE id = $1', [id]);
+                if (moved.rows.length > 0) {
+                    const issue = moved.rows[0];
+                    await fixamHandler.notifyResponsibleTeam(issue,
+                        `📌 *Report Reassigned To You*\n\n`
+                        + `*${issue.title}* (${issue.ticket_id})\n`
+                        + `*Category:* ${issue.category} (was ${previousCategory})\n`
+                        + `*Loc:* ${issue.address || `${issue.lat}, ${issue.lng}`}\n\n`
+                        + `This report is now your institution's responsibility.`);
+                }
+            } catch (notifyErr) {
+                // The reassignment itself succeeded; a failed alert must not undo it.
+                console.error('Error notifying the newly responsible MDA:', notifyErr);
+            }
+        }
 
         res.json({ success: true, message: 'Issue details updated successfully' });
     } catch (err) {
@@ -1203,10 +1473,20 @@ router.put('/admin/issues/:id/spam', requireAdmin, attachScope, async (req, res)
         const { reason } = req.body;
 
          // Update issue status to spam
-        await db.query(`UPDATE issues SET status = 'spam', resolution_note = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [reason || 'Flagged as spam', id]);
+        await db.query(
+            `UPDATE issues SET status = 'spam', resolution_note = $1, updated_at = CURRENT_TIMESTAMP,
+                    closed_at = CURRENT_TIMESTAMP, closed_by = $2, closure_reason = 'spam'
+             WHERE id = $3`,
+            [reason || 'Flagged as spam', req.admin.id, id]
+        );
         
         // Mark duplicates as spam too
-        await db.query(`UPDATE issues SET status = 'spam', resolution_note = $1, updated_at = CURRENT_TIMESTAMP WHERE duplicate_of = $2`, ["Original issue flagged as spam", id]);
+        await db.query(
+            `UPDATE issues SET status = 'spam', resolution_note = $1, updated_at = CURRENT_TIMESTAMP,
+                    closed_at = CURRENT_TIMESTAMP, closed_by = $2, closure_reason = 'spam'
+             WHERE duplicate_of = $3`,
+            ["Original issue flagged as spam", req.admin.id, id]
+        );
 
         // Log to tracker
         await db.query(`

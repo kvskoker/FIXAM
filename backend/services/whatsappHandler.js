@@ -1092,23 +1092,41 @@ class FixamHandler {
                         'fixed': '✅ Fixed/Resolved'
                     }[trackIssue.status] || trackIssue.status;
 
+                    // A closed report shows as closed. Without this, a citizen
+                    // tracking something the MDA has finished with is told it is
+                    // "Critical" -- the status it happened to hold when the
+                    // decision was taken.
+                    const lifecycle = trackIssue.closed_at
+                        ? (trackIssue.closure_reason === 'resolved'
+                            ? '✅ Fixed/Resolved'
+                            : '📁 Closed without a repair')
+                        : statusEmoji;
+
                     let msg = `🔍 *Issue Status Report*\n\n` +
                                 `*ID:* ${trackIssue.ticket_id}\n` +
                                 `*Title:* ${trackIssue.title}\n` +
-                                `*Status:* ${statusEmoji}\n` +
+                                `*Status:* ${lifecycle}\n` +
                                 `*Category:* ${trackIssue.category}\n` +
                                 `*Location:* ${trackIssue.address || 'Sierra Leone'}\n\n` +
                                 `*Description:* ${trackIssue.description || 'No description provided.'}\n\n` +
                                 `*Endorsements:* ${endorsements} 👍\n\n`;
 
-                    if (trackIssue.status === 'fixed') {
+                    if (trackIssue.closed_at && trackIssue.closure_reason !== 'resolved'
+                        && trackIssue.closure_note) {
+                        // Closed without a repair. There is nothing to endorse
+                        // or dispute, but the citizen is owed the reason.
+                        msg += `📝 *Why it was closed:*\n${trackIssue.closure_note}\n\n`
+                             + `If the problem is still there, please send a new report and we will look again.`;
+                        await this.sendMessage(fromNumber, msg);
+                        await this.sendMainMenu(fromNumber, user.name);
+                    } else if (trackIssue.status === 'fixed') {
                         const hasEndorsed = await this.fixamDb.checkUserEndorsement(trackIssue.id, user.id);
                         if (hasEndorsed) {
                             msg += `✨ You have already endorsed this resolution. Thank you!`;
                             await this.sendMessage(fromNumber, msg);
                             await this.sendMainMenu(fromNumber, user.name);
                         } else {
-                            msg += `Government has marked this as *FIXED*. Do you agree? \n\nType *1* to Endorse/Confirm Resolution ✅\nType *9* to return to menu.`;
+                            msg += `Government has marked this as *FIXED*. Do you agree? \n\nType *1* to Endorse/Confirm Resolution ✅\nType *2* if it is *NOT* actually fixed ❌\nType *9* to return to menu.`;
                             await this.fixamDb.updateConversationState(fromNumber, { 
                                 current_step: 'awaiting_endorse_confirmation',
                                 data: { issue_id: trackIssue.id, ticket_id: trackIssue.ticket_id }
@@ -1138,6 +1156,26 @@ class FixamHandler {
                 } else if (input === '2') {
                     // Follow up: log the follow-up in the tracker and alert admins
                     try {
+                        // One follow-up per person per issue per day. Each one
+                        // messages every member of every MDA mapped to the
+                        // category, so without a limit a single citizen tapping
+                        // "2" repeatedly can flood an institution's phones --
+                        // and officers would learn to ignore the alerts.
+                        const recentFollowUp = await this.fixamDb.db.query(
+                            `SELECT 1 FROM issue_tracker
+                             WHERE issue_id = $1 AND performed_by = $2 AND action = 'citizen_followup'
+                               AND created_at > NOW() - INTERVAL '24 hours'
+                             LIMIT 1`,
+                            [state.data.issue_id, user.id]
+                        );
+
+                        if (recentFollowUp.rows.length > 0) {
+                            await this.sendMessage(fromNumber,
+                                `⏳ *Already Following Up*\n\nYou followed up on this issue in the last 24 hours and the team has been notified.\n\nYou can follow up again tomorrow if there is still no update.`);
+                            await this.sendMainMenu(fromNumber, user.name);
+                            break;
+                        }
+
                         await this.fixamDb.db.query(
                             `INSERT INTO issue_tracker (issue_id, action, description, performed_by) VALUES ($1, 'citizen_followup', 'Citizen requested an update on this issue', $2)`,
                             [state.data.issue_id, user.id]
@@ -1147,15 +1185,8 @@ class FixamHandler {
                         // Alert relevant groups
                         const trackIssue = await this.fixamDb.getIssueById(state.data.issue_id);
                         if (trackIssue) {
-                            const groups = await this.fixamDb.getGroupsForCategory(trackIssue.category);
-                            for (const group of groups) {
-                                const members = await this.fixamDb.getGroupMembers(group.name);
-                                for (const member of members) {
-                                    try {
-                                        await this.sendMessage(member.phone_number, `🔔 *Citizen Follow-up*\n\nA citizen is requesting an update on:\n\n*${trackIssue.title}* (${trackIssue.ticket_id})\n*Status:* ${trackIssue.status}\n\nPlease review and provide an update.`);
-                                    } catch (e) { /* skip failed notifications */ }
-                                }
-                            }
+                            await this.notifyResponsibleTeam(trackIssue,
+                                `🔔 *Citizen Follow-up*\n\nA citizen is requesting an update on:\n\n*${trackIssue.title}* (${trackIssue.ticket_id})\n*Status:* ${trackIssue.status}\n\nPlease review and provide an update.`);
                         }
                     } catch (e) {
                         logger.logError('handler', 'Error logging follow-up', e);
@@ -1175,6 +1206,39 @@ class FixamHandler {
                     } else {
                         await this.sendMessage(fromNumber, "You have already endorsed this issue or an error occurred.");
                     }
+                    await this.sendMainMenu(fromNumber, user.name);
+                } else if (input === '2') {
+                    // The citizen says it is not actually fixed.
+                    //
+                    // This does not reopen the report by itself. Whether the
+                    // work is done is the MDA's call and one dissenting voice
+                    // is not proof -- but it must reach them, and it must be on
+                    // the record, otherwise "resolved" only ever means "an
+                    // institution said so".
+                    await this.fixamDb.db.query(
+                        `INSERT INTO issue_tracker (issue_id, action, description, performed_by)
+                         VALUES ($1, 'resolution_disputed', 'Citizen reports the issue is not actually resolved', $2)`,
+                        [state.data.issue_id, user.id]
+                    );
+
+                    // Counted on the report itself so the portal can show it.
+                    // An alert can be missed and an audit log is not something
+                    // anyone reads unprompted.
+                    await this.fixamDb.db.query(
+                        'UPDATE issues SET dispute_count = dispute_count + 1 WHERE id = $1',
+                        [state.data.issue_id]
+                    );
+
+                    const disputed = await this.fixamDb.getIssueById(state.data.issue_id);
+                    if (disputed) {
+                        await this.notifyResponsibleTeam(disputed,
+                            `⚠️ *Resolution Disputed*\n\nA citizen says this report is not actually fixed:\n\n`
+                            + `*${disputed.title}* (${disputed.ticket_id})\n\n`
+                            + `Please re-check and either reopen it or explain the resolution.`);
+                    }
+
+                    await this.sendMessage(fromNumber,
+                        `❌ *Thank you for telling us*\n\nWe have recorded that this issue is not resolved and notified the responsible team. They will re-check it.\n\nYour report stays on the public map with your response attached.`);
                     await this.sendMainMenu(fromNumber, user.name);
                 } else {
                     await this.sendMainMenu(fromNumber, user.name);
@@ -1912,7 +1976,17 @@ class FixamHandler {
         const issue = await this.fixamDb.createIssue(issueData);
         if (issue) {
             // 1. Send Success Message
-            await this.sendMessage(fromNumber, `✅ *Report Submitted Successfully!*\n\nIssue ID: *${ticketId}*\n\nYou can track this issue here: ${this.getIssueUrl(ticketId)}`);
+            //
+            // Naming the institution matters: a report that goes to "the
+            // government" is one nobody can be asked about later. If no MDA is
+            // mapped to the category the line is left out rather than filled
+            // with something vague -- an unmapped category is a configuration
+            // gap, and claiming a recipient that does not exist would hide it.
+            const responsible = await this.fixamDb.getGroupsForCategory(issue.category);
+            const lead = (responsible || []).find((g) => g.role === 'lead') || (responsible || [])[0];
+            const assignedLine = lead ? `\n👥 *Sent to:* ${lead.name}` : '';
+
+            await this.sendMessage(fromNumber, `✅ *Report Submitted Successfully!*\n\nIssue ID: *${ticketId}*${assignedLine}\n\nYou can track this issue here: ${this.getIssueUrl(ticketId)}`);
             
             // 2. Alert Operational Team if necessary
             await this.alertOperationalTeam(issue, data.address);
@@ -1929,6 +2003,36 @@ class FixamHandler {
         } else {
             await this.sendMessage(fromNumber, "❌ Error submitting report. Please try again later.");
         }
+    }
+
+    /**
+     * Send one message to everyone responsible for an issue's category.
+     *
+     * Used for the events that are not a new report -- a citizen following up,
+     * a disputed resolution, a report reassigned to a different institution.
+     * Failures are logged and skipped: one unreachable officer must not stop
+     * the rest of the team being told.
+     */
+    async notifyResponsibleTeam(issue, message) {
+        const groups = await this.fixamDb.getGroupsForCategory(issue.category);
+        if (!groups || groups.length === 0) {
+            logger.log('alert_system', `No groups mapped to ${issue.category} for ${issue.ticket_id}`);
+            return 0;
+        }
+
+        let sent = 0;
+        for (const group of groups) {
+            const members = await this.fixamDb.getGroupMembers(group.name);
+            for (const member of members || []) {
+                try {
+                    await this.sendMessage(member.phone_number, message);
+                    sent++;
+                } catch (err) {
+                    logger.logError('alert_system', `Failed to notify ${member.phone_number}`, err);
+                }
+            }
+        }
+        return sent;
     }
 
     async alertOperationalTeam(issue, address) {

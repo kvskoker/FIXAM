@@ -102,6 +102,13 @@
                         <!-- Populated dynamically -->
                     </select>
 
+                    <select id="issue-filter-state" class="filter-input">
+                        <option value="open">Open reports</option>
+                        <option value="closed">Closed reports</option>
+                        <option value="disputed">Disputed resolutions</option>
+                        <option value="">Open and closed</option>
+                    </select>
+
                     <select id="issue-filter-status" class="filter-input">
                         <option value="">All Statuses</option>
                         <option value="critical">Critical</option>
@@ -265,6 +272,38 @@
                             <button id="btn-status-acknowledged" onclick="updateStatus('acknowledged')" class="status-btn" style="flex: 1; padding: 0.5rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer;">Acknowledge</button>
                             <button id="btn-status-progress" onclick="updateStatus('progress')" class="status-btn" style="flex: 1; padding: 0.5rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer;">In Progress</button>
                             <button id="btn-status-fixed" onclick="updateStatus('fixed')" class="status-btn" style="flex: 1; padding: 0.5rem; background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); border-radius: 6px; cursor: pointer;">Resolved</button>
+                        </div>
+                    </div>
+
+                    <div id="closure-section" style="margin-bottom: 2rem; border-top: 1px solid var(--admin-border); padding-top: 1.5rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600;">Report Lifecycle</label>
+                        <div id="closure-state-line" style="font-size: 0.85rem; color: var(--admin-text-muted); margin-bottom: 0.75rem;"></div>
+
+                        <!-- Closing without a repair. Kept separate from the status
+                             buttons because it is not a stage of the work: it is the
+                             institution saying nothing further will happen. -->
+                        <div id="close-controls">
+                            <select id="closure-reason" class="form-control" style="margin-bottom: 0.5rem;">
+                                <option value="">Why is this being closed?</option>
+                                <option value="no_longer_present">No longer present when attended</option>
+                                <option value="not_actionable">Not enough to act on</option>
+                                <option value="not_feasible">Cannot be addressed at present</option>
+                            </select>
+                            <textarea id="closure-note" class="form-control" rows="3"
+                                      placeholder="Explain to the citizen why nothing further will happen. This is sent to them and shown publicly."
+                                      style="margin-bottom: 0.5rem;"></textarea>
+                            <button id="btn-close-issue" onclick="closeIssueReport()" class="btn btn-secondary" style="width: 100%;">
+                                <i class="fa-solid fa-folder-closed"></i> Close Without Resolving
+                            </button>
+                        </div>
+
+                        <div id="reopen-controls" style="display: none;">
+                            <textarea id="reopen-note" class="form-control" rows="2"
+                                      placeholder="Why is this being reopened?"
+                                      style="margin-bottom: 0.5rem;"></textarea>
+                            <button id="btn-reopen-issue" onclick="reopenIssueReport()" class="btn btn-primary" style="width: 100%;">
+                                <i class="fa-solid fa-folder-open"></i> Reopen Report
+                            </button>
                         </div>
                     </div>
 

@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadIssues(); 
     }, 500));
 
-    ['issue-filter-category', 'issue-filter-status', 'issue-filter-start', 'issue-filter-end', 'issue-sort'].forEach(id => {
+    ['issue-filter-category', 'issue-filter-state', 'issue-filter-status', 'issue-filter-start', 'issue-filter-end', 'issue-sort'].forEach(id => {
         document.getElementById(id).addEventListener('change', () => { 
             issuePage = 1; 
             syncFiltersToURL();
@@ -58,6 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('issue-search').value = '';
             document.getElementById('issue-filter-category').value = '';
             document.getElementById('issue-filter-status').value = '';
+            document.getElementById('issue-filter-state').value = 'open';
             document.getElementById('issue-filter-start').value = '';
             document.getElementById('issue-filter-end').value = '';
             document.getElementById('issue-sort').value = 'newest';
@@ -234,6 +235,7 @@ async function loadIssues() {
     const search = document.getElementById('issue-search').value;
     const category = document.getElementById('issue-filter-category').value;
     const status = document.getElementById('issue-filter-status').value;
+    const state = document.getElementById('issue-filter-state').value;
     const start = document.getElementById('issue-filter-start').value;
     const end = document.getElementById('issue-filter-end').value;
     const sort = document.getElementById('issue-sort').value;
@@ -244,6 +246,7 @@ async function loadIssues() {
     if (search) params.append('search', search);
     if (category && category !== 'All') params.append('category', category);
     if (status) params.append('status', status);
+    if (state) params.append('state', state);
     if (start) params.append('start_date', start);
     if (end) params.append('end_date', end);
     if (sort) params.append('sort', sort);
@@ -600,6 +603,35 @@ async function saveLocationPicker() {
     }
 }
 
+/**
+ * Whether a report is still someone's work, and whether anyone has disputed
+ * its resolution.
+ *
+ * Status alone does not say either. A disputed resolution in particular had no
+ * presence in the portal at all -- it fired a WhatsApp alert and wrote to the
+ * audit log, both of which can be missed by the person who needs to act.
+ */
+function formatLifecycleFlags(issue) {
+    let html = '';
+
+    if (issue.closed_at) {
+        const label = issue.closure_reason === 'resolved' ? 'Closed · resolved'
+            : issue.closure_reason === 'duplicate' ? 'Closed · duplicate'
+            : issue.closure_reason === 'spam' ? 'Closed · spam'
+            : 'Closed · not resolved';
+        const colour = issue.closure_reason === 'resolved' ? 'var(--admin-success)' : 'var(--admin-text-muted)';
+        html += `<div style="font-size: 0.72rem; color: ${colour}; margin-top: 3px;"><i class="fa-solid fa-folder-closed"></i> ${label}</div>`;
+    } else {
+        html += '<div style="font-size: 0.72rem; color: var(--admin-text-muted); margin-top: 3px;"><i class="fa-solid fa-folder-open"></i> Open</div>';
+    }
+
+    if (issue.dispute_count > 0) {
+        html += `<div style="font-size: 0.72rem; color: var(--admin-danger); margin-top: 3px; font-weight: 600;"><i class="fa-solid fa-triangle-exclamation"></i> Citizen says not fixed${issue.dispute_count > 1 ? ` (${issue.dispute_count})` : ''}</div>`;
+    }
+
+    return html;
+}
+
 function renderIssuesTable(issues) {
     const tbody = document.getElementById('issues-table-body');
     tbody.innerHTML = '';
@@ -617,12 +649,119 @@ function renderIssuesTable(issues) {
             <td data-label="Title" style="padding: 1rem; font-weight: 500;">${issue.title} ${formatEvidenceFlags(issue)}</td>
             <td data-label="Location" style="padding: 1rem; color: var(--admin-text-muted);">${formatIssueLocation(issue)}</td>
             <td data-label="Votes" style="padding: 1rem;">${issue.upvotes || 0}</td>
-            <td data-label="Status" style="padding: 1rem;"><span style="color: ${statusColors[issue.status] || 'white'}; font-weight: 600; text-transform: capitalize;">${issue.status}</span></td>
+            <td data-label="Status" style="padding: 1rem;">
+                <span style="color: ${statusColors[issue.status] || 'white'}; font-weight: 600; text-transform: capitalize;">${issue.status}</span>
+                ${formatLifecycleFlags(issue)}
+            </td>
             <td data-label="Date" style="padding: 1rem; color: var(--admin-text-muted); font-size: 0.9rem;">${new Date(issue.created_at).toLocaleDateString('en-GB')}</td>
             <td data-label="Action" style="padding: 1rem;"><button onclick="openIssueDetails(${issue.id})" style="background: var(--admin-primary); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; width: 100%;">Manage</button></td>
         `;
         tbody.appendChild(tr);
     });
+}
+
+/**
+ * Show where the report stands in its lifecycle, and offer the one action that
+ * makes sense from there. Closing and reopening are mutually exclusive, so
+ * showing both would only invite the one that will be refused.
+ */
+function renderClosurePanel(issue) {
+    const line = document.getElementById('closure-state-line');
+    const closeControls = document.getElementById('close-controls');
+    const reopenControls = document.getElementById('reopen-controls');
+    const statusButtons = document.getElementById('status-buttons-container');
+    if (!line) return;
+
+    const disputeLine = issue.dispute_count > 0
+        ? `<div style="color: var(--admin-danger); font-weight: 600; margin-top: 4px;">
+             <i class="fa-solid fa-triangle-exclamation"></i>
+             A citizen says this is not actually fixed${issue.dispute_count > 1 ? ` (${issue.dispute_count} reports)` : ''}.
+           </div>`
+        : '';
+
+    if (issue.closed_at) {
+        const reasons = {
+            resolved: 'Resolved',
+            no_longer_present: 'No longer present when attended',
+            not_actionable: 'Not enough to act on',
+            not_feasible: 'Cannot be addressed at present',
+            duplicate: 'Merged into another report',
+            spam: 'Flagged as spam'
+        };
+        line.innerHTML = `<strong>Closed</strong> on ${new Date(issue.closed_at).toLocaleDateString('en-GB')}
+            — ${reasons[issue.closure_reason] || issue.closure_reason || 'no reason recorded'}
+            ${issue.closure_note ? `<div style="margin-top: 4px; font-style: italic;">"${issue.closure_note}"</div>` : ''}
+            ${disputeLine}`;
+        closeControls.style.display = 'none';
+        reopenControls.style.display = 'block';
+        // A closed report takes no status changes; the server refuses them too.
+        if (statusButtons) statusButtons.style.opacity = '0.4';
+        statusButtons?.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    } else {
+        line.innerHTML = `<strong>Open</strong> — still this institution's work.${disputeLine}`;
+        closeControls.style.display = 'block';
+        reopenControls.style.display = 'none';
+        document.getElementById('closure-reason').value = '';
+        document.getElementById('closure-note').value = '';
+        // Deliberately does not re-enable anything. This runs after the
+        // duplicate and spam branches, which have already decided what an open
+        // report should allow -- including keeping the current status disabled.
+        if (statusButtons) statusButtons.style.opacity = '1';
+    }
+}
+
+async function closeIssueReport() {
+    if (!currentIssueId) return;
+    const reason = document.getElementById('closure-reason').value;
+    const note = document.getElementById('closure-note').value.trim();
+
+    if (!reason) { alert('Choose why this report is being closed.'); return; }
+    if (!note) {
+        alert('Please explain why nothing further will happen. This is sent to the citizen and shown publicly.');
+        return;
+    }
+    if (!confirm('Close this report without resolving it? The citizen will be told, with your explanation.')) return;
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/issues/${currentIssueId}/close`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason, note })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            openIssueDetails(currentIssueId);
+            loadIssues();
+        } else {
+            alert(data.message || 'Could not close the report.');
+        }
+    } catch (err) {
+        alert('Connection error while closing the report.');
+    }
+}
+
+async function reopenIssueReport() {
+    if (!currentIssueId) return;
+    const note = document.getElementById('reopen-note').value.trim();
+    if (!note) { alert('Please say why this report is being reopened.'); return; }
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/issues/${currentIssueId}/reopen`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ note })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            document.getElementById('reopen-note').value = '';
+            openIssueDetails(currentIssueId);
+            loadIssues();
+        } else {
+            alert(data.message || 'Could not reopen the report.');
+        }
+    } catch (err) {
+        alert('Connection error while reopening the report.');
+    }
 }
 
 async function openIssueDetails(id) {
@@ -803,6 +942,11 @@ async function openIssueDetails(id) {
                  if(duplicateSection) duplicateSection.style.display = 'block';
                  if(btnSpam) btnSpam.parentElement.style.display = 'block';
             }
+
+            // Last, deliberately: the duplicate and spam branches above both
+            // reset the status buttons, so anything the lifecycle state needs
+            // to disable has to be applied after them.
+            renderClosurePanel(issue);
         }
         const trackerRes = await fetch(`${API_BASE_URL}/issues/${id}/tracker`);
         const trackerLogs = await trackerRes.json();

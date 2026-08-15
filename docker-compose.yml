@@ -12,6 +12,7 @@ services:
       # by hand -- it is written to be safe to re-run either way.
       - ./backend/db/migration_pilot_routing.sql:/docker-entrypoint-initdb.d/02-pilot-routing.sql
       - ./backend/db/migration_feedback_routing.sql:/docker-entrypoint-initdb.d/03-feedback-routing.sql
+      - ./backend/db/migration_issue_closure.sql:/docker-entrypoint-initdb.d/04-issue-closure.sql
     ports:
       - "${DB_PORT:-5432}:5432"
     healthcheck:
