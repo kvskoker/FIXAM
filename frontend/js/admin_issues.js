@@ -339,6 +339,45 @@ function formatIssueLocation(issue, { detailed = false } = {}) {
  * is adequate evidence. They are facts an admin needs before deciding to mark a
  * report as spam.
  */
+/**
+ * Badge showing how far the speech engine trusted its own transcription.
+ *
+ * Shown next to the transcribed text so a reader can decide, before acting on
+ * it, whether to trust the words or play the recording instead. Returns '' when
+ * there is no audio or no score -- an absent measurement must not be drawn as
+ * "0% confident".
+ *
+ * Thresholds are a starting point calibrated on English test audio: clear
+ * speech scored ~0.69, while a degraded clip that produced a fluent but wrong
+ * transcription scored ~0.07. They should be revisited against real voice
+ * notes, and especially against Krio, where the model is known to be weak.
+ */
+function transcriptionConfidenceBadge(issue) {
+    if (!issue.audio_url) return '';
+
+    const raw = issue.transcription_confidence;
+    if (raw === null || raw === undefined) return '';
+
+    const pct = Math.round(Number(raw) * 100);
+    let label, bg, fg, hint;
+
+    if (pct >= 60) {
+        label = 'High confidence';
+        bg = 'var(--admin-success)'; fg = '#fff';
+        hint = 'The speech engine was confident in this transcription.';
+    } else if (pct >= 30) {
+        label = 'Medium confidence';
+        bg = 'var(--admin-warning)'; fg = '#1a202c';
+        hint = 'Parts of this transcription may be wrong. Play the audio to check.';
+    } else {
+        label = 'Low confidence';
+        bg = 'var(--admin-danger)'; fg = '#fff';
+        hint = 'This transcription is probably unreliable. Listen to the recording instead.';
+    }
+
+    return `<span title="${hint} (score ${pct}%)" style="background: ${bg}; color: ${fg}; border-radius: 4px; padding: 1px 7px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; margin-left: 0.4rem;">&#127897; ${label} &middot; ${pct}%</span>`;
+}
+
 function formatEvidenceFlags(issue, { detailed = false } = {}) {
     const flags = [];
     const badge = (bg, fg, text, title) =>
@@ -394,53 +433,171 @@ function renderLocationFixer(issue) {
     box.style.cssText = 'margin-top: 0.75rem; padding: 0.75rem; border: 1px solid var(--admin-border); border-radius: 6px;';
     box.innerHTML = `
         <div style="font-size: 0.85rem; color: var(--admin-text-muted); margin-bottom: 0.5rem;">
-            This report has no map position. The citizen described it as:
+            This report has no map position, so it does not appear on the map. The citizen described it as:
             <em>${issue.address ? String(issue.address).replace(/</g, '&lt;') : 'no address given'}</em>
         </div>
-        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
-            <input id="fix-lat" placeholder="Latitude" style="width: 120px; padding: 6px; border: 1px solid var(--admin-border); border-radius: 4px;">
-            <input id="fix-lng" placeholder="Longitude" style="width: 120px; padding: 6px; border: 1px solid var(--admin-border); border-radius: 4px;">
-            <button id="fix-location-btn" style="background: var(--admin-primary); color: #fff; border: none; padding: 7px 14px; border-radius: 4px; cursor: pointer;">Set location</button>
-        </div>
-        <div id="fix-location-msg" style="margin-top: 0.5rem; font-size: 0.85rem;"></div>`;
+        <button id="open-location-picker" style="background: var(--admin-primary); color: #fff; border: none; padding: 7px 14px; border-radius: 4px; cursor: pointer;">
+            <i class="fa-solid fa-map-location-dot"></i> Set location on map
+        </button>`;
     host.appendChild(box);
 
-    document.getElementById('fix-location-btn').addEventListener('click', async () => {
-        const msg = document.getElementById('fix-location-msg');
-        const lat = document.getElementById('fix-lat').value.trim();
-        const lng = document.getElementById('fix-lng').value.trim();
+    document.getElementById('open-location-picker')
+        .addEventListener('click', () => openLocationPicker(issue));
+}
 
-        if (!lat || !lng) {
-            msg.style.color = 'var(--admin-danger)';
-            msg.textContent = 'Enter both latitude and longitude.';
-            return;
-        }
+// ── Manual location placement ────────────────────────────────────────────────
 
+let lpMap = null;
+let lpMarker = null;
+let lpIssue = null;
+let lpArea = null;
+
+/** Bounds of the served country, from /api/config so there is one source. */
+async function getServiceArea() {
+    if (lpArea) return lpArea;
+    const res = await fetch(`${API_BASE_URL}/config`);
+    const cfg = await res.json();
+    lpArea = cfg.instance && cfg.instance.service_area;
+    return lpArea;
+}
+
+function lpWithinArea(lat, lng) {
+    if (!lpArea) return true;
+    return lat >= lpArea.minLat && lat <= lpArea.maxLat
+        && lng >= lpArea.minLng && lng <= lpArea.maxLng;
+}
+
+function lpSetPoint(lat, lng, { moveMap = false } = {}) {
+    document.getElementById('lp-lat').value = lat.toFixed(6);
+    document.getElementById('lp-lng').value = lng.toFixed(6);
+
+    if (!lpMarker) {
+        lpMarker = L.marker([lat, lng], { draggable: true }).addTo(lpMap);
+        lpMarker.on('dragend', () => {
+            const pos = lpMarker.getLatLng();
+            lpSetPoint(pos.lat, pos.lng);
+        });
+    } else {
+        lpMarker.setLatLng([lat, lng]);
+    }
+
+    if (moveMap) lpMap.setView([lat, lng], Math.max(lpMap.getZoom(), 14));
+
+    const msg = document.getElementById('lp-msg');
+    if (!lpWithinArea(lat, lng)) {
+        msg.style.color = 'var(--admin-danger)';
+        msg.textContent = `That point is outside ${lpArea ? lpArea.name : 'the served area'}. The bot refuses these, so it cannot be saved.`;
+    } else {
         msg.style.color = 'var(--admin-text-muted)';
-        msg.textContent = 'Saving...';
+        msg.textContent = 'Click the map or drag the pin to adjust.';
+    }
+}
 
-        try {
-            const admin = JSON.parse(localStorage.getItem('fixam_admin_user') || '{}');
-            const res = await fetch(`${API_BASE_URL}/admin/issues/${issue.id}/location`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ lat, lng, admin_id: admin.id || null })
+async function openLocationPicker(issue) {
+    lpIssue = issue;
+    document.getElementById('location-picker-overlay').classList.remove('hidden');
+
+    document.getElementById('lp-context').innerHTML =
+        `<strong>${issue.ticket_id}</strong> — ${String(issue.title || '').replace(/</g, '&lt;')}<br>`
+        + `Reported as: <em>${issue.address ? String(issue.address).replace(/</g, '&lt;') : 'no address given'}</em>`;
+
+    const area = await getServiceArea();
+
+    if (!lpMap) {
+        lpMap = L.map('lp-map');
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19,
+        }).addTo(lpMap);
+
+        lpMap.on('click', (e) => lpSetPoint(e.latlng.lat, e.latlng.lng));
+
+        // Typing coordinates moves the pin, so both stay in step.
+        ['lp-lat', 'lp-lng'].forEach((id) => {
+            document.getElementById(id).addEventListener('change', () => {
+                const lat = parseFloat(document.getElementById('lp-lat').value);
+                const lng = parseFloat(document.getElementById('lp-lng').value);
+                if (Number.isFinite(lat) && Number.isFinite(lng)) {
+                    lpSetPoint(lat, lng, { moveMap: true });
+                }
             });
-            const data = await res.json();
+        });
+    }
 
-            if (data.success) {
-                msg.style.color = 'var(--admin-success)';
-                msg.textContent = 'Location set. Refreshing...';
-                setTimeout(() => { closeModal(); loadIssues(); }, 900);
-            } else {
-                msg.style.color = 'var(--admin-danger)';
-                msg.textContent = data.message || 'Could not set the location.';
-            }
-        } catch (err) {
+    if (area) {
+        const bounds = L.latLngBounds([area.minLat, area.minLng], [area.maxLat, area.maxLng]);
+        // Keep the admin inside the country the bot serves: panning away from it
+        // only invites placing a report somewhere that would be rejected.
+        lpMap.setMaxBounds(bounds.pad(0.15));
+        lpMap.fitBounds(bounds);
+    } else {
+        lpMap.setView([0, 0], 2);
+    }
+
+    if (lpMarker) { lpMap.removeLayer(lpMarker); lpMarker = null; }
+    document.getElementById('lp-lat').value = '';
+    document.getElementById('lp-lng').value = '';
+    const msg = document.getElementById('lp-msg');
+    msg.textContent = 'Click the map to place the report, or type coordinates below.';
+    msg.style.color = 'var(--admin-text-muted)';
+
+    // Leaflet measures its container on creation, and that container is
+    // zero-sized until the overlay is shown -- without this the tiles are blank.
+    setTimeout(() => lpMap.invalidateSize(), 60);
+}
+
+function closeLocationPicker() {
+    document.getElementById('location-picker-overlay').classList.add('hidden');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const cancel = document.getElementById('lp-cancel');
+    if (cancel) cancel.addEventListener('click', closeLocationPicker);
+
+    const save = document.getElementById('lp-save');
+    if (save) save.addEventListener('click', saveLocationPicker);
+});
+
+async function saveLocationPicker() {
+    const msg = document.getElementById('lp-msg');
+    const lat = parseFloat(document.getElementById('lp-lat').value);
+    const lng = parseFloat(document.getElementById('lp-lng').value);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        msg.style.color = 'var(--admin-danger)';
+        msg.textContent = 'Click the map or enter both coordinates first.';
+        return;
+    }
+
+    if (!lpWithinArea(lat, lng)) {
+        msg.style.color = 'var(--admin-danger)';
+        msg.textContent = `That point is outside ${lpArea ? lpArea.name : 'the served area'}.`;
+        return;
+    }
+
+    msg.style.color = 'var(--admin-text-muted)';
+    msg.textContent = 'Saving...';
+
+    try {
+        const admin = JSON.parse(localStorage.getItem('fixam_admin_user') || '{}');
+        const res = await fetch(`${API_BASE_URL}/admin/issues/${lpIssue.id}/location`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lat, lng, admin_id: admin.id || null })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            msg.style.color = 'var(--admin-success)';
+            msg.textContent = 'Location saved.';
+            setTimeout(() => { closeLocationPicker(); closeModal(); loadIssues(); }, 700);
+        } else {
             msg.style.color = 'var(--admin-danger)';
-            msg.textContent = 'Network error: ' + err.message;
+            msg.textContent = data.message || 'Could not save the location.';
         }
-    });
+    } catch (err) {
+        msg.style.color = 'var(--admin-danger)';
+        msg.textContent = 'Network error: ' + err.message;
+    }
 }
 
 function renderIssuesTable(issues) {
@@ -507,9 +664,19 @@ async function openIssueDetails(id) {
                 `;
                 descContainer.appendChild(audioContainer);
             }
-            // Add transcribed text (description)
+
+            // Transcribed text, with its confidence badge attached to the words
+            // themselves rather than to the player: the reader is judging the
+            // text, so the warning belongs where their eye already is.
             const textDiv = document.createElement('div');
             textDiv.textContent = issue.description;
+            const badge = transcriptionConfidenceBadge(issue);
+            if (badge) {
+                const label = document.createElement('div');
+                label.style.cssText = 'font-size: 0.8rem; color: var(--admin-text-muted); margin-bottom: 0.35rem;';
+                label.innerHTML = `Transcribed text:${badge}`;
+                descContainer.appendChild(label);
+            }
             descContainer.appendChild(textDiv);
             
             // Reverse geocode to get address (if not already present)

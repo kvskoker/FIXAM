@@ -1,3 +1,4 @@
+let groupLeadTomSelect = null;
 // Pagination State
 let currentPage = 1;
 
@@ -96,11 +97,19 @@ async function loadUsers() {
 
     try {
         const response = await fetch(url);
+        if (!response.ok) {
+            // 401 is already handled centrally (back to the login screen); for
+            // anything else say so in the table rather than crashing on a body
+            // that has no `data` and leaving a blank page.
+            renderLoadError('user-list', 7, response.status);
+            return;
+        }
         const data = await response.json();
-        renderUsers(data.data);
+        renderUsers(data.data || []);
         updatePagination(data.pagination);
     } catch (err) {
         console.error('Error loading users:', err);
+        renderLoadError('user-list', 7);
     }
 }
 
@@ -108,7 +117,7 @@ function renderUsers(users) {
     const list = document.getElementById('user-list');
     list.innerHTML = '';
 
-    if (users.length === 0) {
+    if (!Array.isArray(users) || users.length === 0) {
         list.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--admin-text-muted);">No users found</td></tr>';
         return;
     }
@@ -343,14 +352,37 @@ function resetUserForm() {
 // GROUP FUNCTIONS
 // ==========================================
 
+/**
+ * Show why a table is empty instead of leaving it blank.
+ *
+ * A failed request used to reach the renderer as `undefined`, which threw and
+ * left the page silently empty -- indistinguishable from "no records".
+ */
+function renderLoadError(elementId, colspan, status) {
+    const list = document.getElementById(elementId);
+    if (!list) return;
+    const message = status === 401
+        ? 'Your session has expired. Please sign in again.'
+        : status === 403
+            ? 'You do not have permission to view this.'
+            : 'Could not load this data. Please retry.';
+    list.innerHTML = `<tr><td colspan="${colspan}" style="text-align: center; padding: 2rem; color: var(--admin-text-muted);">${message}</td></tr>`;
+}
+
 async function loadGroups() {
     try {
         const response = await fetch(`${API_BASE_URL}/admin/groups`);
+        if (!response.ok) {
+            renderLoadError('group-list', 5, response.status);
+            return;
+        }
         const groups = await response.json();
-        renderGroups(groups);
-        populateGroupsCheckboxes(groups);
+        const list = Array.isArray(groups) ? groups : [];
+        renderGroups(list);
+        populateGroupsCheckboxes(list);
     } catch (err) {
         console.error('Error loading groups:', err);
+        renderLoadError('group-list', 5);
     }
 }
 
@@ -358,7 +390,7 @@ function renderGroups(groups) {
     const list = document.getElementById('group-list');
     list.innerHTML = '';
 
-    groups.forEach(group => {
+    (Array.isArray(groups) ? groups : []).forEach(group => {
         const categories = Array.isArray(group.categories) ? group.categories : JSON.parse(group.categories || '[]');
         const categoriesHtml = categories.length > 0
             ? categories.map(c => `<span class="badge" style="background: rgba(37, 99, 235, 0.1); color: var(--admin-primary); border: 1px solid rgba(37, 99, 235, 0.2); margin-right: 6px; padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; display: inline-block; margin-bottom: 4px;">${c.name}</span>`).join('')
@@ -444,6 +476,8 @@ async function handleGroupSubmit(e) {
     const description = document.getElementById('group-desc').value;
     
     const categories = groupCategoriesTomSelect ? groupCategoriesTomSelect.getValue() : [];
+    const leadCategories = groupLeadTomSelect ? groupLeadTomSelect.getValue() : [];
+    const isDefault = document.getElementById('group-is-default').checked;
 
     const method = id ? 'PUT' : 'POST';
     const url = id ? `${API_BASE_URL}/admin/groups/${id}` : `${API_BASE_URL}/admin/groups`;
@@ -452,7 +486,7 @@ async function handleGroupSubmit(e) {
         const response = await fetch(url, {
             method,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, description, categories })
+            body: JSON.stringify({ name, description, categories, lead_categories: leadCategories, is_default: isDefault })
         });
 
         if (response.ok) {
@@ -482,8 +516,14 @@ function editGroup(group) {
         // API now returns objects {id, name}, extract IDs for select value
         const categoryIds = categories.map(c => c.id);
         groupCategoriesTomSelect.setValue(categoryIds);
+
+        if (groupLeadTomSelect) {
+            groupLeadTomSelect.setValue(categories.filter(c => c.role === 'lead').map(c => c.id));
+        }
     }
-    
+
+    document.getElementById('group-is-default').checked = !!group.is_default;
+
     openModal('group-modal');
 }
 
@@ -536,6 +576,31 @@ async function loadCategoriesForGroupModal() {
             }
         });
 
+        // Lead picker, populated from the same category list. A group can be
+        // assigned many categories but lead only some of them.
+        const leadSelect = document.getElementById('group-lead-select');
+        leadSelect.innerHTML = '';
+        categories.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.id;
+            opt.textContent = cat.name;
+            leadSelect.appendChild(opt);
+        });
+
+        if (groupLeadTomSelect) groupLeadTomSelect.destroy();
+        groupLeadTomSelect = new TomSelect('#group-lead-select', {
+            plugins: ['remove_button'],
+            create: false,
+            placeholder: 'Categories this group is accountable for...',
+            maxItems: null,
+            valueField: 'value',
+            labelField: 'text',
+            searchField: 'text',
+            onInitialize: function() {
+                this.wrapper.style.width = '100%';
+            }
+        });
+
     } catch (err) {
         console.error('Error loading categories:', err);
     }
@@ -548,6 +613,10 @@ function resetGroupForm() {
     if (groupCategoriesTomSelect) {
         groupCategoriesTomSelect.clear();
     }
+    if (groupLeadTomSelect) {
+        groupLeadTomSelect.clear();
+    }
+    document.getElementById('group-is-default').checked = false;
 }
 
 

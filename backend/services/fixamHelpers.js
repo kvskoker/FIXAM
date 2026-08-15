@@ -5,16 +5,10 @@ const axios = require('axios');
  * stored: a pin from another country is either a mis-tap or a test, and either
  * way it pollutes the map and the duplicate radius.
  *
- * Defaults cover Sierra Leone; override per deployment.
+ * Bounds come from the country registry (services/countries.js) so the bot, the
+ * geocoder and the admin map all agree on where "inside" is.
  */
-const SERVICE_AREA = {
-    name: process.env.FIXAM_COUNTRY || 'Sierra Leone',
-    countryCode: (process.env.FIXAM_COUNTRY_CODE || 'sl').toLowerCase(),
-    minLat: Number(process.env.FIXAM_MIN_LAT) || 6.9,
-    maxLat: Number(process.env.FIXAM_MAX_LAT) || 10.0,
-    minLng: Number(process.env.FIXAM_MIN_LNG) || -13.5,
-    maxLng: Number(process.env.FIXAM_MAX_LNG) || -10.2,
-};
+const SERVICE_AREA = require('./countries').getServiceArea();
 
 const NOMINATIM_BASE = process.env.NOMINATIM_URL || 'https://nominatim.openstreetmap.org';
 const NOMINATIM_TIMEOUT_MS = Number(process.env.NOMINATIM_TIMEOUT_MS) || 8000;

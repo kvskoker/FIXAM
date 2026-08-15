@@ -170,10 +170,16 @@ async function transcribeAudio(buffer, filename, contentType) {
                 maxBodyLength: Infinity,
                 timeout: AI_TIMEOUT * 2 // Transcription is the slowest call we make
             });
-            return response.data.text;
+            // Confidence travels with the text: a caller that stores one
+            // without the other cannot tell a trustworthy transcript from a
+            // fluent-sounding guess.
+            return {
+                text: response.data.text || '',
+                confidence: response.data.confidence ?? null,
+            };
         } catch (error) {
             logger.logError('ai_debug', 'Transcription failed', error);
-            return ""; // Fallback to empty string
+            return { text: '', confidence: null };
         }
     });
 }

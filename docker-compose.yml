@@ -61,6 +61,10 @@ services:
       HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
       PARAKEET_MODEL: ${PARAKEET_MODEL:-nvidia/parakeet-tdt-0.6b-v3}
       MINOR_DETECTION_ENABLED: ${MINOR_DETECTION_ENABLED:-true}
+      # Signs admin session tokens. Without a stable value each restart
+      # generates a new key and logs every admin out.
+      SECRET: ${SECRET:-}
+      ADMIN_SESSION_HOURS: ${ADMIN_SESSION_HOURS:-12}
       SUPER_ADMIN_PHONE: ${SUPER_ADMIN_PHONE:-23200000000}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-Adm1n@Fixam}
       BOT_PHONE_NUMBER: ${BOT_PHONE_NUMBER:-23233788736}
@@ -70,7 +74,7 @@ services:
       # container publishes on port 80, so that -- not the 3000 used by the
       # non-Docker `serve` setup -- is the right default here.
       FIXAM_BASE_URL: ${FIXAM_BASE_URL:-http://localhost}
-      FIXAM_COUNTRY: ${FIXAM_COUNTRY:-Sierra Leone}
+      FIXAM_COUNTRY_CODE: ${FIXAM_COUNTRY_CODE:-SL}
       FIXAM_CONTACT_EMAIL: ${FIXAM_CONTACT_EMAIL:-privacy@fixam.sl}
       FIXAM_WEBSITE: ${FIXAM_WEBSITE:-https://fixam.sl}
       UPLOADS_DIR: /data/uploads
@@ -112,12 +116,16 @@ services:
       HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
       PARAKEET_MODEL: ${PARAKEET_MODEL:-nvidia/parakeet-tdt-0.6b-v3}
       MINOR_DETECTION_ENABLED: ${MINOR_DETECTION_ENABLED:-true}
+      # Signs admin session tokens. Without a stable value each restart
+      # generates a new key and logs every admin out.
+      SECRET: ${SECRET:-}
+      ADMIN_SESSION_HOURS: ${ADMIN_SESSION_HOURS:-12}
       SUPER_ADMIN_PHONE: ${SUPER_ADMIN_PHONE:-23200000000}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-Adm1n@Fixam}
       # The simulator runs the handler in-process, so it builds ticket links
       # itself -- without this it would fall back to the hosted demo URL.
       FIXAM_BASE_URL: ${FIXAM_BASE_URL:-http://localhost}
-      FIXAM_COUNTRY: ${FIXAM_COUNTRY:-Sierra Leone}
+      FIXAM_COUNTRY_CODE: ${FIXAM_COUNTRY_CODE:-SL}
       FIXAM_CONTACT_EMAIL: ${FIXAM_CONTACT_EMAIL:-privacy@fixam.sl}
       UPLOADS_DIR: /data/uploads
     volumes:

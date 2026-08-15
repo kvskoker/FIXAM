@@ -49,7 +49,7 @@
         <aside class="admin-sidebar">
             <div class="admin-header-section">
                 <img src="../fixam-logo.svg" alt="FIXAM" height="50" class="logo-full">
-                <img src="../fixam-icon.svg" alt="FIXAM" height="40" class="logo-icon" style="display: none;">
+                <img src="../fixam-icon.svg" alt="FIXAM" height="40" class="logo-icon">
                 <button id="theme-toggle-admin" style="background: rgba(255, 255, 255, 0.2); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer;">
                     <i class="fa-solid fa-moon"></i>
                 </button>
@@ -247,6 +247,26 @@
                     <select id="group-categories-select" class="form-control" multiple>
                         <!-- Populated by JS -->
                     </select>
+                </div>
+                <div class="form-group">
+                    <label>Categories this group LEADS</label>
+                    <select id="group-lead-select" class="form-control" multiple>
+                        <!-- Populated by JS from the assigned categories -->
+                    </select>
+                    <small style="color: var(--admin-text-muted);">
+                        Leave a category out to be alerted as <em>support</em> only. Every category
+                        should have exactly one lead — the team accountable for resolving it.
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" id="group-is-default" style="width: auto;">
+                        <span>Default recipient</span>
+                    </label>
+                    <small style="color: var(--admin-text-muted);">
+                        Receives reports in categories that have no MDA assigned, so a gap in the
+                        mapping never leaves a report unrouted.
+                    </small>
                 </div>
                 <div style="display: flex; gap: 1rem; margin-top: 2rem;">
                     <button type="submit" class="btn btn-primary" style="flex: 1;">Save Group</button>

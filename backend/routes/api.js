@@ -7,6 +7,8 @@ const authService = require('../services/authService');
 const whatsappService = require('../services/whatsappService');
 const FixamHandler = require('../services/whatsappHandler');
 const FixamHelpers = require('../services/fixamHelpers');
+const { getServiceArea } = require('../services/countries');
+const { requireAdmin, requireFullAdmin } = require('../middleware/requireAdmin');
 
 // Initialize Handler
 const fixamHandler = new FixamHandler(whatsappService, db, null, console.log);
@@ -36,11 +38,14 @@ router.get('/config', (req, res) => {
         maintenance_message: "The application has been closed to public use for now until the final Hackathon event day. Only admins are allowed to access the platform.",
         // ── DPG: Dynamic privacy / instance configuration ─────────────────
         instance: {
-            country: process.env.FIXAM_COUNTRY || 'Sierra Leone',
+            country: getServiceArea().name,
             contact_email: process.env.FIXAM_CONTACT_EMAIL || 'privacy@fixam.sl',
             website: process.env.FIXAM_WEBSITE || 'https://fixam.sl',
             base_url: baseUrl,
             privacy_url: `${baseUrl}/privacy`,
+            // Served area, so the admin map frames and constrains itself to the
+            // same bounds the bot enforces rather than hardcoding a second copy.
+            service_area: getServiceArea(),
         }
     });
 });
@@ -53,8 +58,13 @@ router.use((req, res, next) => {
             return next();
         }
         
-        // Check for Admin Access Header (set by Admin Portal)
-        if (req.headers['x-admin-access'] === 'true') {
+        // A signed session token, not a header. `X-Admin-Access: true` used to
+        // be enough here, which meant the maintenance gate -- and everything
+        // behind it -- could be bypassed by anyone who set a header.
+        const bearer = (req.headers.authorization || '').startsWith('Bearer ')
+            ? req.headers.authorization.slice(7).trim()
+            : null;
+        if (authService.verifyToken(bearer)) {
             return next();
         }
 
@@ -587,9 +597,18 @@ router.post('/admin/login', async (req, res) => {
         else if (user.roles.includes('User')) preferredRole = 'User';
         else preferredRole = user.roles[0] || 'User';
 
-        // Return success
+        // Issue a signed session token. Everything under /admin now requires it;
+        // the client stores it and sends it as a Bearer header.
+        const token = authService.createToken({
+            id: user.id,
+            phone_number: user.phone_number,
+            roles: user.roles,
+        });
+
         res.json({
             success: true,
+            token,
+            expires_in_hours: authService.TOKEN_TTL_HOURS,
             user: {
                 id: user.id,
                 name: user.name,
@@ -607,7 +626,7 @@ router.post('/admin/login', async (req, res) => {
 });
 
 // GET /api/admin/stats - Enhanced Admin Stats
-router.get('/admin/stats', async (req, res) => {
+router.get('/admin/stats', requireAdmin, async (req, res) => {
     try {
         // Reuse basic stats logic or call internal function if refactored
         // 1. Total Reports (This Week)
@@ -667,7 +686,7 @@ router.get('/admin/stats', async (req, res) => {
 });
 
 // GET /api/admin/insights - AI Insights & Alerts
-router.get('/admin/insights', async (req, res) => {
+router.get('/admin/insights', requireAdmin, async (req, res) => {
     try {
         const insights = [];
 
@@ -733,7 +752,7 @@ router.get('/admin/insights', async (req, res) => {
 // wording and no coordinates, which keeps the report but leaves it off the map.
 // This is how an admin resolves that: they can read the description and the
 // photo, and usually know the area far better than a geocoder does.
-router.put('/admin/issues/:id/location', async (req, res) => {
+router.put('/admin/issues/:id/location', requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { lat, lng, address, district, city, ward, admin_id } = req.body;
@@ -789,7 +808,7 @@ router.put('/admin/issues/:id/location', async (req, res) => {
 });
 
 // PUT /api/admin/issues/:id/status - Update Issue Status & Log History
-router.put('/admin/issues/:id/status', async (req, res) => {
+router.put('/admin/issues/:id/status', requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { status, admin_id, note } = req.body;
@@ -913,7 +932,7 @@ router.put('/admin/issues/:id/status', async (req, res) => {
 });
 
 // POST /api/admin/issues/:id/mark-duplicate - Mark an issue as duplicate
-router.post('/admin/issues/:id/mark-duplicate', async (req, res) => {
+router.post('/admin/issues/:id/mark-duplicate', requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { original_issue_id, admin_id, note } = req.body;
@@ -954,7 +973,7 @@ router.post('/admin/issues/:id/mark-duplicate', async (req, res) => {
 });
 
 // PUT /api/admin/issues/:id/details - Edit Issue Details
-router.put('/admin/issues/:id/details', async (req, res) => {
+router.put('/admin/issues/:id/details', requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { title, description, category, admin_id } = req.body;
@@ -988,7 +1007,7 @@ router.put('/admin/issues/:id/details', async (req, res) => {
 });
 
 // PUT /api/admin/issues/:id/spam - Flag Issue as Spam
-router.put('/admin/issues/:id/spam', async (req, res) => {
+router.put('/admin/issues/:id/spam', requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { admin_id, reason } = req.body;
@@ -1037,7 +1056,7 @@ router.put('/admin/issues/:id/spam', async (req, res) => {
 });
 
 // POST /api/admin/issues/:id/unlink-duplicate - Unlink a duplicate issue
-router.post('/admin/issues/:id/unlink-duplicate', async (req, res) => {
+router.post('/admin/issues/:id/unlink-duplicate', requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { admin_id, note } = req.body;
@@ -1064,7 +1083,7 @@ router.post('/admin/issues/:id/unlink-duplicate', async (req, res) => {
 // ==========================================
 
 // GET /api/admin/users - List users with roles and groups
-router.get('/admin/users', async (req, res) => {
+router.get('/admin/users', requireFullAdmin, async (req, res) => {
     try {
         const { search, role, group, sort, page = 1, limit = 8 } = req.query;
         const pageNum = parseInt(page);
@@ -1161,7 +1180,7 @@ router.get('/admin/users', async (req, res) => {
 });
 
 // POST /api/admin/users/:id/penalize - Admin Penalty Route
-router.post('/admin/users/:id/penalize', async (req, res) => {
+router.post('/admin/users/:id/penalize', requireFullAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { amount, reason } = req.body;
@@ -1204,7 +1223,7 @@ router.post('/admin/users/:id/penalize', async (req, res) => {
 
 
 // POST /api/admin/users - Create User
-router.post('/admin/users', async (req, res) => {
+router.post('/admin/users', requireFullAdmin, async (req, res) => {
     try {
         const { phone_number, name, password, roles, groups } = req.body;
         if (!phone_number) return res.status(400).json({ error: 'Phone number is required' });
@@ -1252,7 +1271,7 @@ router.post('/admin/users', async (req, res) => {
 });
 
 // PUT /api/admin/users/:id - Update User
-router.put('/admin/users/:id', async (req, res) => {
+router.put('/admin/users/:id', requireFullAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { name, phone_number, is_disabled, roles, groups, password, admin_id } = req.body;
@@ -1312,7 +1331,7 @@ router.put('/admin/users/:id', async (req, res) => {
 });
 
 // DELETE /api/admin/users/:id - Remove User
-router.delete('/admin/users/:id', async (req, res) => {
+router.delete('/admin/users/:id', requireFullAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { admin_id } = req.query;
@@ -1331,7 +1350,7 @@ router.delete('/admin/users/:id', async (req, res) => {
 });
 
 // GET /api/admin/roles
-router.get('/admin/roles', async (req, res) => {
+router.get('/admin/roles', requireAdmin, async (req, res) => {
     try {
         const result = await db.query('SELECT name FROM roles ORDER BY name ASC');
         res.json(result.rows.map(r => r.name));
@@ -1342,15 +1361,15 @@ router.get('/admin/roles', async (req, res) => {
 });
 
 // GET /api/admin/groups
-router.get('/admin/groups', async (req, res) => {
+router.get('/admin/groups', requireFullAdmin, async (req, res) => {
     try {
         const result = await db.query(`
             SELECT 
                 g.*, 
                 COUNT(DISTINCT ug.user_id) as member_count,
                 COALESCE(
-                    JSON_AGG(json_build_object('id', c.id, 'name', c.name)) 
-                    FILTER (WHERE c.id IS NOT NULL), 
+                    JSON_AGG(json_build_object('id', c.id, 'name', c.name, 'role', cg.role))
+                    FILTER (WHERE c.id IS NOT NULL),
                     '[]'
                 ) as categories
             FROM groups g
@@ -1368,9 +1387,9 @@ router.get('/admin/groups', async (req, res) => {
 });
 
 // POST /api/admin/groups
-router.post('/admin/groups', async (req, res) => {
+router.post('/admin/groups', requireFullAdmin, async (req, res) => {
     try {
-        const { name, description, categories } = req.body; // categories is now array of IDs
+        const { name, description, categories, lead_categories, is_default } = req.body; // categories is now array of IDs
 
         // Check for duplicate group name
         const checkGroup = await db.query('SELECT id FROM groups WHERE name = $1', [name]);
@@ -1379,21 +1398,20 @@ router.post('/admin/groups', async (req, res) => {
         }
 
         const result = await db.query(
-            'INSERT INTO groups (name, description) VALUES ($1, $2) RETURNING id',
-            [name, description]
+            'INSERT INTO groups (name, description, is_default) VALUES ($1, $2, $3) RETURNING id',
+            [name, description, is_default === true]
         );
         const groupId = result.rows[0].id;
 
-        // Assign Categories
+        // Assign Categories, marking the ones this group leads.
         if (categories && categories.length > 0) {
+            const leads = new Set((lead_categories || []).map((c) => String(c)));
             for (const catId of categories) {
-                // Ensure it's an integer to prevent SQL injection if raw, but param binding handles it.
-                // Depending on frontend, it might send strings "1", "2". Check parse.
                 await db.query(`
-                    INSERT INTO category_groups (group_id, category_id)
-                    VALUES ($1, $2)
-                    ON CONFLICT DO NOTHING
-                `, [groupId, parseInt(catId)]);
+                    INSERT INTO category_groups (group_id, category_id, role)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (group_id, category_id) DO UPDATE SET role = EXCLUDED.role
+                `, [groupId, parseInt(catId), leads.has(String(catId)) ? 'lead' : 'support']);
             }
         }
 
@@ -1405,10 +1423,10 @@ router.post('/admin/groups', async (req, res) => {
 });
 
 // PUT /api/admin/groups/:id
-router.put('/admin/groups/:id', async (req, res) => {
+router.put('/admin/groups/:id', requireFullAdmin, async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, description, categories } = req.body;
+        const { name, description, categories, lead_categories, is_default } = req.body;
 
         // Check if group name is taken by another group
         const checkGroup = await db.query('SELECT id FROM groups WHERE name = $1 AND id != $2', [name, id]);
@@ -1421,15 +1439,20 @@ router.put('/admin/groups/:id', async (req, res) => {
             [name, description, id]
         );
 
-        // Update Categories
-        if (categories) { 
+        if (is_default !== undefined) {
+            await db.query('UPDATE groups SET is_default = $1 WHERE id = $2', [is_default === true, id]);
+        }
+
+        // Update Categories, preserving which of them this group leads.
+        if (categories) {
+            const leads = new Set((lead_categories || []).map((c) => String(c)));
             await db.query('DELETE FROM category_groups WHERE group_id = $1', [id]);
             for (const catId of categories) {
                 await db.query(`
-                    INSERT INTO category_groups (group_id, category_id)
-                    VALUES ($1, $2)
-                    ON CONFLICT DO NOTHING
-                `, [id, parseInt(catId)]);
+                    INSERT INTO category_groups (group_id, category_id, role)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (group_id, category_id) DO UPDATE SET role = EXCLUDED.role
+                `, [id, parseInt(catId), leads.has(String(catId)) ? 'lead' : 'support']);
             }
         }
 
@@ -1441,7 +1464,7 @@ router.put('/admin/groups/:id', async (req, res) => {
 });
 
 // DELETE /api/admin/groups/:id
-router.delete('/admin/groups/:id', async (req, res) => {
+router.delete('/admin/groups/:id', requireFullAdmin, async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -1464,7 +1487,7 @@ router.delete('/admin/groups/:id', async (req, res) => {
 // ==========================================
 
 // GET /api/admin/feedback
-router.get('/admin/feedback', async (req, res) => {
+router.get('/admin/feedback', requireAdmin, async (req, res) => {
     try {
         const feedback = await fixamHandler.fixamDb.getFeedback();
         res.json(feedback);
@@ -1475,7 +1498,7 @@ router.get('/admin/feedback', async (req, res) => {
 });
 
 // POST /api/admin/feedback/:id/acknowledge
-router.post('/admin/feedback/:id/acknowledge', async (req, res) => {
+router.post('/admin/feedback/:id/acknowledge', requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const success = await fixamHandler.fixamDb.acknowledgeFeedback(id);

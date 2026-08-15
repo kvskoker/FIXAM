@@ -1095,11 +1095,52 @@ body.dark-mode ::-webkit-scrollbar-thumb:hover {
 
 
 /* Responsive */
-@media (max-width: 1024px) {
+/* 1080px, not 1024: common tablets are 1080 wide in portrait, and they need the
+   collapsed sidebar too. The collapse and the logo swap must share one
+   breakpoint -- when they drifted apart the full wordmark ended up in an 80px
+   column, clipped. */
+@media (max-width: 1080px) {
     .admin-container {
         grid-template-columns: 80px 1fr;
     }
     .admin-sidebar span, .logo-text { display: none; }
+
+    /* The sidebar is 80px here, so the wordmark goes and the icon takes over. */
+    .logo-full { display: none !important; }
+    .logo-icon { display: block !important; }
+
+    /* The header block carries 1.5rem of padding and negative margins from the
+       expanded layout; in an 80px column that leaves almost nothing for the
+       icon. */
+    .admin-sidebar { padding: 1rem 0.5rem; }
+    .admin-header-section {
+        padding: 0.75rem 0.5rem;
+        margin: -1rem -0.5rem 1rem -0.5rem;
+        flex-direction: column;
+        gap: 0.5rem;
+        justify-content: center;
+    }
+
+    /* Sized to the 80px column less its padding, with width derived from the
+       icon's own aspect ratio (79x75) rather than left to the markup. */
+    .logo-icon {
+        height: 34px;
+        width: auto;
+    }
+}
+
+/* Which mark is shown belongs in CSS, not in an inline style attribute. The
+   icon used to carry style="display:none" in the markup, which outranks any
+   stylesheet rule without !important -- so a stale or partially-loaded
+   stylesheet left the full wordmark showing in an 80px sidebar, clipped. */
+.logo-icon { display: none; }
+.logo-full { display: block; }
+
+/* Belt and braces: whatever the breakpoint, neither mark may overflow its
+   container. Height is left to the markup so the expanded sidebar is unchanged. */
+.logo-full, .logo-icon {
+    max-width: 100%;
+    object-fit: contain;
 }
 
 @media (max-width: 768px) {

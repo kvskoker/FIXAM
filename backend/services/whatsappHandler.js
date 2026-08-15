@@ -1629,6 +1629,7 @@ class FixamHandler {
             const downloadResult = await this.whatsAppService.downloadMedia(mediaId);
             let mediaUrl = '';
             let transcribedText = '';
+            let transcriptionConfidence = null;
 
             if (downloadResult) {
             // Check duration first
@@ -1660,11 +1661,13 @@ class FixamHandler {
 
             // Transcribe the voice note
             await this.sendMessage(fromNumber, "Transcribing your voice note... 🎙️");
-            transcribedText = await aiService.transcribeAudio(
-                downloadResult.buffer, 
-                `audio.${extension}`, 
+            const transcription = await aiService.transcribeAudio(
+                downloadResult.buffer,
+                `audio.${extension}`,
                 downloadResult.mimeType || 'audio/ogg'
             );
+            transcribedText = transcription.text;
+            transcriptionConfidence = transcription.confidence;
             
             if (transcribedText) {
                 logger.log('media_handler', `Transcription: ${transcribedText}`);
@@ -1682,6 +1685,7 @@ class FixamHandler {
             // Use transcribed text if available, otherwise fallback to a user-friendly message
             currentData.description = transcribedText ? transcribedText : "[Voice Note - Transcription unavailable]";
             currentData.audio_url = mediaUrl; // Capture for saving
+            currentData.transcription_confidence = transcriptionConfidence;
 
             // Analyze with AI using the transcribed text if available
             let category = 'Uncategorized';
@@ -1730,11 +1734,11 @@ class FixamHandler {
                     // Transcribe
                     await this.sendMessage(fromNumber, "Transcribing your feedback... 🎙️");
                     const tx = await aiService.transcribeAudio(
-                        downloadResult.buffer, 
-                        `audio.${extension}`, 
+                        downloadResult.buffer,
+                        `audio.${extension}`,
                         downloadResult.mimeType || 'audio/ogg'
                     );
-                    if (tx) transcribedText = tx;
+                    if (tx.text) transcribedText = tx.text;
                 } catch (writeError) {
                     logger.logError('media_handler', 'Failed to save feedback audio', writeError);
                 }
@@ -1778,7 +1782,7 @@ class FixamHandler {
 
     // ── DPG: Build instance-aware consent message ──────────────────────────────
     getConsentMessage() {
-        const country = process.env.FIXAM_COUNTRY || 'Sierra Leone';
+        const country = this.helpers.serviceArea.name;
         const privacyUrl = this.getPrivacyUrl();
         return `Welcome to Fixam! 🏗️\n\nFixam helps citizens report and track infrastructure issues in ${country}. We collect your phone number, name, location, and photos to process your reports.\n\n📄 Read our privacy policy: ${privacyUrl}\n\nReply *YES* to agree and continue, or *NO* to decline.`;
     }
@@ -1901,7 +1905,8 @@ class FixamHandler {
             image_sha256: data.image_sha256 || null,
             image_mime_type: data.image_mime_type || null,
             image_forwarded: data.image_forwarded,
-            image_reused_from: data.image_reused_from || null
+            image_reused_from: data.image_reused_from || null,
+            transcription_confidence: data.transcription_confidence ?? null
         };
 
         const issue = await this.fixamDb.createIssue(issueData);
@@ -1950,7 +1955,17 @@ class FixamHandler {
                 continue;
             }
 
+            // Say whether this MDA owns the fix or is being kept informed.
+            // Several can be alerted for one report, and without this every
+            // recipient assumes somebody else is handling it.
+            const roleLine = group.role === 'lead'
+                ? '*Your role:* LEAD — your team owns this issue\n'
+                : group.role === 'default'
+                    ? '*Your role:* DEFAULT RECIPIENT — no MDA is mapped to this category yet\n'
+                    : '*Your role:* SUPPORT — alerted for awareness\n';
+
             const alertMessage = `${header}\n\n` +
+                roleLine +
                 `*Urgency:* ${urgencyLabel}\n` +
                 `*Category:* ${issue.category}\n` +
                 `*Issue:* ${issue.title}\n` +

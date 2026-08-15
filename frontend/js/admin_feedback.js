@@ -18,10 +18,21 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadFeedback() {
     try {
         const response = await fetch(`${API_BASE_URL}/admin/feedback`);
-        allFeedback = await response.json();
+        if (!response.ok) {
+            // 401 is handled centrally; anything else must not leave the caller
+            // iterating over an error object.
+            console.error('Feedback request failed:', response.status);
+            allFeedback = [];
+            filterFeedback();
+            return;
+        }
+        const data = await response.json();
+        allFeedback = Array.isArray(data) ? data : [];
         filterFeedback();
     } catch (err) {
         console.error('Error loading feedback:', err);
+        allFeedback = [];
+        filterFeedback();
     }
 }
 

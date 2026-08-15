@@ -2,22 +2,95 @@ const API_BASE_URL = window.location.port === '3000'
     ? `http://${window.location.hostname}:5000/api`
     : '/api';
 
-// Override fetch to include X-Admin-Access header for Admin Panel
+const TOKEN_KEY = 'fixam_admin_token';
+
+function getAdminToken() {
+    return localStorage.getItem(TOKEN_KEY);
+}
+
+/**
+ * Attach the session token to every request.
+ *
+ * This used to send `X-Admin-Access: true`, which was not authentication --
+ * any caller could set that header. The token is signed by the server and
+ * verified on every admin endpoint.
+ */
+const LOGIN_PATH = '/admin/overview';
+
+/** Message to show on the login screen after a session ends unexpectedly. */
+function setSessionEndedNotice(message) {
+    sessionStorage.setItem('fixam_login_notice', message);
+}
+
+/**
+ * End the session and return to the login screen.
+ *
+ * A redirect, not just an overlay toggle: leaving the admin page mounted meant
+ * its other in-flight requests kept failing behind the login box, and the user
+ * sat looking at a dashboard shell with no data.
+ */
+function endSession(message) {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem('fixam_admin_user');
+    if (message) setSessionEndedNotice(message);
+
+    if (window.location.pathname !== LOGIN_PATH) {
+        window.location.href = LOGIN_PATH;
+    } else if (typeof showLogin === 'function') {
+        showLogin();
+        showLoginNotice();
+    }
+}
+
+/** Surface any notice left by a session that ended on another page. */
+function showLoginNotice() {
+    const notice = sessionStorage.getItem('fixam_login_notice');
+    if (!notice) return;
+    sessionStorage.removeItem('fixam_login_notice');
+    const err = document.getElementById('login-error');
+    if (err) {
+        err.textContent = notice;
+        err.style.display = 'block';
+    }
+}
+
+/**
+ * Attach the session token to every request.
+ *
+ * This used to send `X-Admin-Access: true`, which was not authentication --
+ * any caller could set that header. The token is signed by the server and
+ * verified on every admin endpoint.
+ */
 const originalFetch = window.fetch;
 window.fetch = function(url, options = {}) {
-    options.headers = options.headers || {};
-    // Handle both Headers object and plain object
-    if (options.headers instanceof Headers) {
-        options.headers.append('X-Admin-Access', 'true');
-    } else {
-        options.headers['X-Admin-Access'] = 'true';
+    const token = getAdminToken();
+    if (token) {
+        options.headers = options.headers || {};
+        if (options.headers instanceof Headers) {
+            options.headers.append('Authorization', `Bearer ${token}`);
+        } else {
+            options.headers['Authorization'] = `Bearer ${token}`;
+        }
     }
-    return originalFetch(url, options);
+
+    // The login request must be exempt. A 401 there means "wrong password", not
+    // "session expired" -- handling it below would overwrite the form's own
+    // error and tell someone their session had expired when they had simply
+    // mistyped a password.
+    const isLoginRequest = String(url).includes('/admin/login');
+
+    return originalFetch(url, options).then((response) => {
+        if (response.status === 401 && !isLoginRequest) {
+            endSession('Your session has expired. Please sign in again.');
+        }
+        return response;
+    });
 };
 
 function checkAuth(callback) {
+    // The token is what proves a session; a stored user object alone does not.
     const adminUser = localStorage.getItem('fixam_admin_user');
-    if (adminUser) {
+    if (adminUser && getAdminToken()) {
         showDashboard();
         if (callback) callback();
     } else {
@@ -28,6 +101,7 @@ function checkAuth(callback) {
 function showLogin() {
     document.getElementById('login-overlay').classList.remove('hidden');
     document.getElementById('admin-container').classList.add('hidden');
+    showLoginNotice();
 }
 
 function showDashboard() {
@@ -79,6 +153,7 @@ async function handleLogin(e) {
 
         if (response.ok && data.success) {
             localStorage.setItem('fixam_admin_user', JSON.stringify(data.user));
+            if (data.token) localStorage.setItem(TOKEN_KEY, data.token);
             location.reload(); // Reload to trigger checkAuth and data loading
         } else {
             errorMsg.textContent = data.message || 'Invalid credentials';
@@ -93,8 +168,10 @@ async function handleLogin(e) {
 
 function handleLogout(e) {
     if (e) e.preventDefault();
-    localStorage.removeItem('fixam_admin_user');
-    location.href = '/admin/overview'; // Redirect to overview (which will show login)
+    endSession();
+    // endSession only redirects when leaving another page; on the login page
+    // itself it just shows the form, so force it for an explicit sign-out.
+    if (window.location.pathname === LOGIN_PATH) location.reload();
 }
 
 function debounce(func, wait) {

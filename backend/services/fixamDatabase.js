@@ -246,8 +246,9 @@ class FixamDatabase {
         const sql = `
             INSERT INTO issues (ticket_id, title, category, lat, lng, description, image_url, audio_url, reported_by, status, duplicate_of, urgency, address,
                                 district, city, ward, constituency, location_source,
-                                image_sha256, image_mime_type, image_forwarded, image_reused_from)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+                                image_sha256, image_mime_type, image_forwarded, image_reused_from,
+                                transcription_confidence)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
             RETURNING *
         `;
         const values = [
@@ -274,7 +275,9 @@ class FixamDatabase {
             // NULL, not false, when WhatsApp said nothing -- "not reported" and
             // "reported as not forwarded" are different facts.
             issueData.image_forwarded === undefined ? null : issueData.image_forwarded,
-            issueData.image_reused_from || null
+            issueData.image_reused_from || null,
+            // null, not 0: "not measured" and "measured as very low" differ.
+            issueData.transcription_confidence ?? null
         ];
 
         try {
@@ -539,17 +542,37 @@ class FixamDatabase {
     }
 
     // Get groups for a category
+    /**
+     * MDAs to alert for a category, with the lead first.
+     *
+     * Falls back to the default groups when the category has no mapping. A
+     * report in an unmapped category previously alerted nobody -- it was filed,
+     * the citizen got a ticket, and no institution ever heard about it. A
+     * configuration gap should not silently swallow a report.
+     */
     async getGroupsForCategory(categoryName) {
         const sql = `
-            SELECT g.* 
-            FROM groups g 
-            JOIN category_groups cg ON g.id = cg.group_id 
-            JOIN categories c ON cg.category_id = c.id 
+            SELECT g.*, cg.role
+            FROM groups g
+            JOIN category_groups cg ON g.id = cg.group_id
+            JOIN categories c ON cg.category_id = c.id
             WHERE c.name = $1
+            ORDER BY (cg.role = 'lead') DESC, g.name
         `;
         try {
             const result = await this.db.query(sql, [categoryName]);
-            return result.rows;
+            if (result.rows.length > 0) return result.rows;
+
+            const fallback = await this.db.query(
+                `SELECT g.*, 'default' AS role FROM groups g WHERE g.is_default = TRUE ORDER BY g.name`
+            );
+            if (fallback.rows.length > 0) {
+                this.debugLog(
+                    `No MDA mapped for category "${categoryName}"; alerting default groups`,
+                    { groups: fallback.rows.map(g => g.name) }
+                );
+            }
+            return fallback.rows;
         } catch (error) {
             this.debugLog('Error fetching groups for category', { error: error.message, categoryName });
             return [];

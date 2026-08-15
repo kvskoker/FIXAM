@@ -1,3 +1,42 @@
+/**
+ * Badge showing how far the speech engine trusted its own transcription.
+ *
+ * Shown next to the transcribed text so a reader can decide, before acting on
+ * it, whether to trust the words or play the recording instead. Returns '' when
+ * there is no audio or no score -- an absent measurement must not be drawn as
+ * "0% confident".
+ *
+ * Thresholds are a starting point calibrated on English test audio: clear
+ * speech scored ~0.69, while a degraded clip that produced a fluent but wrong
+ * transcription scored ~0.07. They should be revisited against real voice
+ * notes, and especially against Krio, where the model is known to be weak.
+ */
+function transcriptionConfidenceBadge(issue) {
+    if (!issue.audio_url) return '';
+
+    const raw = issue.transcription_confidence;
+    if (raw === null || raw === undefined) return '';
+
+    const pct = Math.round(Number(raw) * 100);
+    let label, bg, fg, hint;
+
+    if (pct >= 60) {
+        label = 'High confidence';
+        bg = 'var(--admin-success)'; fg = '#fff';
+        hint = 'The speech engine was confident in this transcription.';
+    } else if (pct >= 30) {
+        label = 'Medium confidence';
+        bg = 'var(--admin-warning)'; fg = '#1a202c';
+        hint = 'Parts of this transcription may be wrong. Play the audio to check.';
+    } else {
+        label = 'Low confidence';
+        bg = 'var(--admin-danger)'; fg = '#fff';
+        hint = 'This transcription is probably unreliable. Listen to the recording instead.';
+    }
+
+    return `<span title="${hint} (score ${pct}%)" style="background: ${bg}; color: ${fg}; border-radius: 4px; padding: 1px 7px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; margin-left: 0.4rem;">&#127897; ${label} &middot; ${pct}%</span>`;
+}
+
 // Maintenance Mode handled by maintenance.js
 
 
@@ -579,7 +618,9 @@ async function viewTracker(issueId) {
                                 <span style="padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: capitalize; background: rgba(0,0,0,0.05); color: var(--text-primary); border: 1px solid var(--border-color);">${issue.status}</span>
                             </div>
                             <h2 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.75rem; line-height: 1.2; font-weight: 700;">${issue.title}</h2>
-                            <div style="font-size: 1rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 1.5rem;">${issue.description}</div>
+                            <div style="font-size: 1rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 1.5rem;">
+                                ${issue.description}${transcriptionConfidenceBadge(issue)}
+                            </div>
                         </div>
 
                         <!-- Info Card -->

@@ -171,6 +171,11 @@ ALTER TABLE issues ADD COLUMN IF NOT EXISTS image_mime_type VARCHAR(100);
 ALTER TABLE issues ADD COLUMN IF NOT EXISTS image_forwarded BOOLEAN;
 ALTER TABLE issues ADD COLUMN IF NOT EXISTS image_reused_from INTEGER REFERENCES issues(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_issues_image_sha256 ON issues (image_sha256);
+-- Speech-to-text confidence (see db/migration_transcription_confidence.sql)
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS transcription_confidence NUMERIC(4,3);
+-- Routing roles and default MDAs (see db/migration_routing_roles.sql)
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT FALSE;
+ALTER TABLE category_groups ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'support';
 -- Voice-note reports: written by createIssue(), so a database created before
 -- this column existed fails every report submission with a bare "Error
 -- submitting report".

@@ -49,8 +49,85 @@ function verifyLegacyPassword(password, phone, storedHash) {
     return legacyHash === storedHash;
 }
 
+// ── Session tokens ───────────────────────────────────────────────────────────
+//
+// Signed with HMAC-SHA256 rather than pulling in a JWT library: the payload is
+// three fields and the verification is a constant-time compare, so a dependency
+// would add supply-chain surface for no benefit.
+
+const TOKEN_TTL_HOURS = Number(process.env.ADMIN_SESSION_HOURS) || 12;
+
+/**
+ * The signing key. A stable SECRET keeps sessions valid across restarts; without
+ * one a random key is generated per boot, which is safe but logs every admin out
+ * on every deploy -- so say so loudly rather than let it be a mystery.
+ */
+const TOKEN_SECRET = (() => {
+    const configured = process.env.SECRET && process.env.SECRET.trim();
+    if (configured) return configured;
+
+    console.warn(
+        '[auth] SECRET is not set. Generating a random signing key for this process: '
+        + 'admin sessions will not survive a restart. Set SECRET in .env.'
+    );
+    return crypto.randomBytes(32).toString('hex');
+})();
+
+function base64url(buffer) {
+    return Buffer.from(buffer).toString('base64')
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function sign(payloadB64) {
+    return base64url(crypto.createHmac('sha256', TOKEN_SECRET).update(payloadB64).digest());
+}
+
+/** Issue a session token for an authenticated admin. */
+function createToken(user) {
+    const payload = {
+        uid: user.id,
+        phone: user.phone_number,
+        roles: user.roles || [],
+        exp: Date.now() + TOKEN_TTL_HOURS * 3600 * 1000,
+    };
+    const payloadB64 = base64url(JSON.stringify(payload));
+    return `${payloadB64}.${sign(payloadB64)}`;
+}
+
+/**
+ * Verify a token and return its payload, or null.
+ *
+ * Returns null for every failure mode -- malformed, bad signature, expired --
+ * so a caller cannot accidentally treat "expired" as "valid but stale".
+ */
+function verifyToken(token) {
+    if (!token || typeof token !== 'string') return null;
+
+    const parts = token.split('.');
+    if (parts.length !== 2) return null;
+
+    const [payloadB64, signature] = parts;
+    const expected = sign(payloadB64);
+
+    // Constant-time compare; lengths must match first or timingSafeEqual throws.
+    const a = Buffer.from(signature);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+
+    try {
+        const payload = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
+        if (!payload.exp || Date.now() > payload.exp) return null;
+        return payload;
+    } catch (err) {
+        return null;
+    }
+}
+
 module.exports = {
     hashPassword,
     verifyPassword,
-    verifyLegacyPassword
+    verifyLegacyPassword,
+    createToken,
+    verifyToken,
+    TOKEN_TTL_HOURS
 };

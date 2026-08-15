@@ -349,10 +349,14 @@ def transcribe_audio(file: UploadFile = File(...)):
         tmp_path = tmp.name
 
     try:
-        text = asr_engine.transcribe(tmp_path)
+        result = asr_engine.transcribe(tmp_path)
         return {
             "filename": file.filename,
-            "text": text,
+            "text": result["text"],
+            # 0..1, or null when the decoder could not report one. Null is not
+            # zero: the caller must be able to tell "unsure" from "not measured".
+            "confidence": result.get("confidence"),
+            "duration_sec": result.get("duration_sec"),
             "engine": asr_engine.name,
         }
     except Exception as e:
