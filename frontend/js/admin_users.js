@@ -167,7 +167,7 @@ function renderUsers(users) {
             <td data-label="Points" style="font-weight: 600; color: var(--admin-primary);">
                 ${user.points || 0}
             </td>
-            <td data-label="Actions" style="text-align: right;">
+            <td data-label="Actions" style="text-align: right;" ${isFullAdmin() ? '' : 'data-admin-only'}>
                 <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
                     <button class="action-btn" onclick="editUser(${JSON.stringify(user).replace(/"/g, '&quot;')})" title="Edit User">
                         <i class="fa-solid fa-pen"></i>
@@ -188,6 +188,8 @@ function renderUsers(users) {
         `;
         list.appendChild(row);
     });
+
+    applyRoleVisibilityTo(list);
 }
 
 function updatePagination(pagination) {
@@ -414,7 +416,7 @@ function renderGroups(groups) {
             <td data-label="Created" style="color: var(--admin-text-muted); font-size: 0.85rem;">
                 ${new Date(group.created_at).toLocaleDateString('en-GB')}
             </td>
-            <td data-label="Actions" style="text-align: right;">
+            <td data-label="Actions" style="text-align: right;" ${isFullAdmin() ? '' : 'data-admin-only'}>
                 <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
                     <button class="action-btn" onclick="editGroup(${JSON.stringify(group).replace(/"/g, '&quot;')})" title="Edit Group">
                         <i class="fa-solid fa-pen"></i>
@@ -430,6 +432,8 @@ function renderGroups(groups) {
         `;
         list.appendChild(row);
     });
+
+    applyRoleVisibilityTo(list);
 }
 
 // Tom Select Instance
@@ -744,9 +748,16 @@ async function loadCategoryAdmin() {
 
         allCategoriesCache = categories;
 
+        // /api/categories is public -- the bot and the civic map both need the
+        // full list -- so an MDA's view is narrowed here, using the groups
+        // response, which the API has already scoped to their institution.
+        const visible = isFullAdmin()
+            ? categories
+            : categories.filter((c) => (mdasByCategory[c.id] || []).length > 0);
+
         // Decorate once, then search/filter/sort/paginate off this in the
         // browser rather than re-fetching for every keystroke.
-        categoryView.rows = categories.map((cat) => ({
+        categoryView.rows = visible.map((cat) => ({
             ...cat,
             mdas: mdasByCategory[cat.id] || [],
             reportCount: usage[cat.name] || 0,
@@ -870,7 +881,7 @@ function renderCategoryRows(rows, noMatches) {
             </td>
             <td data-label="Assigned MDAs">${mdaHtml}</td>
             <td data-label="Reports">${cat.reportCount}</td>
-            <td data-label="Actions" style="text-align: right;">
+            <td data-label="Actions" style="text-align: right;" ${isFullAdmin() ? '' : 'data-admin-only'}>
                 <button class="action-btn" title="Edit" onclick='editCategory(${JSON.stringify({ id: cat.id, name: cat.name, icon: cat.icon, color: cat.color }).replace(/'/g, "&#39;")})'>
                     <i class="fa-solid fa-pen"></i>
                 </button>
@@ -882,6 +893,8 @@ function renderCategoryRows(rows, noMatches) {
             </td>`;
         list.appendChild(tr);
     });
+
+    applyRoleVisibilityTo(list);
 }
 
 function openCategoryModal() {

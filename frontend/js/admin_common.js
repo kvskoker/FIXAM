@@ -104,6 +104,56 @@ function showLogin() {
     showLoginNotice();
 }
 
+
+/** True when the signed-in user holds the full Admin role. */
+function isFullAdmin() {
+    try {
+        const user = JSON.parse(localStorage.getItem('fixam_admin_user') || '{}');
+        const roles = user.roles || (user.role ? [user.role] : []);
+        return roles.includes('Admin');
+    } catch (err) {
+        return false;
+    }
+}
+
+/**
+ * Hide controls an MDA user cannot use.
+ *
+ * The API refuses these actions regardless, but offering a button that always
+ * fails is its own kind of broken -- an officer should see the portal that
+ * matches their remit, not a fuller one with dead controls.
+ */
+function applyRoleVisibilityTo(root) {
+    if (isFullAdmin()) return;
+    (root || document).querySelectorAll('[data-admin-only]').forEach((el) => {
+        el.style.display = 'none';
+    });
+}
+
+function applyRoleVisibility() {
+    if (isFullAdmin()) return;
+
+    ['btn-add-user', 'btn-add-group', 'btn-add-category'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+
+    applyRoleVisibilityTo(document);
+
+    // Say why the view is narrower, rather than leaving it looking incomplete.
+    const main = document.querySelector('.admin-main');
+    if (main && !document.getElementById('mda-scope-banner')) {
+        const user = JSON.parse(localStorage.getItem('fixam_admin_user') || '{}');
+        const banner = document.createElement('div');
+        banner.id = 'mda-scope-banner';
+        banner.style.cssText = 'background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.25); color: var(--admin-text); padding: 0.6rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.88rem;';
+        banner.innerHTML = `<i class="fa-solid fa-circle-info" style="color: var(--admin-primary);"></i>
+            You are signed in as <strong>${user.name || 'an MDA user'}</strong>. You can see and manage
+            reports in the categories assigned to your institution.`;
+        main.insertBefore(banner, main.firstChild);
+    }
+}
+
 function showDashboard() {
     document.getElementById('login-overlay').classList.add('hidden');
     document.getElementById('admin-container').classList.remove('hidden');
@@ -124,6 +174,8 @@ function showDashboard() {
         } else {
             displayRole = roles[0] || 'Administrator';
         }
+
+        applyRoleVisibility();
 
         document.querySelectorAll('.admin-user-display, #admin-info').forEach(el => {
             el.innerHTML = `

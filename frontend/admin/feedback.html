@@ -95,6 +95,17 @@
                         <option value="pending">Pending</option>
                         <option value="acknowledged">Acknowledged</option>
                     </select>
+                    <select id="filter-routing" class="filter-input" style="width: auto;">
+                        <option value="all">All Destinations</option>
+                        <option value="platform">Platform (MoCTI / DSTI)</option>
+                        <option value="service">Routed to an MDA</option>
+                        <option value="suggested">Awaiting confirmation</option>
+                        <option value="unclassified">Needs routing</option>
+                    </select>
+                    <button id="btn-classify-feedback" class="btn btn-secondary" data-admin-only
+                            style="margin-left: auto;" title="Classify feedback that has not been routed yet">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Auto-route pending
+                    </button>
                 </div>
 
                 <div class="admin-table-container">
@@ -106,6 +117,7 @@
                                 <th>Feedback / Transcription</th>
                                 <th>Audio</th>
                                 <th>Date</th>
+                                <th>Routed To</th>
                                 <th>Status</th>
                                 <th style="text-align: right;">Actions</th>
                             </tr>
@@ -126,6 +138,53 @@
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- Re-route feedback. Full Admin only: routing decides which institution is
+         answerable, so an MDA cannot move its own feedback elsewhere. -->
+    <div id="routing-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Route Feedback</h2>
+                <button class="action-btn" onclick="closeModal('routing-modal')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="routing-form">
+                <input type="hidden" id="routing-feedback-id">
+
+                <div class="form-group">
+                    <label>Feedback</label>
+                    <div id="routing-preview" style="background: var(--admin-bg); border: 1px solid var(--admin-border); border-radius: 6px; padding: 0.75rem; font-size: 0.9rem; white-space: pre-wrap; max-height: 140px; overflow-y: auto;"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>Who should handle this?</label>
+                    <select id="routing-scope" class="form-control" required>
+                        <option value="platform">Platform improvement — MoCTI / DSTI</option>
+                        <option value="service">Service issue — route to an MDA</option>
+                        <option value="unclassified">Leave unrouted</option>
+                    </select>
+                    <small style="color: var(--admin-text-muted);">
+                        Platform feedback is about FIXAM itself: the bot, the app, the process.
+                        Service feedback is about a public service and goes to the MDA that owns it.
+                    </small>
+                </div>
+
+                <div class="form-group" id="routing-category-group" style="display: none;">
+                    <label>Category</label>
+                    <select id="routing-category" class="form-control"></select>
+                    <small style="color: var(--admin-text-muted);">
+                        The feedback goes to the MDA leading this category.
+                    </small>
+                </div>
+
+                <div id="routing-error" style="display: none; color: var(--admin-danger); margin-bottom: 1rem; font-size: 0.9rem;"></div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('routing-modal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Routing</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <script src="../js/theme.js"></script>

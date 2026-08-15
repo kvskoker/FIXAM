@@ -634,14 +634,26 @@ class FixamDatabase {
     }
 
     // Create Feedback
-    async createFeedback(userId, type, content, mediaUrl = null, transcription = null) {
+    async createFeedback(userId, type, content, mediaUrl = null, transcription = null, routing = null) {
         const sql = `
-            INSERT INTO feedback (user_id, type, content, media_url, transcription, status)
-            VALUES ($1, $2, $3, $4, $5, 'pending')
+            INSERT INTO feedback (user_id, type, content, media_url, transcription, status,
+                                  scope, category, routed_group_id, routing_source,
+                                  routing_confidence, routed_at)
+            VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11)
             RETURNING id
         `;
         try {
-            const result = await this.db.query(sql, [userId, type, content, mediaUrl, transcription]);
+            const r = routing || {};
+            const result = await this.db.query(sql, [
+                userId, type, content, mediaUrl, transcription,
+                r.scope || 'unclassified',
+                r.category || null,
+                r.groupId || null,
+                r.source || null,
+                r.confidence != null ? r.confidence : null,
+                // Only stamped when something actually decided a destination.
+                r.source ? new Date() : null
+            ]);
             return result.rows[0].id;
         } catch (error) {
             this.debugLog('Error creating feedback', error);
@@ -649,20 +661,84 @@ class FixamDatabase {
         }
     }
 
-    // Get All Feedback
-    async getFeedback() {
+    /**
+     * Which MDA owns a category, for routing feedback the same way a report is
+     * routed. The lead is preferred over a supporting institution; feedback
+     * addressed to everyone is addressed to nobody.
+     */
+    async getLeadGroupForCategory(categoryName) {
         const sql = `
-            SELECT f.*, u.name as user_name, u.phone_number
-            FROM feedback f
-            JOIN users u ON f.user_id = u.id
-            ORDER BY f.created_at DESC
+            SELECT cg.group_id
+            FROM category_groups cg
+            JOIN categories c ON c.id = cg.category_id
+            WHERE c.name = $1
+            ORDER BY CASE WHEN cg.role = 'lead' THEN 0 ELSE 1 END, cg.group_id
+            LIMIT 1
         `;
         try {
-            const result = await this.db.query(sql);
+            const result = await this.db.query(sql, [categoryName]);
+            return result.rows.length ? result.rows[0].group_id : null;
+        } catch (error) {
+            this.debugLog('Error resolving lead group for category', error);
+            return null;
+        }
+    }
+
+    // Get All Feedback
+    async getFeedback(scope = null) {
+        let sql = `
+            SELECT f.*, u.name as user_name, u.phone_number, g.name AS routed_group_name
+            FROM feedback f
+            JOIN users u ON f.user_id = u.id
+            LEFT JOIN groups g ON g.id = f.routed_group_id
+        `;
+        const params = [];
+
+        // An MDA sees the feedback routed to its institution and nothing else.
+        // Platform feedback and anything still unclassified stay with the Admins
+        // -- an MDA should not be shown complaints about the bot, nor a backlog
+        // that nobody has triaged yet.
+        if (scope && !scope.unrestricted) {
+            if (!scope.groupIds || scope.groupIds.length === 0) {
+                sql += ` WHERE FALSE`;
+            } else {
+                params.push(scope.groupIds);
+                sql += ` WHERE f.scope = 'service' AND f.routed_group_id = ANY($1)`;
+            }
+        }
+
+        sql += ` ORDER BY f.created_at DESC`;
+
+        try {
+            const result = await this.db.query(sql, params);
             return result.rows;
         } catch (error) {
             this.debugLog('Error fetching feedback', error);
             return [];
+        }
+    }
+
+    /**
+     * Re-route a piece of feedback. Used by the admin override and by the
+     * bulk re-classification of the existing backlog.
+     */
+    async setFeedbackRouting(id, { scope, category, groupId, source, confidence, adminId }) {
+        const sql = `
+            UPDATE feedback
+            SET scope = $2, category = $3, routed_group_id = $4, routing_source = $5,
+                routing_confidence = $6, routed_by = $7, routed_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+            RETURNING id
+        `;
+        try {
+            const result = await this.db.query(sql, [
+                id, scope, category || null, groupId || null, source,
+                confidence != null ? confidence : null, adminId || null
+            ]);
+            return result.rows.length > 0;
+        } catch (error) {
+            this.debugLog('Error updating feedback routing', error);
+            return false;
         }
     }
 

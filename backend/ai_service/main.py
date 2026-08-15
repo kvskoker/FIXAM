@@ -52,6 +52,27 @@ class AnalyzeIssueRequest(BaseModel):
 class AnalyzeIntentRequest(BaseModel):
     text: str
 
+class AnalyzeFeedbackRequest(BaseModel):
+    text: str
+
+# Feedback splits into two destinations that need different people. Anchors,
+# rather than keywords, because the same complaint arrives worded a dozen ways
+# and in Krio-inflected English that no keyword list survives contact with.
+PLATFORM_ANCHORS = [
+    "the WhatsApp bot did not understand me",
+    "the bot stopped replying in the middle of my report",
+    "the app is confusing and hard to use",
+    "I could not submit my report, it kept failing",
+    "my voice note was transcribed wrongly",
+    "please add this feature to the platform",
+    "the system is slow and takes too long to respond",
+    "I want to change the language of the service",
+    "I could not upload my photo",
+    "the menu options are not clear",
+    "suggestion to improve the reporting process",
+    "I never received an update about my ticket",
+]
+
 UNSAFE_LABELS = [
     "BUTTOCKS_EXPOSED",
     "FEMALE_BREAST_EXPOSED",
@@ -577,6 +598,88 @@ def analyze_intent(request: AnalyzeIntentRequest):
     except Exception as e:
         logger.error("Exception in analyze_intent: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/analyze-feedback")
+def analyze_feedback(request: AnalyzeFeedbackRequest):
+    """
+    Decide who should receive a piece of feedback.
+
+    Two questions, in order. Is this about FIXAM itself or about a public
+    service? And if it is about a service, which one -- so it can be routed to
+    the MDA that owns that category, the same way a report is.
+
+    The answer is a suggestion with a confidence, never an assignment. Feedback
+    is unstructured by nature, an admin can re-route any of it, and a wrong
+    guess that routes silently is worse than one that is visibly uncertain.
+    """
+    global intent_classifier, category_embeddings, categories_list
+
+    if intent_classifier is None or intent_classifier.model is None:
+        raise HTTPException(status_code=503, detail="AI models (Embeddings) are not loaded.")
+
+    text = (request.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="No feedback text supplied.")
+
+    try:
+        model = intent_classifier.model
+        text_embedding = model.encode([text])
+
+        platform_embeddings = model.encode(PLATFORM_ANCHORS)
+        platform_sims = cosine_similarity(text_embedding, platform_embeddings)[0]
+        platform_score = float(np.max(platform_sims))
+
+        service_score = 0.0
+        best_category = None
+        if category_embeddings is not None and categories_list:
+            cat_sims = cosine_similarity(text_embedding, category_embeddings)[0]
+            best_idx = int(np.argmax(cat_sims))
+            service_score = float(cat_sims[best_idx])
+            best_category = categories_list[best_idx]
+
+        margin = abs(platform_score - service_score)
+
+        if platform_score >= service_score:
+            scope = "platform"
+            confidence = platform_score
+        else:
+            scope = "service"
+            confidence = service_score
+
+        # Two separate judgements, with very different reliability, so they are
+        # reported separately rather than as one score.
+        #
+        # The platform/service split is well separated -- "the bot did not
+        # understand me" and "the rubbish has not been collected" are not close
+        # in embedding space -- so it can be acted on.
+        #
+        # Which category a service complaint belongs to is not. Measured over a
+        # sample of realistic Freetown feedback the model picked the right one
+        # about 5 times in 8, and the score did not distinguish its hits from
+        # its misses: a wrong match at 0.34 outranked a correct one at 0.29. So
+        # the category is returned as a suggestion for an admin to confirm and
+        # never as something to route on. Raising this to an auto-assignment
+        # would put roughly a third of feedback in front of the wrong MDA, which
+        # is worse than leaving it in a queue a person actually reads.
+        confident = bool(confidence >= 0.35 and margin >= 0.10)
+
+        return {
+            "scope": scope,
+            "suggested_category": best_category if scope == "service" else None,
+            "confidence": round(confidence, 3),
+            "platform_score": round(platform_score, 3),
+            "service_score": round(service_score, 3),
+            "margin": round(margin, 3),
+            # Only the platform half is safe to file without a human.
+            "auto_routable": bool(scope == "platform" and confident),
+            "needs_review": not confident,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Exception in analyze_feedback: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

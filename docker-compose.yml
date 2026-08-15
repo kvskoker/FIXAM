@@ -8,6 +8,10 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./backend/db/init_db.sql:/docker-entrypoint-initdb.d/01-init.sql
+      # Runs after the schema on a fresh volume. Existing deployments apply it
+      # by hand -- it is written to be safe to re-run either way.
+      - ./backend/db/migration_pilot_routing.sql:/docker-entrypoint-initdb.d/02-pilot-routing.sql
+      - ./backend/db/migration_feedback_routing.sql:/docker-entrypoint-initdb.d/03-feedback-routing.sql
     ports:
       - "${DB_PORT:-5432}:5432"
     healthcheck:

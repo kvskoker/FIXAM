@@ -12,8 +12,117 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('feedback-search').addEventListener('input', () => { currentPage = 1; filterFeedback(); });
         document.getElementById('filter-type').addEventListener('change', () => { currentPage = 1; filterFeedback(); });
         document.getElementById('filter-status').addEventListener('change', () => { currentPage = 1; filterFeedback(); });
+        document.getElementById('filter-routing').addEventListener('change', () => { currentPage = 1; filterFeedback(); });
+
+        // Only a full Admin can re-route, so only they need the category list.
+        if (isFullAdmin()) {
+            loadRoutingCategories();
+            document.getElementById('btn-classify-feedback').addEventListener('click', classifyPendingFeedback);
+            document.getElementById('routing-scope').addEventListener('change', toggleRoutingCategory);
+            document.getElementById('routing-form').addEventListener('submit', submitRouting);
+        }
     });
 });
+
+let routingCategories = [];
+
+async function loadRoutingCategories() {
+    try {
+        const res = await fetch(`${API_BASE_URL}/categories`);
+        if (!res.ok) return;
+        routingCategories = await res.json();
+        const select = document.getElementById('routing-category');
+        select.innerHTML = routingCategories
+            .map((c) => `<option value="${c.name}">${c.name}</option>`)
+            .join('');
+    } catch (err) {
+        console.error('Could not load categories for routing:', err);
+    }
+}
+
+function toggleRoutingCategory() {
+    const scope = document.getElementById('routing-scope').value;
+    document.getElementById('routing-category-group').style.display =
+        scope === 'service' ? 'block' : 'none';
+}
+
+window.openRoutingModal = function (id) {
+    const item = allFeedback.find((f) => f.id === id);
+    if (!item) return;
+
+    document.getElementById('routing-feedback-id').value = id;
+    document.getElementById('routing-preview').textContent =
+        item.transcription || item.content || '(no text)';
+    document.getElementById('routing-scope').value =
+        (item.scope === 'service' || item.scope === 'suggested') ? 'service'
+            : (item.scope === 'platform' ? 'platform' : 'unclassified');
+    if (item.category) document.getElementById('routing-category').value = item.category;
+    document.getElementById('routing-error').style.display = 'none';
+    toggleRoutingCategory();
+    openModal('routing-modal');
+};
+
+async function submitRouting(e) {
+    e.preventDefault();
+    const id = document.getElementById('routing-feedback-id').value;
+    const scope = document.getElementById('routing-scope').value;
+    const category = document.getElementById('routing-category').value;
+    const errorEl = document.getElementById('routing-error');
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/feedback/${id}/routing`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scope, category: scope === 'service' ? category : null })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            closeModal('routing-modal');
+            loadFeedback();
+        } else {
+            errorEl.textContent = data.message || 'Could not save the routing.';
+            errorEl.style.display = 'block';
+        }
+    } catch (err) {
+        errorEl.textContent = 'Connection error.';
+        errorEl.style.display = 'block';
+    }
+}
+
+async function classifyPendingFeedback() {
+    const btn = document.getElementById('btn-classify-feedback');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Routing...';
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/feedback/classify`, { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            // The counts matter: anything left needing review is work for a
+            // person, and saying so is more useful than "done".
+            alert(`Examined ${data.examined} item(s).
+
+`
+                + `Filed as platform feedback: ${data.routed}
+`
+                + `Suggested for an MDA — confirm to send: ${data.suggested || 0}
+`
+                + `Too unclear to classify: ${data.needs_review}`
+                + (data.failed ? `
+Could not be reached: ${data.failed}` : ''));
+            loadFeedback();
+        } else {
+            alert(data.message || 'Could not classify the pending feedback.');
+        }
+    } catch (err) {
+        alert('Connection error while classifying feedback.');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+}
 
 async function loadFeedback() {
     try {
@@ -40,6 +149,7 @@ function filterFeedback() {
     const searchTerm = document.getElementById('feedback-search').value.toLowerCase();
     const typeFilter = document.getElementById('filter-type').value;
     const statusFilter = document.getElementById('filter-status').value;
+    const routingFilter = document.getElementById('filter-routing').value;
 
     filteredFeedback = allFeedback.filter(item => {
         const matchesSearch = (item.user_name && item.user_name.toLowerCase().includes(searchTerm)) || 
@@ -50,7 +160,10 @@ function filterFeedback() {
         const matchesType = typeFilter === 'all' || item.type === typeFilter;
         const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
 
-        return matchesSearch && matchesType && matchesStatus;
+        const routing = item.scope || 'unclassified';
+        const matchesRouting = routingFilter === 'all' || routing === routingFilter;
+
+        return matchesSearch && matchesType && matchesStatus && matchesRouting;
     });
 
     // Pagination Logic
@@ -71,7 +184,7 @@ function renderFeedback(feedbackList) {
     list.innerHTML = '';
 
     if (feedbackList.length === 0) {
-        list.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--admin-text-muted);">No feedback found.</td></tr>';
+        list.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--admin-text-muted);">No feedback found.</td></tr>';
         return;
     }
 
@@ -86,6 +199,35 @@ function renderFeedback(feedbackList) {
         let statusBadge = item.status === 'acknowledged' ? 
             '<span class="status-badge status-acknowledged">Acknowledged</span>' : 
             '<span class="status-badge status-pending">Pending</span>';
+
+        // Three visually distinct states, because a confirmed destination and a
+        // machine's guess should never look alike to the person acting on them.
+        const routingBadge = (() => {
+            if (item.scope === 'platform') {
+                return '<span class="status-badge" style="background: rgba(99,102,241,0.12); color:#6366f1; border:1px solid rgba(99,102,241,0.3);">Platform · MoCTI/DSTI</span>';
+            }
+            if (item.scope === 'service' && item.routed_group_name) {
+                return `<span class="status-badge" style="background: rgba(37,99,235,0.1); color: var(--admin-primary); border:1px solid rgba(37,99,235,0.25);">${item.routed_group_name}</span>`
+                    + `<div style="font-size:0.75rem; color: var(--admin-text-muted); margin-top:4px;">${item.category || ''}</div>`;
+            }
+            if (item.scope === 'suggested') {
+                return '<span class="status-badge" style="background: rgba(245,158,11,0.12); color: var(--admin-warning); border:1px dashed rgba(245,158,11,0.5);">Awaiting confirmation</span>'
+                    + `<div style="font-size:0.75rem; color: var(--admin-text-muted); margin-top:4px;">suggested: ${item.category || 'a service category'}</div>`;
+            }
+            return '<span class="status-badge" style="background: rgba(245,158,11,0.12); color: var(--admin-warning); border:1px solid rgba(245,158,11,0.3);">Needs routing</span>';
+        })();
+
+        const sourceNote = item.routing_source === 'ai_suggested'
+            ? `<div style="font-size:0.7rem; color: var(--admin-text-muted); margin-top:2px;"><i class="fa-solid fa-wand-magic-sparkles"></i> AI suggestion${item.routing_confidence ? ` · ${Math.round(item.routing_confidence * 100)}%` : ''} — confirm before it reaches the MDA</div>`
+            : (item.routing_source === 'ai'
+                ? `<div style="font-size:0.7rem; color: var(--admin-text-muted); margin-top:2px;"><i class="fa-solid fa-wand-magic-sparkles"></i> classified automatically${item.routing_confidence ? ` · ${Math.round(item.routing_confidence * 100)}%` : ''}</div>`
+                : (item.routing_source === 'admin'
+                    ? '<div style="font-size:0.7rem; color: var(--admin-text-muted); margin-top:2px;"><i class="fa-solid fa-user-check"></i> set by admin</div>'
+                    : ''));
+
+        const routeBtn = `<button class="action-btn" data-admin-only onclick="openRoutingModal(${item.id})" title="Change routing" style="margin-right: 0.4rem;">
+                <i class="fa-solid fa-route"></i>
+            </button>`;
 
         let actionBtn = item.status === 'pending' ? 
             `<button class="btn btn-success" onclick="acknowledgeFeedback(${item.id})" style="font-size: 0.8rem; padding: 0.4rem 0.8rem;">
@@ -106,13 +248,16 @@ function renderFeedback(feedbackList) {
             <td data-label="Date" style="font-size: 0.9rem; color: var(--admin-text-muted);">
                 ${new Date(item.created_at).toLocaleString()}
             </td>
+            <td data-label="Routed To">${routingBadge}${sourceNote}</td>
             <td data-label="Status">${statusBadge}</td>
-            <td data-label="Actions" style="text-align: right;">
-                ${actionBtn}
+            <td data-label="Actions" style="text-align: right; white-space: nowrap;">
+                ${routeBtn}${actionBtn}
             </td>
         `;
         list.appendChild(row);
     });
+
+    applyRoleVisibilityTo(list);
 }
 
 function renderPagination(totalItems, totalPages) {

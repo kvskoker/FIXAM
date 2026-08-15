@@ -8,7 +8,9 @@ const whatsappService = require('../services/whatsappService');
 const FixamHandler = require('../services/whatsappHandler');
 const FixamHelpers = require('../services/fixamHelpers');
 const { getServiceArea } = require('../services/countries');
+const aiService = require('../services/aiService');
 const { requireAdmin, requireFullAdmin } = require('../middleware/requireAdmin');
+const { getScope, attachScope, canAccessIssue } = require('../middleware/mdaScope');
 
 // Initialize Handler
 const fixamHandler = new FixamHandler(whatsappService, db, null, console.log);
@@ -77,6 +79,34 @@ router.use((req, res, next) => {
     next();
 }); 
 
+
+/**
+ * Scope for a request that may or may not be authenticated.
+ *
+ * /issues serves both the public map and the admin portal, so it cannot simply
+ * require a token. Returns null when there is no valid session, meaning "apply
+ * no scoping" -- the public behaviour.
+ */
+async function resolveRequestScope(req) {
+    const header = req.headers.authorization || '';
+    if (!header.startsWith('Bearer ')) return null;
+
+    const payload = authService.verifyToken(header.slice(7).trim());
+    if (!payload) return null;
+
+    const result = await db.query(
+        `SELECT u.id, COALESCE(ARRAY_AGG(r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS roles
+         FROM users u
+         LEFT JOIN user_roles ur ON u.id = ur.user_id
+         LEFT JOIN roles r ON ur.role_id = r.id
+         WHERE u.id = $1 GROUP BY u.id`,
+        [payload.uid]
+    );
+    if (result.rows.length === 0) return null;
+
+    return getScope({ id: result.rows[0].id, roles: result.rows[0].roles });
+}
+
 // GET /api/issues - Fetch all issues from DB with vote counts, search, filter, and sort
 router.get('/issues', async (req, res) => {
     try {
@@ -114,49 +144,52 @@ router.get('/issues', async (req, res) => {
             WHERE 1=1
         `;
 
+        // Filters are built once and shared by the page query and the count
+        // query. They used to be written out twice and the copies drifted: the
+        // count ignored MDA scoping and the spam exclusion, so an MDA holding a
+        // handful of reports was offered pages of results that did not exist.
         const params = [];
-        let paramCount = 1;
+        let where = '';
+        const add = (clause, value) => {
+            params.push(value);
+            // split/join so a clause may reference the same value more than once.
+            where += clause.split('$?').join(`$${params.length}`);
+        };
 
         if (search) {
-            query += ` AND (i.title ILIKE $${paramCount} OR i.description ILIKE $${paramCount} OR i.ticket_id ILIKE $${paramCount} OR i.address ILIKE $${paramCount})`;
-            params.push(`%${search}%`);
-            paramCount++;
+            add(' AND (i.title ILIKE $? OR i.description ILIKE $? OR i.ticket_id ILIKE $? OR i.address ILIKE $?)',
+                `%${search}%`);
         }
 
-        if (category) {
-            query += ` AND i.category = $${paramCount}`;
-            params.push(category);
-            paramCount++;
-        }
+        if (category) add(' AND i.category = $?', category);
 
         if (status) {
-            query += ` AND i.status = $${paramCount}`;
-            params.push(status);
-            paramCount++;
+            add(' AND i.status = $?', status);
         } else if (req.query.include_spam !== 'true') {
-            // Default: Hide spam issues unless explicitly requested
-            query += ` AND i.status != 'spam'`;
+            // Default: hide spam unless explicitly requested.
+            where += " AND i.status != 'spam'";
         }
 
-        if (ticket) {
-            query += ` AND i.ticket_id = $${paramCount}`;
-            params.push(ticket);
-            paramCount++;
+        // MDA scoping. Only applies to a signed-in Operations user: anonymous
+        // callers get the public view and full Admins see everything. Without
+        // this an MDA officer could read every report on the platform through
+        // the same endpoint the portal uses.
+        const scope = await resolveRequestScope(req);
+        if (scope && !scope.unrestricted) {
+            if (scope.categories.length === 0) {
+                // In no group, or a group with no categories: show nothing
+                // rather than everything.
+                where += ' AND FALSE';
+            } else {
+                add(' AND i.category = ANY($?)', scope.categories);
+            }
         }
 
-        if (req.query.start_date) {
-            console.log('Applying start_date filter:', req.query.start_date);
-            query += ` AND i.created_at >= $${paramCount}`;
-            params.push(req.query.start_date);
-            paramCount++;
-        }
+        if (ticket) add(' AND i.ticket_id = $?', ticket);
+        if (req.query.start_date) add(' AND i.created_at >= $?', req.query.start_date);
+        if (req.query.end_date) add(' AND i.created_at <= $?', `${req.query.end_date} 23:59:59`);
 
-        if (req.query.end_date) {
-            console.log('Applying end_date filter:', req.query.end_date);
-            query += ` AND i.created_at <= $${paramCount}`;
-            params.push(`${req.query.end_date} 23:59:59`);
-            paramCount++;
-        }
+        query += where;
 
         // Sorting
         if (sort === 'oldest') {
@@ -168,52 +201,17 @@ router.get('/issues', async (req, res) => {
             query += ` ORDER BY i.created_at DESC`;
         }
 
-        // 1. Get filtered count
-        let countQuery = `SELECT COUNT(*) FROM issues i WHERE 1=1`;
-        const countParams = [];
-        let countParamCount = 1;
-
-        // Re-apply filters for count query (simplified for brevity, ideally share logic)
-        // ... (We need to replicate the filter logic here or structure it better)
-        // A better approach: Use CTE or window function count(*) OVER()
-        
-        // Let's rewrite the main query to include count within the same result set if possible, 
-        // OR just run two queries. For simplicity and correctness with the existing structure, let's just create a base WHERE clause builder.
-
-        // Actually, let's keep the existing query building and add pagination at the end.
-        // We will run a separate count query with the same WHERE clause components.
-
-        // ... Wait, to avoid code duplication, let's just modify the main Query to return total count using Window Function
-        // BUT `issues_with_votes` logic makes it complex.
-        
-        // Let's stick to the prompt's request for pagination.
-        
-        query += ` LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
-        params.push(limitNum, offset);
-
-        const result = await db.query(query, params);
-        
-        // Get total count for pagination metadata (Approximation for simplicity: if we fetched < limit, we know we are at end. 
-        // But to generic "Page 1 of X", we need total.
-        // Let's run a separate cleaner count query for now.
-        
-        let countSql = `SELECT COUNT(*) as total FROM issues i WHERE 1=1`;
-        const countSqlParams = [];
-        let pCount = 1;
-        
-        if (search) { 
-            countSql += ` AND (i.title ILIKE $${pCount} OR i.description ILIKE $${pCount} OR i.ticket_id ILIKE $${pCount} OR i.address ILIKE $${pCount})`; 
-            countSqlParams.push(`%${search}%`); 
-            pCount++; 
-        }
-        if (category) { countSql += ` AND i.category = $${pCount}`; countSqlParams.push(category); pCount++; }
-        if (status) { countSql += ` AND i.status = $${pCount}`; countSqlParams.push(status); pCount++; }
-        if (ticket) { countSql += ` AND i.ticket_id = $${pCount}`; countSqlParams.push(ticket); pCount++; }
-        if (req.query.start_date) { countSql += ` AND i.created_at >= $${pCount}`; countSqlParams.push(req.query.start_date); pCount++; }
-        if (req.query.end_date) { countSql += ` AND i.created_at <= $${pCount}`; countSqlParams.push(`${req.query.end_date} 23:59:59`); pCount++; }
-
-        const countResult = await db.query(countSql, countSqlParams);
+        // Counted before the page is sliced, and off the same clause, so the
+        // page count always matches what the caller is actually allowed to see.
+        const countResult = await db.query(
+            `SELECT COUNT(*) as total FROM issues i WHERE 1=1${where}`,
+            params
+        );
         const totalItems = parseInt(countResult.rows[0].total);
+
+        query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        const result = await db.query(query, [...params, limitNum, offset]);
+
         const totalPages = Math.ceil(totalItems / limitNum);
 
         res.json({
@@ -329,7 +327,7 @@ async function reloadAiCategories() {
 }
 
 // POST /api/admin/categories - Create a category
-router.post('/admin/categories', requireFullAdmin, async (req, res) => {
+router.post('/admin/categories', requireFullAdmin, attachScope, async (req, res) => {
     try {
         const { name, icon, color } = req.body;
         const trimmed = (name || '').trim();
@@ -360,7 +358,7 @@ router.post('/admin/categories', requireFullAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/categories/:id - Rename or restyle a category
-router.put('/admin/categories/:id', requireFullAdmin, async (req, res) => {
+router.put('/admin/categories/:id', requireFullAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
         const { name, icon, color } = req.body;
@@ -407,7 +405,7 @@ router.put('/admin/categories/:id', requireFullAdmin, async (req, res) => {
 });
 
 // DELETE /api/admin/categories/:id
-router.delete('/admin/categories/:id', requireFullAdmin, async (req, res) => {
+router.delete('/admin/categories/:id', requireFullAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -763,14 +761,23 @@ router.post('/admin/login', async (req, res) => {
 });
 
 // GET /api/admin/stats - Enhanced Admin Stats
-router.get('/admin/stats', requireAdmin, async (req, res) => {
+router.get('/admin/stats', requireAdmin, attachScope, async (req, res) => {
     try {
+        // Every figure below is scoped: an MDA dashboard showing platform-wide
+        // totals would misrepresent their workload and their resolution rate.
+        const catFilter = req.scope.unrestricted
+            ? ''
+            : (req.scope.categories.length
+                ? ` AND category IN (${req.scope.categories.map((c) => `'${c.replace(/'/g, "''")}'`).join(',')})`
+                : ' AND FALSE');
+
         // Reuse basic stats logic or call internal function if refactored
         // 1. Total Reports (This Week)
         const totalReportsResult = await db.query(`
             SELECT COUNT(*) as count 
             FROM issues 
             WHERE created_at >= date_trunc('week', CURRENT_DATE)
+            ${catFilter}
         `);
         const totalReports = parseInt(totalReportsResult.rows[0].count);
 
@@ -780,6 +787,7 @@ router.get('/admin/stats', requireAdmin, async (req, res) => {
             FROM issues 
             WHERE created_at >= date_trunc('week', CURRENT_DATE - INTERVAL '1 week')
             AND created_at < date_trunc('week', CURRENT_DATE)
+            ${catFilter}
         `);
         const lastWeekReports = parseInt(lastWeekReportsResult.rows[0].count);
         
@@ -791,16 +799,16 @@ router.get('/admin/stats', requireAdmin, async (req, res) => {
         }
 
         // 3. Resolved
-        const resolvedResult = await db.query("SELECT COUNT(*) as count FROM issues WHERE status = 'fixed'");
+        const resolvedResult = await db.query(`SELECT COUNT(*) as count FROM issues WHERE status = 'fixed' ${catFilter}`);
         const resolvedCount = parseInt(resolvedResult.rows[0].count);
 
         // 4. Resolution Rate
-        const allTimeResult = await db.query('SELECT COUNT(*) as count FROM issues');
+        const allTimeResult = await db.query(`SELECT COUNT(*) as count FROM issues WHERE 1=1 ${catFilter}`);
         const allTimeCount = parseInt(allTimeResult.rows[0].count);
         const resolutionRate = allTimeCount > 0 ? Math.round((resolvedCount / allTimeCount) * 100) : 0;
 
         // 5. Critical Pending
-        const criticalPendingResult = await db.query("SELECT COUNT(*) as count FROM issues WHERE status = 'critical'");
+        const criticalPendingResult = await db.query(`SELECT COUNT(*) as count FROM issues WHERE status = 'critical' ${catFilter}`);
         const criticalPendingCount = parseInt(criticalPendingResult.rows[0].count);
 
         // 6. Sentiment (Mocked for now)
@@ -823,7 +831,7 @@ router.get('/admin/stats', requireAdmin, async (req, res) => {
 });
 
 // GET /api/admin/insights - AI Insights & Alerts
-router.get('/admin/insights', requireAdmin, async (req, res) => {
+router.get('/admin/insights', requireAdmin, attachScope, async (req, res) => {
     try {
         const insights = [];
 
@@ -889,10 +897,19 @@ router.get('/admin/insights', requireAdmin, async (req, res) => {
 // wording and no coordinates, which keeps the report but leaves it off the map.
 // This is how an admin resolves that: they can read the description and the
 // photo, and usually know the area far better than a geocoder does.
-router.put('/admin/issues/:id/location', requireAdmin, async (req, res) => {
+router.put('/admin/issues/:id/location', requireAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
-        const { lat, lng, address, district, city, ward, admin_id } = req.body;
+        // An MDA may only act on reports in the categories it is responsible
+        // for. Checked per issue, because the id comes straight from the URL.
+        if (!(await canAccessIssue(req.scope, id))) {
+            return res.status(403).json({
+                success: false,
+                message: 'This report is not assigned to your institution.'
+            });
+        }
+
+        const { lat, lng, address, district, city, ward } = req.body;
 
         const latitude = Number(lat);
         const longitude = Number(lng);
@@ -934,7 +951,7 @@ router.put('/admin/issues/:id/location', requireAdmin, async (req, res) => {
         await db.query(
             `INSERT INTO issue_tracker (issue_id, action, description, performed_by)
              VALUES ($1, 'location_set', $2, $3)`,
-            [id, `Location set manually to ${latitude}, ${longitude}${address ? ` (${address})` : ''}`, admin_id || null]
+            [id, `Location set manually to ${latitude}, ${longitude}${address ? ` (${address})` : ''}`, req.admin.id]
         );
 
         res.json({ success: true, message: 'Location updated.' });
@@ -945,10 +962,19 @@ router.put('/admin/issues/:id/location', requireAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/issues/:id/status - Update Issue Status & Log History
-router.put('/admin/issues/:id/status', requireAdmin, async (req, res) => {
+router.put('/admin/issues/:id/status', requireAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
-        const { status, admin_id, note } = req.body;
+        // An MDA may only act on reports in the categories it is responsible
+        // for. Checked per issue, because the id comes straight from the URL.
+        if (!(await canAccessIssue(req.scope, id))) {
+            return res.status(403).json({
+                success: false,
+                message: 'This report is not assigned to your institution.'
+            });
+        }
+
+        const { status, note } = req.body;
 
         if (!status) {
             return res.status(400).json({ success: false, message: 'Status is required' });
@@ -999,7 +1025,7 @@ router.put('/admin/issues/:id/status', requireAdmin, async (req, res) => {
         await db.query(`
             INSERT INTO issue_tracker (issue_id, action, description, performed_by)
             VALUES ($1, $2, $3, $4)
-        `, [id, action, description, admin_id || null]);
+        `, [id, action, description, req.admin.id]);
 
         // Log for duplicates too
         const duplicates = await db.query('SELECT id FROM issues WHERE duplicate_of = $1', [id]);
@@ -1007,7 +1033,7 @@ router.put('/admin/issues/:id/status', requireAdmin, async (req, res) => {
             await db.query(`
                 INSERT INTO issue_tracker (issue_id, action, description, performed_by)
                 VALUES ($1, $2, $3, $4)
-            `, [dup.id, action, `Status synced from original: ${status}`, admin_id || null]);
+            `, [dup.id, action, `Status synced from original: ${status}`, req.admin.id]);
         }
 
         // 3. Notify Reporters via WhatsApp
@@ -1069,10 +1095,19 @@ router.put('/admin/issues/:id/status', requireAdmin, async (req, res) => {
 });
 
 // POST /api/admin/issues/:id/mark-duplicate - Mark an issue as duplicate
-router.post('/admin/issues/:id/mark-duplicate', requireAdmin, async (req, res) => {
+router.post('/admin/issues/:id/mark-duplicate', requireAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
-        const { original_issue_id, admin_id, note } = req.body;
+        // An MDA may only act on reports in the categories it is responsible
+        // for. Checked per issue, because the id comes straight from the URL.
+        if (!(await canAccessIssue(req.scope, id))) {
+            return res.status(403).json({
+                success: false,
+                message: 'This report is not assigned to your institution.'
+            });
+        }
+
+        const { original_issue_id, note } = req.body;
 
         if (!original_issue_id) {
             return res.status(400).json({ success: false, message: 'Original issue ID (parent issue) is required' });
@@ -1099,7 +1134,7 @@ router.post('/admin/issues/:id/mark-duplicate', requireAdmin, async (req, res) =
         await db.query(`
             INSERT INTO issue_tracker (issue_id, action, description, performed_by)
             VALUES ($1, 'duplicate', $2, $3)
-        `, [id, description, admin_id || null]);
+        `, [id, description, req.admin.id]);
 
         res.json({ success: true, message: 'Marked as duplicate successfully' });
 
@@ -1110,10 +1145,19 @@ router.post('/admin/issues/:id/mark-duplicate', requireAdmin, async (req, res) =
 });
 
 // PUT /api/admin/issues/:id/details - Edit Issue Details
-router.put('/admin/issues/:id/details', requireAdmin, async (req, res) => {
+router.put('/admin/issues/:id/details', requireAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
-        const { title, description, category, admin_id } = req.body;
+        // An MDA may only act on reports in the categories it is responsible
+        // for. Checked per issue, because the id comes straight from the URL.
+        if (!(await canAccessIssue(req.scope, id))) {
+            return res.status(403).json({
+                success: false,
+                message: 'This report is not assigned to your institution.'
+            });
+        }
+
+        const { title, description, category } = req.body;
 
         if (!title || !description || !category) {
             return res.status(400).json({ success: false, message: 'Title, description, and category are required' });
@@ -1134,7 +1178,7 @@ router.put('/admin/issues/:id/details', requireAdmin, async (req, res) => {
         await db.query(`
             INSERT INTO issue_tracker (issue_id, action, description, performed_by)
             VALUES ($1, 'edited', 'Issue details updated by admin', $2)
-        `, [id, admin_id || null]);
+        `, [id, req.admin.id]);
 
         res.json({ success: true, message: 'Issue details updated successfully' });
     } catch (err) {
@@ -1144,10 +1188,19 @@ router.put('/admin/issues/:id/details', requireAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/issues/:id/spam - Flag Issue as Spam
-router.put('/admin/issues/:id/spam', requireAdmin, async (req, res) => {
+router.put('/admin/issues/:id/spam', requireAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
-        const { admin_id, reason } = req.body;
+        // An MDA may only act on reports in the categories it is responsible
+        // for. Checked per issue, because the id comes straight from the URL.
+        if (!(await canAccessIssue(req.scope, id))) {
+            return res.status(403).json({
+                success: false,
+                message: 'This report is not assigned to your institution.'
+            });
+        }
+
+        const { reason } = req.body;
 
          // Update issue status to spam
         await db.query(`UPDATE issues SET status = 'spam', resolution_note = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [reason || 'Flagged as spam', id]);
@@ -1159,7 +1212,7 @@ router.put('/admin/issues/:id/spam', requireAdmin, async (req, res) => {
         await db.query(`
             INSERT INTO issue_tracker (issue_id, action, description, performed_by)
             VALUES ($1, 'flagged_spam', $2, $3)
-        `, [id, reason || 'Flagged as Spam', admin_id || null]);
+        `, [id, reason || 'Flagged as Spam', req.admin.id]);
         
         // Notify Reporter
          try {
@@ -1193,10 +1246,10 @@ router.put('/admin/issues/:id/spam', requireAdmin, async (req, res) => {
 });
 
 // POST /api/admin/issues/:id/unlink-duplicate - Unlink a duplicate issue
-router.post('/admin/issues/:id/unlink-duplicate', requireAdmin, async (req, res) => {
+router.post('/admin/issues/:id/unlink-duplicate', requireAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
-        const { admin_id, note } = req.body;
+        const { note } = req.body;
 
         // 1. Update issue
         await db.query('UPDATE issues SET duplicate_of = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
@@ -1206,7 +1259,7 @@ router.post('/admin/issues/:id/unlink-duplicate', requireAdmin, async (req, res)
         await db.query(`
             INSERT INTO issue_tracker (issue_id, action, description, performed_by)
             VALUES ($1, $2, $3, $4)
-        `, [id, 'unlinked_duplicate', description, admin_id || null]);
+        `, [id, 'unlinked_duplicate', description, req.admin.id]);
 
         res.json({ success: true, message: 'Issue unlinked successfully' });
     } catch (err) {
@@ -1220,7 +1273,7 @@ router.post('/admin/issues/:id/unlink-duplicate', requireAdmin, async (req, res)
 // ==========================================
 
 // GET /api/admin/users - List users with roles and groups
-router.get('/admin/users', requireFullAdmin, async (req, res) => {
+router.get('/admin/users', requireAdmin, attachScope, async (req, res) => {
     try {
         const { search, role, group, sort, page = 1, limit = 8 } = req.query;
         const pageNum = parseInt(page);
@@ -1231,6 +1284,17 @@ router.get('/admin/users', requireFullAdmin, async (req, res) => {
         let filterClauses = ' WHERE 1=1';
         const filterParams = [];
         let pCount = 1;
+
+        // An MDA user may view their own colleagues, not the whole directory.
+        if (!req.scope.unrestricted) {
+            if (req.scope.groupIds.length === 0) {
+                filterClauses += ' AND FALSE';
+            } else {
+                filterClauses += ` AND u.id IN (SELECT user_id FROM user_groups WHERE group_id = ANY($${pCount}))`;
+                filterParams.push(req.scope.groupIds);
+                pCount++;
+            }
+        }
 
         if (search) {
             filterClauses += ` AND (u.name ILIKE $${pCount} OR u.phone_number ILIKE $${pCount})`;
@@ -1317,7 +1381,7 @@ router.get('/admin/users', requireFullAdmin, async (req, res) => {
 });
 
 // POST /api/admin/users/:id/penalize - Admin Penalty Route
-router.post('/admin/users/:id/penalize', requireFullAdmin, async (req, res) => {
+router.post('/admin/users/:id/penalize', requireFullAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
         const { amount, reason } = req.body;
@@ -1360,7 +1424,7 @@ router.post('/admin/users/:id/penalize', requireFullAdmin, async (req, res) => {
 
 
 // POST /api/admin/users - Create User
-router.post('/admin/users', requireFullAdmin, async (req, res) => {
+router.post('/admin/users', requireFullAdmin, attachScope, async (req, res) => {
     try {
         const { phone_number, name, password, roles, groups } = req.body;
         if (!phone_number) return res.status(400).json({ error: 'Phone number is required' });
@@ -1408,13 +1472,13 @@ router.post('/admin/users', requireFullAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/users/:id - Update User
-router.put('/admin/users/:id', requireFullAdmin, async (req, res) => {
+router.put('/admin/users/:id', requireFullAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, phone_number, is_disabled, roles, groups, password, admin_id } = req.body;
+        const { name, phone_number, is_disabled, roles, groups, password } = req.body;
 
         // 1. Prevent self-disabling
-        if (id == admin_id && is_disabled === true) {
+        if (id == req.admin.id && is_disabled === true) {
             return res.status(400).json({ error: 'You cannot disable your own account' });
         }
 
@@ -1468,13 +1532,12 @@ router.put('/admin/users/:id', requireFullAdmin, async (req, res) => {
 });
 
 // DELETE /api/admin/users/:id - Remove User
-router.delete('/admin/users/:id', requireFullAdmin, async (req, res) => {
+router.delete('/admin/users/:id', requireFullAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
-        const { admin_id } = req.query;
 
         // Prevent self-deletion
-        if (id == admin_id) {
+        if (id == req.admin.id) {
             return res.status(400).json({ error: 'You cannot delete your own account' });
         }
 
@@ -1487,7 +1550,7 @@ router.delete('/admin/users/:id', requireFullAdmin, async (req, res) => {
 });
 
 // GET /api/admin/roles
-router.get('/admin/roles', requireAdmin, async (req, res) => {
+router.get('/admin/roles', requireAdmin, attachScope, async (req, res) => {
     try {
         const result = await db.query('SELECT name FROM roles ORDER BY name ASC');
         res.json(result.rows.map(r => r.name));
@@ -1498,8 +1561,15 @@ router.get('/admin/roles', requireAdmin, async (req, res) => {
 });
 
 // GET /api/admin/groups
-router.get('/admin/groups', requireFullAdmin, async (req, res) => {
+router.get('/admin/groups', requireAdmin, attachScope, async (req, res) => {
     try {
+        // MDA users see the groups they belong to; full Admins see all.
+        const groupFilter = req.scope.unrestricted
+            ? ''
+            : (req.scope.groupIds.length ? ' WHERE g.id = ANY($1)' : ' WHERE FALSE');
+        const groupParams = (!req.scope.unrestricted && req.scope.groupIds.length)
+            ? [req.scope.groupIds] : [];
+
         const result = await db.query(`
             SELECT 
                 g.*, 
@@ -1513,9 +1583,10 @@ router.get('/admin/groups', requireFullAdmin, async (req, res) => {
             LEFT JOIN user_groups ug ON g.id = ug.group_id
             LEFT JOIN category_groups cg ON g.id = cg.group_id
             LEFT JOIN categories c ON cg.category_id = c.id
+            ${groupFilter}
             GROUP BY g.id
             ORDER BY g.name ASC
-        `);
+        `, groupParams);
         res.json(result.rows);
     } catch (err) {
         console.error(err);
@@ -1524,7 +1595,7 @@ router.get('/admin/groups', requireFullAdmin, async (req, res) => {
 });
 
 // POST /api/admin/groups
-router.post('/admin/groups', requireFullAdmin, async (req, res) => {
+router.post('/admin/groups', requireFullAdmin, attachScope, async (req, res) => {
     try {
         const { name, description, categories, lead_categories, is_default } = req.body; // categories is now array of IDs
 
@@ -1560,7 +1631,7 @@ router.post('/admin/groups', requireFullAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/groups/:id
-router.put('/admin/groups/:id', requireFullAdmin, async (req, res) => {
+router.put('/admin/groups/:id', requireFullAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
         const { name, description, categories, lead_categories, is_default } = req.body;
@@ -1601,7 +1672,7 @@ router.put('/admin/groups/:id', requireFullAdmin, async (req, res) => {
 });
 
 // DELETE /api/admin/groups/:id
-router.delete('/admin/groups/:id', requireFullAdmin, async (req, res) => {
+router.delete('/admin/groups/:id', requireFullAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -1624,9 +1695,9 @@ router.delete('/admin/groups/:id', requireFullAdmin, async (req, res) => {
 // ==========================================
 
 // GET /api/admin/feedback
-router.get('/admin/feedback', requireAdmin, async (req, res) => {
+router.get('/admin/feedback', requireAdmin, attachScope, async (req, res) => {
     try {
-        const feedback = await fixamHandler.fixamDb.getFeedback();
+        const feedback = await fixamHandler.fixamDb.getFeedback(req.scope);
         res.json(feedback);
     } catch (err) {
         console.error(err);
@@ -1634,10 +1705,153 @@ router.get('/admin/feedback', requireAdmin, async (req, res) => {
     }
 });
 
-// POST /api/admin/feedback/:id/acknowledge
-router.post('/admin/feedback/:id/acknowledge', requireAdmin, async (req, res) => {
+/**
+ * Can this caller act on this piece of feedback?
+ *
+ * Same rule as reports: an MDA acts on what is routed to it. Platform feedback
+ * and unclassified feedback belong to the Admins.
+ */
+async function canAccessFeedback(scope, feedbackId) {
+    if (scope.unrestricted) return true;
+    if (!scope.groupIds || scope.groupIds.length === 0) return false;
+
+    const result = await db.query(
+        'SELECT scope, routed_group_id FROM feedback WHERE id = $1',
+        [feedbackId]
+    );
+    if (result.rows.length === 0) return false;
+
+    const row = result.rows[0];
+    return row.scope === 'service' && scope.groupIds.includes(row.routed_group_id);
+}
+
+// PUT /api/admin/feedback/:id/routing - Admin override of where feedback goes.
+//
+// Full Admin only. Routing decides which institution is answerable for a piece
+// of feedback, so an MDA being able to push its own feedback elsewhere would
+// defeat the point of routing it there.
+router.put('/admin/feedback/:id/routing', requireFullAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
+        const { scope, category } = req.body;
+
+        if (!['platform', 'service', 'unclassified'].includes(scope)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Scope must be platform, service or unclassified.'
+            });
+        }
+
+        let groupId = null;
+        if (scope === 'service') {
+            if (!category) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Service feedback needs a category so it can reach an MDA.'
+                });
+            }
+            groupId = await fixamHandler.fixamDb.getLeadGroupForCategory(category);
+            if (!groupId) {
+                return res.status(400).json({
+                    success: false,
+                    message: `No MDA is mapped to "${category}". Assign one under Categories first.`
+                });
+            }
+        }
+
+        const ok = await fixamHandler.fixamDb.setFeedbackRouting(id, {
+            scope,
+            category: scope === 'service' ? category : null,
+            groupId,
+            source: 'admin',
+            confidence: null,
+            adminId: req.admin.id
+        });
+
+        if (!ok) return res.status(404).json({ success: false, message: 'Feedback not found' });
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// POST /api/admin/feedback/classify - Classify everything still unclassified.
+//
+// Covers the backlog that arrived before routing existed, and anything the AI
+// service was down for. Only touches unclassified rows: a decision an admin
+// already made is not something a model gets to revisit.
+router.post('/admin/feedback/classify', requireFullAdmin, attachScope, async (req, res) => {
+    try {
+        const pending = await db.query(
+            `SELECT id, content, transcription FROM feedback
+             WHERE scope IS NULL OR scope IN ('unclassified', 'suggested')`
+        );
+
+        let routed = 0;
+        let suggested = 0;
+        let left = 0;
+        let failed = 0;
+
+        for (const row of pending.rows) {
+            const text = (row.transcription || row.content || '').trim();
+            if (!text) { left++; continue; }
+
+            const analysis = await aiService.analyzeFeedback(text);
+            if (!analysis) { failed++; continue; }
+
+            if (analysis.auto_routable) {
+                // Platform feedback: filed, because its destination is fixed.
+                await fixamHandler.fixamDb.setFeedbackRouting(row.id, {
+                    scope: 'platform',
+                    category: null,
+                    groupId: null,
+                    source: 'ai',
+                    confidence: analysis.confidence,
+                    adminId: null
+                });
+                routed++;
+            } else if (analysis.scope === 'service') {
+                // Service feedback: suggested, because the category guess is
+                // not accurate enough to put in front of an MDA unreviewed.
+                await fixamHandler.fixamDb.setFeedbackRouting(row.id, {
+                    scope: 'suggested',
+                    category: analysis.suggested_category,
+                    groupId: null,
+                    source: 'ai_suggested',
+                    confidence: analysis.confidence,
+                    adminId: null
+                });
+                suggested++;
+            } else {
+                left++;
+            }
+        }
+
+        res.json({
+            success: true,
+            examined: pending.rows.length,
+            routed,
+            suggested,
+            needs_review: left,
+            failed
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// POST /api/admin/feedback/:id/acknowledge
+router.post('/admin/feedback/:id/acknowledge', requireAdmin, attachScope, async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!(await canAccessFeedback(req.scope, id))) {
+            return res.status(403).json({
+                success: false,
+                message: 'This feedback is not routed to your institution.'
+            });
+        }
         const success = await fixamHandler.fixamDb.acknowledgeFeedback(id);
         if (success) {
             res.json({ success: true });

@@ -572,7 +572,7 @@ class FixamHandler {
                              const feedback = entities.feedback_text;
 
                              if (feedback) {
-                                 await this.fixamDb.createFeedback(user.id, 'text', feedback);
+                                 await this.saveFeedback(user.id, 'text', feedback);
                                  await this.sendMessage(fromNumber, "Thank you for your feedback! 🙏\n\nI've saved it.");
                                  await this.sendMainMenu(fromNumber, user.name);
                              } else {
@@ -678,7 +678,7 @@ class FixamHandler {
 
             case 'awaiting_feedback':
                 // Text Feedback
-                await this.fixamDb.createFeedback(user.id, 'text', input);
+                await this.saveFeedback(user.id, 'text', input);
                 await this.sendMessage(fromNumber, "Thank you for your feedback! 🙏\n\nWe appreciate you helping us improve Fixam.");
                 await this.sendMainMenu(fromNumber, user.name);
                 break;
@@ -1745,7 +1745,7 @@ class FixamHandler {
             }
 
             const user = await this.fixamDb.getUser(fromNumber);
-            await this.fixamDb.createFeedback(user.id, 'audio', transcribedText, mediaUrl, transcribedText);
+            await this.saveFeedback(user.id, 'audio', transcribedText, mediaUrl, transcribedText);
             await this.sendMessage(fromNumber, "Thank you for your voice feedback! 🙏\n\nWe appreciate you helping us improve Fixam.");
             await this.sendMainMenu(fromNumber, user.name);
         } else {
@@ -1982,6 +1982,52 @@ class FixamHandler {
                 }
             }
         }
+    }
+
+    /**
+     * Save feedback, working out who should receive it first.
+     *
+     * Classification is best-effort. If the AI service is unreachable the
+     * feedback is still saved, just unclassified -- losing a citizen's feedback
+     * because a model was down would be a far worse failure than an admin
+     * having to route it by hand.
+     */
+    async saveFeedback(userId, type, content, mediaUrl = null, transcription = null) {
+        const text = (transcription || content || '').trim();
+        let routing = null;
+
+        if (text) {
+            try {
+                const analysis = await aiService.analyzeFeedback(text);
+
+                if (analysis && analysis.auto_routable) {
+                    // Platform feedback only. This is the half the model gets
+                    // right, and it has a fixed destination -- MoCTI and DSTI --
+                    // so there is no institution to get wrong.
+                    routing = {
+                        scope: 'platform',
+                        source: 'ai',
+                        confidence: analysis.confidence
+                    };
+                } else if (analysis && analysis.scope === 'service') {
+                    // A service complaint carries a suggested category but no
+                    // MDA. It waits in the admin queue until someone confirms
+                    // where it goes: the category guess is right about five
+                    // times in eight, which is useful as a starting point and
+                    // not good enough to file against an institution.
+                    routing = {
+                        scope: 'suggested',
+                        category: analysis.suggested_category,
+                        source: 'ai_suggested',
+                        confidence: analysis.confidence
+                    };
+                }
+            } catch (err) {
+                logger.logError('feedback', 'Feedback routing failed', err);
+            }
+        }
+
+        return this.fixamDb.createFeedback(userId, type, content, mediaUrl, transcription, routing);
     }
 
     async sendMessage(to, body) {

@@ -184,9 +184,33 @@ async function transcribeAudio(buffer, filename, contentType) {
     });
 }
 
+/**
+ * Decide who a piece of feedback belongs to.
+ *
+ * Returns the suggested destination, or null when the AI service cannot be
+ * reached. Null is deliberate: feedback that could not be classified stays
+ * unclassified and waits for an admin, rather than defaulting into a queue
+ * where it would look triaged when nobody has looked at it.
+ */
+async function analyzeFeedback(text) {
+    return lightTaskQueue.add(async () => {
+        try {
+            const response = await axios.post(`${LOCAL_AI_URL}/analyze-feedback`, { text }, {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 5000
+            });
+            return response.data;
+        } catch (error) {
+            logger.logError('ai_debug', 'AI Feedback Routing Error', error);
+            return null;
+        }
+    });
+}
+
 module.exports = {
     analyzeIssue,
     analyzeIntent,
+    analyzeFeedback,
     checkDuration,
     classifyImage,
     detectMinor,
