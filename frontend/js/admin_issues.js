@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (urlParams.search) document.getElementById('issue-search').value = urlParams.search;
         if (urlParams.category) document.getElementById('issue-filter-category').value = urlParams.category;
         if (urlParams.status) document.getElementById('issue-filter-status').value = urlParams.status;
+        if (urlParams.urgency) document.getElementById('issue-filter-urgency').value = urlParams.urgency;
         if (urlParams.start_date) document.getElementById('issue-filter-start').value = urlParams.start_date;
         if (urlParams.end_date) document.getElementById('issue-filter-end').value = urlParams.end_date;
         if (urlParams.sort) document.getElementById('issue-sort').value = urlParams.sort;
@@ -48,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const exportBtn = document.getElementById('btn-export-issues');
     if (exportBtn) exportBtn.addEventListener('click', openExportModal);
 
-    ['issue-filter-category', 'issue-filter-state', 'issue-filter-status', 'issue-filter-start', 'issue-filter-end', 'issue-sort'].forEach(id => {
+    ['issue-filter-category', 'issue-filter-state', 'issue-filter-status', 'issue-filter-urgency', 'issue-filter-start', 'issue-filter-end', 'issue-sort'].forEach(id => {
         document.getElementById(id).addEventListener('change', () => { 
             issuePage = 1; 
             syncFiltersToURL();
@@ -78,6 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('issue-search').value = '';
             document.getElementById('issue-filter-category').value = '';
             document.getElementById('issue-filter-status').value = '';
+            document.getElementById('issue-filter-urgency').value = '';
             document.getElementById('issue-filter-state').value = 'open';
             document.getElementById('issue-filter-start').value = '';
             document.getElementById('issue-filter-end').value = '';
@@ -233,6 +235,7 @@ function syncFiltersToURL() {
     const searchEl = document.getElementById('issue-search');
     const catEl = document.getElementById('issue-filter-category');
     const statusEl = document.getElementById('issue-filter-status');
+    const urgencyEl = document.getElementById('issue-filter-urgency');
     const startEl = document.getElementById('issue-filter-start');
     const endEl = document.getElementById('issue-filter-end');
     const sortEl = document.getElementById('issue-sort');
@@ -243,6 +246,7 @@ function syncFiltersToURL() {
         search: searchEl.value,
         category: catEl.value,
         status: statusEl.value,
+        urgency: urgencyEl.value,
         start_date: startEl.value,
         end_date: endEl.value,
         sort: sortEl.value,
@@ -301,6 +305,7 @@ function describeActiveFilters() {
     const category = document.getElementById('issue-filter-category').value;
     const state = document.getElementById('issue-filter-state').value;
     const status = document.getElementById('issue-filter-status').value;
+    const urgency = document.getElementById('issue-filter-urgency').value;
     const search = document.getElementById('issue-search').value.trim();
 
     if (category) parts.push(`category "${category}"`);
@@ -308,6 +313,7 @@ function describeActiveFilters() {
     else if (state === 'closed') parts.push('closed only');
     else if (state === 'disputed') parts.push('disputed resolutions only');
     if (status) parts.push(`status "${status}"`);
+    if (urgency) parts.push(`urgency "${urgency}"`);
     if (search) parts.push(`matching "${search}"`);
 
     return parts.length ? `, filtered to ${parts.join(', ')}` : '';
@@ -344,6 +350,23 @@ async function runExport() {
     const params = new URLSearchParams();
     if (name) params.append('include_name', 'true');
     if (phone) params.append('include_phone', 'true');
+
+    // The modal has just told the admin the file will be "filtered to category
+    // X, status Y". It has to actually be: the filters were being described but
+    // not sent, so an MDA narrowing to one category still downloaded every
+    // report it could see, and had no way to notice from the file itself.
+    const carry = {
+        search: 'issue-search',
+        category: 'issue-filter-category',
+        status: 'issue-filter-status',
+        urgency: 'issue-filter-urgency',
+        state: 'issue-filter-state'
+    };
+    Object.entries(carry).forEach(([param, id]) => {
+        const value = document.getElementById(id)?.value.trim();
+        if (value && value !== 'All') params.append(param, value);
+    });
+
     const query = params.toString();
 
     btn.disabled = true;
@@ -355,7 +378,7 @@ async function runExport() {
         const res = await fetch(`${API_BASE_URL}/admin/export/issues.csv${query ? '?' + query : ''}`);
         if (!res.ok) {
             const body = await res.json().catch(() => ({}));
-            alert(body.message || `Export failed (${res.status}).`);
+            showAlert(body.message || `Export failed (${res.status}).`);
             return;
         }
 
@@ -369,7 +392,7 @@ async function runExport() {
         URL.revokeObjectURL(link.href);
         closeExportModal();
     } catch (err) {
-        alert('Connection error while exporting.');
+        showAlert('Connection error while exporting.');
     } finally {
         btn.disabled = false;
         btn.innerHTML = original;
@@ -380,6 +403,7 @@ async function loadIssues() {
     const search = document.getElementById('issue-search').value;
     const category = document.getElementById('issue-filter-category').value;
     const status = document.getElementById('issue-filter-status').value;
+    const urgency = document.getElementById('issue-filter-urgency').value;
     const state = document.getElementById('issue-filter-state').value;
     const start = document.getElementById('issue-filter-start').value;
     const end = document.getElementById('issue-filter-end').value;
@@ -391,6 +415,7 @@ async function loadIssues() {
     if (search) params.append('search', search);
     if (category && category !== 'All') params.append('category', category);
     if (status) params.append('status', status);
+    if (urgency) params.append('urgency', urgency);
     if (state) params.append('state', state);
     if (start) params.append('start_date', start);
     if (end) params.append('end_date', end);
@@ -777,14 +802,36 @@ function formatLifecycleFlags(issue) {
     return html;
 }
 
+/**
+ * Urgency is how bad the problem is. Status is how far the work has got. The
+ * portal used to show only status, and status started life as the word
+ * "critical" -- so a report the AI had judged *low* urgency was displayed to
+ * staff as critical, while the citizen who sent it had been told low. Same
+ * report, two contradictory answers, and no way to tell which was meant.
+ *
+ * Showing urgency in its own column is what makes the two readable as separate
+ * facts. The wording matches what the citizen sees over WhatsApp.
+ */
+function formatUrgency(urgency) {
+    const badges = {
+        critical: { label: 'Critical', color: 'var(--admin-danger)' },
+        high: { label: 'High', color: 'var(--admin-warning)' },
+        medium: { label: 'Medium', color: 'var(--admin-text-muted)' },
+        low: { label: 'Low', color: 'var(--admin-text-muted)' }
+    };
+    const badge = badges[urgency];
+    if (!badge) return '<span style="color: var(--admin-text-muted);">—</span>';
+    return `<span style="color: ${badge.color}; font-weight: 600;">${badge.label}</span>`;
+}
+
 function renderIssuesTable(issues) {
     const tbody = document.getElementById('issues-table-body');
     tbody.innerHTML = '';
     if (!issues || issues.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="padding: 2rem; text-align: center; color: var(--admin-text-muted);">No issues found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="padding: 2rem; text-align: center; color: var(--admin-text-muted);">No issues found</td></tr>';
         return;
     }
-    const statusColors = { 'critical': 'var(--admin-danger)', 'progress': 'var(--admin-warning)', 'fixed': 'var(--admin-success)', 'acknowledged': 'var(--admin-primary)', 'spam': 'var(--admin-danger)' };
+    const statusColors = { 'reported': 'var(--admin-text-muted)', 'progress': 'var(--admin-warning)', 'fixed': 'var(--admin-success)', 'acknowledged': 'var(--admin-primary)', 'spam': 'var(--admin-danger)' };
     issues.forEach(issue => {
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid var(--admin-border)';
@@ -794,6 +841,7 @@ function renderIssuesTable(issues) {
             <td data-label="Title" style="padding: 1rem; font-weight: 500;">${escapeHtml(issue.title)} ${formatEvidenceFlags(issue)}</td>
             <td data-label="Location" style="padding: 1rem; color: var(--admin-text-muted);">${formatIssueLocation(issue)}</td>
             <td data-label="Votes" style="padding: 1rem;">${issue.upvotes || 0}</td>
+            <td data-label="Urgency" style="padding: 1rem;">${formatUrgency(issue.urgency)}</td>
             <td data-label="Status" style="padding: 1rem;">
                 <span style="color: ${statusColors[issue.status] || 'white'}; font-weight: 600; text-transform: capitalize;">${issue.status}</span>
                 ${formatLifecycleFlags(issue)}
@@ -860,12 +908,12 @@ async function closeIssueReport() {
     const reason = document.getElementById('closure-reason').value;
     const note = document.getElementById('closure-note').value.trim();
 
-    if (!reason) { alert('Choose why this report is being closed.'); return; }
+    if (!reason) { showAlert('Choose why this report is being closed.'); return; }
     if (!note) {
-        alert('Please explain why nothing further will happen. This is sent to the citizen and shown publicly.');
+        showAlert('Please explain why nothing further will happen. This is sent to the citizen and shown publicly.');
         return;
     }
-    if (!confirm('Close this report without resolving it? The citizen will be told, with your explanation.')) return;
+    if (!await showConfirm('Close this report without resolving it? The citizen will be told, with your explanation.')) return;
 
     try {
         const res = await fetch(`${API_BASE_URL}/admin/issues/${currentIssueId}/close`, {
@@ -878,17 +926,17 @@ async function closeIssueReport() {
             openIssueDetails(currentIssueId);
             loadIssues();
         } else {
-            alert(data.message || 'Could not close the report.');
+            showAlert(data.message || 'Could not close the report.');
         }
     } catch (err) {
-        alert('Connection error while closing the report.');
+        showAlert('Connection error while closing the report.');
     }
 }
 
 async function reopenIssueReport() {
     if (!currentIssueId) return;
     const note = document.getElementById('reopen-note').value.trim();
-    if (!note) { alert('Please say why this report is being reopened.'); return; }
+    if (!note) { showAlert('Please say why this report is being reopened.'); return; }
 
     try {
         const res = await fetch(`${API_BASE_URL}/admin/issues/${currentIssueId}/reopen`, {
@@ -902,10 +950,10 @@ async function reopenIssueReport() {
             openIssueDetails(currentIssueId);
             loadIssues();
         } else {
-            alert(data.message || 'Could not reopen the report.');
+            showAlert(data.message || 'Could not reopen the report.');
         }
     } catch (err) {
-        alert('Connection error while reopening the report.');
+        showAlert('Connection error while reopening the report.');
     }
 }
 
@@ -1183,9 +1231,18 @@ async function openIssueDetails(id) {
             renderIssueMedia(issue);
 
             const statusEl = document.getElementById('modal-status');
-            const statusColors = { 'critical': 'var(--admin-danger)', 'progress': 'var(--admin-warning)', 'fixed': 'var(--admin-success)', 'duplicate': 'var(--admin-warning)', 'spam': 'var(--admin-danger)' };
+            const statusColors = { 'reported': 'var(--admin-text-muted)', 'progress': 'var(--admin-warning)', 'fixed': 'var(--admin-success)', 'duplicate': 'var(--admin-warning)', 'spam': 'var(--admin-danger)' };
             statusEl.style.background = statusColors[issue.status] || 'rgba(255,255,255,0.1)';
             statusEl.style.color = 'white';
+
+            // Shown beside the status, never merged into it. Staff acting on
+            // this report need to see the same urgency the citizen was told.
+            const urgencyEl = document.getElementById('modal-urgency');
+            if (urgencyEl) {
+                urgencyEl.innerHTML = issue.urgency
+                    ? `Urgency: ${formatUrgency(issue.urgency)}`
+                    : 'Urgency: not set';
+            }
             
             if (issue.duplicate_of) {
                 // Find parent ticket ID
@@ -1382,7 +1439,7 @@ async function executeStatusUpdate(newStatus, note) {
             openIssueDetails(currentIssueId);
             loadIssues();
         } else { 
-            alert(data.message || 'Failed to update status'); 
+            showAlert(data.message || 'Failed to update status'); 
         }
     } catch (err) { 
         console.error('Error updating status:', err); 
@@ -1392,7 +1449,7 @@ async function executeStatusUpdate(newStatus, note) {
 async function markAsDuplicate() {
     if (!currentIssueId) return;
     const parentTicketId = document.getElementById('duplicate-ticket-input').value.trim().toUpperCase();
-    if (!parentTicketId) return alert('Please enter a parent Ticket ID');
+    if (!parentTicketId) return showAlert('Please enter a parent Ticket ID');
 
     const adminUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
     
@@ -1403,13 +1460,13 @@ async function markAsDuplicate() {
         const parentIssues = Array.isArray(searchData) ? searchData : searchData.data;
         
         if (!parentIssues || parentIssues.length === 0) {
-            return alert('Parent Issue not found. Please check the Ticket ID.');
+            return showAlert('Parent Issue not found. Please check the Ticket ID.');
         }
         
         const parentIssue = parentIssues[0];
         
         if (parentIssue.id === currentIssueId) {
-            return alert('An issue cannot be a duplicate of itself.');
+            return showAlert('An issue cannot be a duplicate of itself.');
         }
 
         const res = await fetch(`${API_BASE_URL}/admin/issues/${currentIssueId}/mark-duplicate`, {
@@ -1428,7 +1485,7 @@ async function markAsDuplicate() {
             openIssueDetails(currentIssueId);
             loadIssues();
         } else {
-            alert(data.message || 'Failed to mark as duplicate');
+            showAlert(data.message || 'Failed to mark as duplicate');
         }
     } catch (err) {
         console.error('Error marking as duplicate:', err);
@@ -1436,7 +1493,7 @@ async function markAsDuplicate() {
 }
 
 async function unlinkDuplicate() {
-    if (!currentIssueId || !confirm('Are you sure you want to unlink this issue? It will become a unique issue again.')) return;
+    if (!currentIssueId || !await showConfirm('Are you sure you want to unlink this issue? It will become a unique issue again.')) return;
     
     const adminUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
     
@@ -1455,7 +1512,7 @@ async function unlinkDuplicate() {
             openIssueDetails(currentIssueId);
             loadIssues();
         } else {
-            alert(data.message || 'Failed to unlink duplicate');
+            showAlert(data.message || 'Failed to unlink duplicate');
         }
     } catch (err) {
         console.error('Error unlinking duplicate:', err);
@@ -1516,7 +1573,7 @@ async function saveIssueDetails() {
     const category = document.getElementById('edit-category').value;
     
     if (!title || !description || !category) {
-        alert('All fields are required.');
+        showAlert('All fields are required.');
         return;
     }
 
@@ -1541,11 +1598,11 @@ async function saveIssueDetails() {
             openIssueDetails(currentIssueId); // Reload details
             loadIssues(); // Refresh list background
         } else {
-            alert(data.message || 'Failed to update issue');
+            showAlert(data.message || 'Failed to update issue');
         }
     } catch (err) {
         console.error('Error saving issue details:', err);
-        alert('An error occurred while saving.');
+        showAlert('An error occurred while saving.');
     }
 }
 
@@ -1617,15 +1674,12 @@ async function executeSpamFlag(reason) {
              
             closeModal();
             loadIssues();
-            
-            // Optional: Show success toast/alert
-            // alert('Issue flagged as SPAM.'); // User asked for modal, but a success feedback is fine. 
         } else {
-            alert(data.message || 'Failed to flag as spam');
+            showAlert(data.message || 'Failed to flag as spam');
         }
     } catch (err) {
         console.error('Error flagging spam:', err);
-        alert('An error occurred.');
+        showAlert('An error occurred.');
     }
 }
 

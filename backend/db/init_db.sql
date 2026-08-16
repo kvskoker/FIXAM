@@ -141,7 +141,10 @@ CREATE TABLE IF NOT EXISTS issues (
     image_url TEXT,
     audio_url TEXT,
     reported_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    status VARCHAR(20) DEFAULT 'critical', -- critical, acknowledged, in_progress, fixed
+    -- Where the report has got to. How urgent the problem is lives in the
+    -- urgency column; keeping an urgency word here made a low-urgency report
+    -- display as 'critical' in the portal.
+    status VARCHAR(20) DEFAULT 'reported', -- reported, acknowledged, progress, fixed, spam
     urgency VARCHAR(20) DEFAULT 'medium',
     duplicate_of INTEGER REFERENCES issues(id) ON DELETE SET NULL,
     resolution_note TEXT,

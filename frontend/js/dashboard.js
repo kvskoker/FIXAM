@@ -124,7 +124,7 @@ function renderStats(stats) {
 }
 
 function renderPriorityList(issues) {
-    const criticalIssues = issues.filter(i => i.status === 'critical').slice(0, 3);
+    const criticalIssues = issues.filter(i => i.urgency === 'critical' && !['fixed', 'spam'].includes(i.status)).slice(0, 3);
 
     criticalIssues.forEach(issue => {
         const item = document.createElement('div');

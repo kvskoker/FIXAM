@@ -25,7 +25,7 @@ const cities = [
 const roads = ['Jomo Kenyatta Rd', 'Siaka Stevens St', 'Wilkinson Rd', 'Bai Bureh Rd', 'Main Highway', 'Market St', 'Hospital Rd', 'King Harman Rd'];
 const areas = ['East End', 'West End', 'Central Central', 'Mountain View', 'Lowcost Housing', 'Fisheries', 'Reservation Area'];
 
-const statuses = ['critical', 'progress', 'fixed', 'acknowledged'];
+const statuses = ['reported', 'progress', 'fixed', 'acknowledged'];
 
 function randomDate(start, end) {
     return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
@@ -35,8 +35,17 @@ function formatDate(date) {
     return date.toISOString().slice(0, 19).replace('T', ' ');
 }
 
-function generateTicketId(index) {
-    return `FIX${String(index + 1).padStart(7, '0')}`;
+function generateTicketId() {
+    // Same format the real generator produces (services/fixamHelpers.js):
+    // FIX- followed by six alphanumeric characters. The old FIX0000001 style
+    // made every seed run reintroduce an ID shape the live database no longer
+    // uses.
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < 6; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return `FIX-${result}`;
 }
 
 const userNames = [
@@ -46,14 +55,9 @@ const userNames = [
     'Kallon', 'Lamin', 'Bunjun', 'Fofanah', 'Tarawallie', 'Sheriff', 'Gbla', 'Dumbuya', 'Carew', 'Mason'
 ];
 
-const crypto = require('crypto');
+const { hashPassword } = require('../services/authService');
 
-function hashPassword(password, phone) {
-    if (!password || !phone) return null;
-    return crypto.createHash('sha512').update(password + phone).digest('hex');
-}
-
-function generateMockData() {
+async function generateMockData() {
     let sql = `-- Extended Mock Data Generated on ${new Date().toISOString()}\n\n`;
 
     // 0. Clear existing data
@@ -68,7 +72,10 @@ function generateMockData() {
     // Default Super Admin
     const adminPhone = process.env.SUPER_ADMIN_PHONE || '23200000000';
     const adminPass = process.env.SUPER_ADMIN_PASSWORD || 'Adm1n@Fixam';
-    const adminPassHash = hashPassword(adminPass, adminPhone);
+    // bcrypt, matching the login path. The old SHA-512-with-phone-salt hash is
+    // only accepted through the legacy fallback that upgrades old accounts; a
+    // fresh seed should not depend on it.
+    const adminPassHash = await hashPassword(adminPass);
     sql += `('${adminPhone}', 'Super Admin', (SELECT id FROM roles WHERE name = 'Admin'), '${adminPassHash}', '2025-01-01 00:00:00'),\n`;
     users.push({ id: 1, name: 'Super Admin', phone: adminPhone });
 
@@ -172,6 +179,10 @@ SELECT id, role_id FROM users WHERE role_id IS NOT NULL;\n\n`;
     return sql;
 }
 
-const mockSql = generateMockData();
-fs.writeFileSync('c:/Users/kenne/Documents/KVSK/MaxCIT/Projects/FIXAM/Codebase/backend/db/mock_data.sql', mockSql);
-console.log('Successfully expanded mock_data.sql');
+async function main() {
+    const mockSql = await generateMockData();
+    fs.writeFileSync('c:/Users/kenne/Documents/KVSK/MaxCIT/Projects/FIXAM/Codebase/backend/db/mock_data.sql', mockSql);
+    console.log('Successfully expanded mock_data.sql');
+}
+
+main();

@@ -207,6 +207,33 @@ async function analyzeFeedback(text) {
     });
 }
 
+/**
+ * How similar is a new report to each candidate text?
+ *
+ * Used by duplicate detection to keep only the nearby issues that are actually
+ * about the same thing. Returns an array of scores aligned with `candidates`,
+ * or null when the AI service could not be reached -- null, not [], so the
+ * caller can tell "no answer" from "nothing is similar" and fall back.
+ */
+async function findSimilar(text, candidates) {
+    if (!Array.isArray(candidates) || candidates.length === 0) return [];
+    return lightTaskQueue.add(async () => {
+        try {
+            const response = await axios.post(`${LOCAL_AI_URL}/duplicate-check`, {
+                text,
+                candidates
+            }, {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 10000
+            });
+            return response.data.scores || null;
+        } catch (error) {
+            logger.logError('ai_debug', 'Duplicate similarity check failed', error);
+            return null;
+        }
+    });
+}
+
 module.exports = {
     analyzeIssue,
     analyzeIntent,
@@ -214,6 +241,7 @@ module.exports = {
     checkDuration,
     classifyImage,
     detectMinor,
-    transcribeAudio
+    transcribeAudio,
+    findSimilar
 };
 

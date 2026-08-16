@@ -197,7 +197,7 @@ window.setFlowStatus = async function (flowId, status) {
           + 'Answers already given stay on their reports, and anyone part-way through will finish.'
         : 'Start asking these questions again?';
 
-    if (!confirm(question)) return;
+    if (!await showConfirm(question)) return;
 
     try {
         const res = await fetch(`${API_BASE_URL}/admin/bot-flows/${flowId}/status`, {
@@ -206,10 +206,10 @@ window.setFlowStatus = async function (flowId, status) {
             body: JSON.stringify({ status })
         });
         const data = await res.json();
-        alert(data.message || 'Could not change the status.');
+        showAlert(data.message || 'Could not change the status.');
         if (res.ok) loadFlows();
     } catch (err) {
-        alert('Connection error.');
+        showAlert('Connection error.');
     }
 };
 
@@ -217,19 +217,19 @@ window.deleteFlow = async function (flowId, name, timesSent) {
     if (timesSent > 0) {
         // The server refuses this too; saying so here saves a pointless round
         // trip and explains the alternative in the same breath.
-        alert(`"${name}" has been sent to ${timesSent} citizen(s) and their answers are attached to reports.\n\n`
+        showAlert(`"${name}" has been sent to ${timesSent} citizen(s) and their answers are attached to reports.\n\n`
             + 'Stop it instead — it will stop asking, and the answers already given stay where they are.');
         return;
     }
-    if (!confirm(`Delete "${name}"? It has never been answered, so nothing is lost.`)) return;
+    if (!await showConfirm(`Delete "${name}"? It has never been answered, so nothing is lost.`)) return;
 
     try {
         const res = await fetch(`${API_BASE_URL}/admin/bot-flows/${flowId}`, { method: 'DELETE' });
         const data = await res.json();
-        alert(data.message || 'Could not delete it.');
+        showAlert(data.message || 'Could not delete it.');
         if (res.ok) loadFlows();
     } catch (err) {
-        alert('Connection error.');
+        showAlert('Connection error.');
     }
 };
 
@@ -316,7 +316,7 @@ async function createFlow(e) {
 window.openFlow = async function (flowId) {
     try {
         const res = await fetch(`${API_BASE_URL}/admin/bot-flows/${flowId}`);
-        if (!res.ok) { alert('Could not open that questionnaire.'); return; }
+        if (!res.ok) { showAlert('Could not open that questionnaire.'); return; }
 
         currentFlow = await res.json();
 
@@ -342,7 +342,7 @@ window.openFlow = async function (flowId) {
         window.scrollTo(0, 0);
     } catch (err) {
         console.error(err);
-        alert('Could not open that questionnaire.');
+        showAlert('Could not open that questionnaire.');
     }
 };
 
@@ -365,7 +365,7 @@ async function createDraftVersion(flowId) {
     });
     const body = await created.json();
     if (!created.ok) {
-        alert(body.message || 'Could not start a draft.');
+        showAlert(body.message || 'Could not start a draft.');
         return false;
     }
 
@@ -611,23 +611,23 @@ async function saveDraft() {
         editingVersion.state = data.version.state;
         return true;
     } catch (err) {
-        alert('Connection error while saving.');
+        showAlert('Connection error while saving.');
         return false;
     }
 }
 
 async function submitForReview() {
     if (!(await saveDraft())) return;
-    if (!confirm('Send this to MoCTI/DSTI for approval? You will not be able to edit it while they review it.')) return;
+    if (!await showConfirm('Send this to MoCTI/DSTI for approval? You will not be able to edit it while they review it.')) return;
 
     const res = await fetch(`${API_BASE_URL}/admin/bot-flow-versions/${editingVersion.id}/submit`, { method: 'POST' });
     const data = await res.json();
-    if (res.ok) { alert(data.message); showList(); } else { showProblems(data.errors); alert(data.message); }
+    if (res.ok) { showAlert(data.message); showList(); } else { showProblems(data.errors); showAlert(data.message); }
 }
 
 async function publishVersion() {
     if (editingVersion.state !== 'pending_review' && !(await saveDraft())) return;
-    if (!confirm('Publish this? Citizens will start receiving these questions.')) return;
+    if (!await showConfirm('Publish this? Citizens will start receiving these questions.')) return;
 
     const res = await fetch(`${API_BASE_URL}/admin/bot-flow-versions/${editingVersion.id}/approve`, {
         method: 'POST',
@@ -635,7 +635,7 @@ async function publishVersion() {
         body: JSON.stringify({})
     });
     const data = await res.json();
-    if (res.ok) { alert(data.message); showList(); } else { showProblems(data.errors); alert(data.message); }
+    if (res.ok) { showAlert(data.message); showList(); } else { showProblems(data.errors); showAlert(data.message); }
 }
 
 async function sendReviewNote() {
@@ -651,7 +651,7 @@ async function sendReviewNote() {
 
     if (res.ok) {
         closeFlowModal('review-modal');
-        alert(data.message);
+        showAlert(data.message);
         showList();
     } else {
         error.textContent = data.message;
@@ -678,7 +678,7 @@ async function sendTest() {
 
     if (res.ok) {
         closeFlowModal('test-modal');
-        alert(data.message);
+        showAlert(data.message);
     } else {
         error.textContent = data.message || (data.errors || []).join(' ');
         error.style.display = 'block';
@@ -715,10 +715,10 @@ function renderVersions() {
 }
 
 window.rollbackVersion = async function (versionId, versionNumber) {
-    if (!confirm(`Make version ${versionNumber} live again? It is restored as a new version, so the history stays intact.`)) return;
+    if (!await showConfirm(`Make version ${versionNumber} live again? It is restored as a new version, so the history stays intact.`)) return;
 
     const res = await fetch(`${API_BASE_URL}/admin/bot-flow-versions/${versionId}/rollback`, { method: 'POST' });
     const data = await res.json();
-    alert(data.message || 'Could not restore that version.');
+    showAlert(data.message || 'Could not restore that version.');
     if (res.ok) openFlow(currentFlow.flow.id);
 };

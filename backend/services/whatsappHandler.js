@@ -31,10 +31,22 @@ const UPLOADS_ROOT = process.env.UPLOADS_DIR
 // tighter radius than a rural district.
 const DUPLICATE_RADIUS_METERS = Number(process.env.DUPLICATE_RADIUS_METERS) || 100;
 const DUPLICATE_WINDOW_DAYS = Number(process.env.DUPLICATE_WINDOW_DAYS) || 7;
+// Minimum embedding similarity for two nearby reports to count as duplicates.
+// A truck blocking a road and rubbish on the pavement are both "within 100 m"
+// but score well below this; two potholes described differently score well
+// above.
+const DUPLICATE_SIMILARITY_THRESHOLD = Number(process.env.DUPLICATE_SIMILARITY_THRESHOLD) || 0.45;
 
 // Refuse photographs showing a child's face. On by default: this is a
 // safeguarding control, so disabling it should be a deliberate act.
 const MINOR_DETECTION_ENABLED = process.env.MINOR_DETECTION_ENABLED !== 'false';
+
+// Citizen free text is capped before it reaches the AI or the database. A
+// WhatsApp message has no practical length limit, and the classifier, the
+// admin timeline and the report view are all built around a few sentences --
+// an unbounded description is a novel stored and billed as a report.
+const MAX_DESCRIPTION_LENGTH = Number(process.env.MAX_DESCRIPTION_LENGTH) || 1000;
+const MAX_ADDRESS_LENGTH = Number(process.env.MAX_ADDRESS_LENGTH) || 200;
 
 /**
  * The reporting flow as an ordered list, so "back" has something to walk.
@@ -105,6 +117,26 @@ class FixamHandler {
 
         this.fixamDb = new FixamDatabase(db, this.debugLog);
         this.helpers = new FixamHelpers(this.debugLog);
+    }
+
+    /**
+     * Pilot mode restricts reporting to the activated community champions.
+     *
+     * Voting, tracking and feedback stay open to everyone; only a report is
+     * refused. Returns false (having already replied) when the citizen is
+     * blocked, true when they may continue.
+     */
+    async pilotReportGate(fromNumber, user) {
+        const pilotMode = (await this.fixamDb.getPlatformSetting('pilot_mode')) === 'true';
+        // A missing user object is treated as not-a-champion: while pilot mode
+        // is on, the only safe answer to "can this number report?" is no.
+        if (pilotMode && !(user && user.pilot_activated === true)) {
+            await this.sendMessage(fromNumber,
+                '🚧 *Pilot Phase*\n\nReporting is currently open only to selected community champions. '
+                + 'Public reporting opens after the pilot. Thank you for your interest!');
+            return false;
+        }
+        return true;
     }
 
     async processIncomingMessage(data) {
@@ -548,6 +580,8 @@ class FixamHandler {
                                 return;
                             }
                             
+                            if (!(await this.pilotReportGate(fromNumber, user))) return;
+                            
                             const newData = {};
                             const entities = analysis.entities || {};
                             if (entities.description) newData.description = entities.description;
@@ -734,6 +768,8 @@ class FixamHandler {
                         return;
                     }
 
+                    if (!(await this.pilotReportGate(fromNumber, user))) return;
+
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_report_evidence', data: {} });
                     await this.sendMessage(fromNumber, withNav("Great! Let's report an issue.\n\nPlease send a *Photo* or *Video* of the issue as evidence.", { back: false }));
                 } else if (input === '2' || lowerInput.includes('vote')) {
@@ -790,7 +826,7 @@ class FixamHandler {
 
             case 'awaiting_feedback':
                 // Text Feedback
-                await this.saveFeedback(user.id, 'text', input);
+                await this.saveFeedback(user.id, 'text', input.substring(0, MAX_DESCRIPTION_LENGTH));
                 await this.sendMessage(fromNumber, "Thank you for your feedback! 🙏\n\nWe appreciate you helping us improve Fixam.");
                 await this.sendMainMenu(fromNumber, user.name);
                 break;
@@ -943,7 +979,9 @@ class FixamHandler {
                 // report with the citizen's own wording and no coordinates.
                 const keepMatch = input.match(/^keep\s+(.{3,})$/i);
                 if (keepMatch) {
-                    currentData.address = keepMatch[1].trim();
+                    // An address is short; cap what is stored so a paste of a
+                    // long document cannot become the report's location text.
+                    currentData.address = keepMatch[1].trim().substring(0, MAX_ADDRESS_LENGTH);
                     currentData.lat = null;
                     currentData.lng = null;
                     currentData.location_source = 'unresolved';
@@ -969,7 +1007,7 @@ class FixamHandler {
                     // that address" would be a lie and would trap the citizen in
                     // a loop, so keep what they typed and let the report through
                     // for admins to place manually.
-                    currentData.address = input.trim();
+                    currentData.address = input.trim().substring(0, MAX_ADDRESS_LENGTH);
                     currentData.lat = null;
                     currentData.lng = null;
                     currentData.location_source = 'unresolved';
@@ -1077,7 +1115,35 @@ class FixamHandler {
 
             case 'awaiting_report_description':
                 const currentData = state.data || {};
-                
+
+                // Reject rather than truncate: silently cutting a citizen's
+                // description could drop the one detail that identifies the
+                // problem, and asking them to shorten it is what they would
+                // expect from a clerk.
+                if (input.length > MAX_DESCRIPTION_LENGTH) {
+                    await this.sendMessage(fromNumber,
+                        `⚠️ That description is very long (${input.length} characters). `
+                        + `Please describe the issue in a few short sentences and send again.`);
+                    break;
+                }
+
+                // The previous question was the location. A description that
+                // merely repeats it -- the same wording, or a part of it --
+                // tells nobody what is actually wrong, so ask for the "what".
+                // Only the direction that adds nothing is refused: "flooding at
+                // <full address>" still answers the question.
+                if (input.toLowerCase() !== 'use') {
+                    const locationText = (currentData.address || '').trim().toLowerCase().replace(/\s+/g, ' ');
+                    const descriptionText = input.trim().toLowerCase().replace(/\s+/g, ' ');
+                    if (locationText && descriptionText
+                        && (locationText === descriptionText || locationText.includes(descriptionText))) {
+                        await this.sendMessage(fromNumber,
+                            `⚠️ That looks like the location, not the problem. Please describe what is wrong there `
+                            + `(for example, "the road is flooded and water is entering houses").`);
+                        break;
+                    }
+                }
+
                 let descriptionToUse = input;
                 if (input.toLowerCase() === 'use' && currentData.description) {
                      descriptionToUse = currentData.description;
@@ -1198,9 +1264,12 @@ class FixamHandler {
                 if (trackIssue) {
                     const endorsements = await this.fixamDb.getEndorsementCount(trackIssue.id);
                     const statusEmoji = {
-                        'critical': '🔴 Critical',
+                        'reported': '📥 Received',
                         'acknowledged': '🟡 Acknowledged',
-                        'in_progress': '🔵 In Progress',
+                        // The column stores 'progress'. 'in_progress' was
+                        // listed here and never matched, so a report being
+                        // worked on displayed the raw word instead.
+                        'progress': '🔵 In Progress',
                         'fixed': '✅ Fixed/Resolved'
                     }[trackIssue.status] || trackIssue.status;
 
@@ -1882,6 +1951,14 @@ class FixamHandler {
             );
             transcribedText = transcription.text;
             transcriptionConfidence = transcription.confidence;
+
+            // A voice note is already capped at five minutes, but a fast talker
+            // can exceed the description limit that far inside that. Truncate
+            // rather than reject: the citizen cannot easily "say it again
+            // shorter", and the tail of a long narration is rarely the point.
+            if (transcribedText && transcribedText.length > MAX_DESCRIPTION_LENGTH) {
+                transcribedText = transcribedText.substring(0, MAX_DESCRIPTION_LENGTH);
+            }
             
             if (transcribedText) {
                 logger.log('media_handler', `Transcription: ${transcribedText}`);
@@ -1952,7 +2029,7 @@ class FixamHandler {
                         `audio.${extension}`,
                         downloadResult.mimeType || 'audio/ogg'
                     );
-                    if (tx.text) transcribedText = tx.text;
+                    if (tx.text) transcribedText = tx.text.substring(0, MAX_DESCRIPTION_LENGTH);
                 } catch (writeError) {
                     logger.logError('media_handler', 'Failed to save feedback audio', writeError);
                 }
@@ -2013,18 +2090,44 @@ class FixamHandler {
      * "report as new" and the issue is filed for admins to review.
      */
     async promptDuplicatesOrConfirm(fromNumber, currentData) {
-        let duplicates = [];
+        let candidates = [];
         try {
-            duplicates = await this.fixamDb.findPotentialDuplicates(
+            candidates = await this.fixamDb.findPotentialDuplicates(
                 currentData.lat,
                 currentData.lng,
                 DUPLICATE_RADIUS_METERS,
-                currentData.category,
                 DUPLICATE_WINDOW_DAYS
             );
         } catch (err) {
             // A failure here must not cost the citizen their report.
             logger.logError('handler', 'Duplicate lookup failed', err);
+        }
+
+        // Proximity alone is not similarity. The old prompt filtered by
+        // category, which put "garbage on the streets" next to "a truck is
+        // blocking the road" whenever both sat within the radius. Compare the
+        // descriptions themselves -- embedding similarity -- and keep only the
+        // candidates that are actually about the same thing. If the AI service
+        // is unreachable, fall back to the previous category match.
+        let duplicates = [];
+        if (candidates.length > 0 && currentData.description) {
+            const texts = candidates.map((d) => `${d.title || ''} ${d.description || ''}`.trim());
+            let scores = null;
+            try {
+                scores = await aiService.findSimilar(currentData.description, texts);
+            } catch (err) {
+                logger.logError('handler', 'Duplicate similarity check failed', err);
+            }
+
+            if (Array.isArray(scores) && scores.length === candidates.length) {
+                duplicates = candidates
+                    .filter((_, i) => scores[i] >= DUPLICATE_SIMILARITY_THRESHOLD)
+                    .slice(0, 3);
+            } else {
+                duplicates = candidates
+                    .filter((d) => !currentData.category || d.category === currentData.category)
+                    .slice(0, 3);
+            }
         }
 
         if (duplicates.length === 0) {
@@ -2069,6 +2172,10 @@ class FixamHandler {
     }
 
     async sendReportSummary(fromNumber, data) {
+        // Urgency, not status. The AI classifies against exactly these four
+        // words, so 'critical' belongs here -- it is the top of the urgency
+        // scale. It used to also be the initial *status*, which is what made
+        // the portal contradict this message.
         const urgencyEmoji = {
             'low': '🟢',
             'medium': '🟡',
@@ -2096,6 +2203,18 @@ class FixamHandler {
     }
 
     async finalizeReport(fromNumber, data, userId) {
+        // Authoritative pilot gate. The initiation gate is good UX -- a citizen
+        // is told early that reporting is closed -- but this one is the
+        // guarantee: a report cannot be created by a non-champion while pilot
+        // mode is on, whatever path led here (a flow started before the switch
+        // was flipped, a client still running older code, or a report finished
+        // from a stale conversation state).
+        const reporter = await this.fixamDb.getUser(fromNumber);
+        if (!(await this.pilotReportGate(fromNumber, reporter))) {
+            await this.fixamDb.resetConversationState(fromNumber);
+            return;
+        }
+
         const ticketId = this.helpers.generateTicketId();
         
         const issueData = {

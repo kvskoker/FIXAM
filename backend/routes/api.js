@@ -5,7 +5,7 @@ const authService = require('../services/authService');
 
 
 const whatsappService = require('../services/whatsappService');
-const FixamHandler = require('../services/whatsappHandler');
+const fixamHandler = require('../services/bot');
 const FixamHelpers = require('../services/fixamHelpers');
 const { getServiceArea } = require('../services/countries');
 const aiService = require('../services/aiService');
@@ -14,9 +14,8 @@ const { getScope, attachScope, canAccessIssue } = require('../middleware/mdaScop
 const auditLog = require('../services/auditLog');
 const adminOtp = require('../services/adminOtp');
 const botFlow = require('../services/botFlow');
-
-// Initialize Handler
-const fixamHandler = new FixamHandler(whatsappService, db, null, console.log);
+const logger = require('../services/logger');
+const slaService = require('../services/slaService');
 
 // Conversation state lives in PostgreSQL (conversation_state), and ticket IDs
 // come from fixamHelpers in the FIX-XXXXXX format. An in-memory session object
@@ -59,7 +58,7 @@ router.get('/config', (req, res) => {
 router.use((req, res, next) => {
     if (process.env.DEV_MODE === 'true') {
         // Safe paths
-        if (req.path === '/config' || req.path === '/webhook' || req.path.startsWith('/admin/login') || req.path.startsWith('/test/')) {
+        if (req.path === '/config' || req.path.startsWith('/admin/login') || req.path.startsWith('/test/')) {
             return next();
         }
         
@@ -113,7 +112,7 @@ async function resolveRequestScope(req) {
 // GET /api/issues - Fetch all issues from DB with vote counts, search, filter, and sort
 router.get('/issues', async (req, res) => {
     try {
-        const { search, category, status, sort, ticket, page = 1, limit = 1000 } = req.query;
+        const { search, category, status, urgency, sort, ticket, page = 1, limit = 1000 } = req.query;
 
         // Clamped, because these come straight from a query string. A request
         // for limit=5000000 used to be honoured: one unauthenticated caller
@@ -179,6 +178,10 @@ router.get('/issues', async (req, res) => {
             // Default: hide spam unless explicitly requested.
             where += " AND i.status != 'spam'";
         }
+
+        // Urgency is a separate axis from status: how bad the problem is, not
+        // how far the work has got. Filtering on one must not filter the other.
+        if (urgency) add(' AND i.urgency = $?', urgency);
 
         // MDA scoping. Only applies to a signed-in Operations user: anonymous
         // callers get the public view and full Admins see everything. Without
@@ -615,7 +618,7 @@ router.get('/stats', async (req, res) => {
             const [totalRes, resolvedRes, criticalRes] = await Promise.all([
                 db.query(`SELECT COUNT(*) as count FROM issues ${whereClause}`, params),
                 db.query(`SELECT COUNT(*) as count FROM issue_tracker it JOIN issues i ON it.issue_id = i.id WHERE it.action = 'resolved' ${whereClause.replace(/created_at/g, 'it.created_at').replace(/category/g, 'i.category').replace('WHERE', 'AND')}`, params),
-                db.query(`SELECT COUNT(*) as count FROM issues ${whereClause} AND status = 'critical'`, params)
+                db.query(`SELECT COUNT(*) as count FROM issues ${whereClause} AND urgency = 'critical' AND status NOT IN ('fixed', 'spam')`, params)
             ]);
 
             const total = parseInt(totalRes.rows[0].count);
@@ -676,7 +679,7 @@ router.get('/stats', async (req, res) => {
 
         // 5. Critical Pending
         const criticalPendingResult = await db.query(`
-            SELECT COUNT(*) as count FROM issues WHERE status = 'critical' ${category ? `AND category = $1` : ''}
+            SELECT COUNT(*) as count FROM issues WHERE urgency = 'critical' AND status NOT IN ('fixed', 'spam') ${category ? `AND category = $1` : ''}
         `, currentParams);
         const criticalPendingCount = parseInt(criticalPendingResult.rows[0].count);
 
@@ -690,38 +693,6 @@ router.get('/stats', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });
-    }
-});
-
-
-// POST /api/webhook - WhatsApp Webhook Verification
-router.get('/webhook', (req, res) => {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
-
-    if (mode && token) {
-        if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
-            console.log('WEBHOOK_VERIFIED');
-            res.status(200).send(challenge);
-        } else {
-            res.sendStatus(403);
-        }
-    }
-});
-
-// POST /api/webhook - Handle Incoming Messages
-router.post('/webhook', async (req, res) => {
-    const body = req.body;
-
-    if (body.object) {
-        // Process in background to avoid timeout
-        fixamHandler.processIncomingMessage(body)
-            .catch(err => console.error("Error processing message:", err));
-            
-        res.sendStatus(200);
-    } else {
-        res.sendStatus(404);
     }
 });
 
@@ -913,7 +884,7 @@ router.get('/admin/stats', requireAdmin, attachScope, async (req, res) => {
         const resolutionRate = allTimeCount > 0 ? Math.round((resolvedCount / allTimeCount) * 100) : 0;
 
         // 5. Critical Pending
-        const criticalPendingResult = await db.query(`SELECT COUNT(*) as count FROM issues WHERE status = 'critical' ${catFilter}`);
+        const criticalPendingResult = await db.query(`SELECT COUNT(*) as count FROM issues WHERE urgency = 'critical' AND status NOT IN ('fixed', 'spam') ${catFilter}`);
         const criticalPendingCount = parseInt(criticalPendingResult.rows[0].count);
 
         // 6. Sentiment (Mocked for now)
@@ -1155,6 +1126,17 @@ router.put('/admin/issues/:id/status', requireAdmin, attachScope, async (req, re
             await db.query('UPDATE issues SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE duplicate_of = $2', [status, id]);
         }
 
+        // 1.c Timestamp the SLA milestones the moment they are reached. The
+        // daily SLA sweep measures against these, so the acknowledge/progress
+        // clock is the time the institution actually acted, not the time
+        // someone remembered to record it.
+        if (status === 'acknowledged') {
+            await db.query('UPDATE issues SET acknowledged_at = COALESCE(acknowledged_at, CURRENT_TIMESTAMP) WHERE id = $1 OR duplicate_of = $1', [id]);
+        }
+        if (status === 'progress') {
+            await db.query('UPDATE issues SET progress_at = COALESCE(progress_at, CURRENT_TIMESTAMP) WHERE id = $1 OR duplicate_of = $1', [id]);
+        }
+
         // 2. Log to Tracker
         // Map status to a readable action
         let action = 'status_change';
@@ -1192,7 +1174,7 @@ router.put('/admin/issues/:id/status', requireAdmin, attachScope, async (req, re
                 'acknowledged': 'Acknowledged 📝',
                 'progress': 'In Progress 🏗️',
                 'fixed': 'Resolved ✅',
-                'critical': 'High Priority 🚨'
+                'reported': 'Received 📥'
             };
             const friendlyStatus = (statusMap[status] || status).toUpperCase();
 
@@ -1737,6 +1719,45 @@ router.post('/admin/issues/:id/unlink-duplicate', requireAdmin, attachScope, asy
 // USER MANAGEMENT ROUTES
 // ==========================================
 
+// ── Platform settings (pilot mode + SLA targets) ─────────────────────────────
+// Readable by any admin so the pilot state is visible; changed by full admins
+// only, because "who may report" and "what we promised" are governance calls.
+
+// GET /api/admin/settings - pilot mode and SLA targets
+router.get('/admin/settings', requireAdmin, attachScope, async (req, res) => {
+    try {
+        const settings = await slaService.getSettings(db);
+        res.json(settings);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// PUT /api/admin/settings - change pilot mode and SLA targets
+router.put('/admin/settings', requireFullAdmin, attachScope, async (req, res) => {
+    try {
+        const settings = await slaService.saveSettings(db, req.body, req.admin.id);
+        res.json({ success: true, settings });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// PUT /api/admin/users/:id/pilot - mark a community champion as able to report
+router.put('/admin/users/:id/pilot', requireFullAdmin, attachScope, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const activated = !!req.body.activated;
+        await db.query('UPDATE users SET pilot_activated = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [activated, id]);
+        res.json({ success: true, activated });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // GET /api/admin/users - List users with roles and groups
 router.get('/admin/users', requireAdmin, attachScope, async (req, res) => {
     try {
@@ -1795,6 +1816,7 @@ router.get('/admin/users', requireAdmin, attachScope, async (req, res) => {
                 u.created_at,
                 u.is_disabled,
                 u.points,
+                u.pilot_activated,
                 (
                     SELECT COALESCE(array_agg(r.name), '{}')
                     FROM user_roles ur
@@ -1891,7 +1913,7 @@ router.post('/admin/users/:id/penalize', requireFullAdmin, attachScope, async (r
 // POST /api/admin/users - Create User
 router.post('/admin/users', requireFullAdmin, attachScope, async (req, res) => {
     try {
-        const { phone_number, name, password, roles, groups } = req.body;
+        const { phone_number, name, password, roles, groups, pilot_activated } = req.body;
         if (!phone_number) return res.status(400).json({ error: 'Phone number is required' });
 
         // Check if phone number already exists
@@ -1905,8 +1927,8 @@ router.post('/admin/users', requireFullAdmin, attachScope, async (req, res) => {
         const hashedPassword = password ? await authService.hashPassword(password) : null;
 
         const userInsert = await db.query(
-            'INSERT INTO users (phone_number, name, password) VALUES ($1, $2, $3) RETURNING id',
-            [phone_number, name, hashedPassword]
+            'INSERT INTO users (phone_number, name, password, pilot_activated) VALUES ($1, $2, $3, $4) RETURNING id',
+            [phone_number, name, hashedPassword, pilot_activated ? true : false]
         );
         const userId = userInsert.rows[0].id;
 
@@ -1940,7 +1962,7 @@ router.post('/admin/users', requireFullAdmin, attachScope, async (req, res) => {
 router.put('/admin/users/:id', requireFullAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, phone_number, is_disabled, roles, groups, password } = req.body;
+        const { name, phone_number, is_disabled, roles, groups, password, pilot_activated } = req.body;
 
         // 1. Prevent self-disabling
         if (Number(id) === req.admin.id && is_disabled === true) {
@@ -1954,15 +1976,15 @@ router.put('/admin/users/:id', requireFullAdmin, attachScope, async (req, res) =
         }
 
         // Update basic info
-        let updateQuery = 'UPDATE users SET name = $1, phone_number = $2, is_disabled = $3, updated_at = CURRENT_TIMESTAMP';
-        const params = [name, phone_number, is_disabled, id];
+        let updateQuery = 'UPDATE users SET name = $1, phone_number = $2, is_disabled = $3, pilot_activated = $4, updated_at = CURRENT_TIMESTAMP';
+        const params = [name, phone_number, is_disabled, pilot_activated ? true : false, id];
         
         if (password) {
             const hashedPassword = await authService.hashPassword(password);
-            updateQuery += ', password = $5 WHERE id = $4';
+            updateQuery += ', password = $6 WHERE id = $5';
             params.push(hashedPassword);
         } else {
-            updateQuery += ' WHERE id = $4';
+            updateQuery += ' WHERE id = $5';
         }
 
         await db.query(updateQuery, params);
@@ -2006,7 +2028,24 @@ router.delete('/admin/users/:id', requireFullAdmin, attachScope, async (req, res
             return res.status(400).json({ error: 'You cannot delete your own account' });
         }
 
+        // Read the number before the row goes, so the log lines can be found
+        // afterwards. Deleting an account without this left the person's
+        // conversations in ./logs -- the same gap the citizen-facing
+        // "DELETE MY DATA" path had.
+        const existing = await db.query('SELECT phone_number FROM users WHERE id = $1', [id]);
+        const phone = existing.rows[0] && existing.rows[0].phone_number;
+
         await db.query('DELETE FROM users WHERE id = $1', [id]);
+
+        if (phone) {
+            try {
+                await logger.purgeSubject(phone);
+            } catch (error) {
+                logger.logError('retention',
+                    'Account deleted but its log lines could not be purged', error);
+            }
+        }
+
         res.json({ success: true });
     } catch (err) {
         console.error(err);
@@ -2397,8 +2436,28 @@ router.get('/admin/export/issues.csv', requireAdmin, attachScope, async (req, re
             }
         }
 
+        // The same filters the portal is showing, so the file matches the list
+        // the admin was looking at when they pressed Export. Scope above is
+        // enforcement and cannot be widened from here; these only narrow.
+        const add = (clause, value) => {
+            params.push(value);
+            where += clause.split('$?').join(`$${params.length}`);
+        };
+        const { search, category, status, urgency, state } = req.query;
+
+        if (search) {
+            add(' AND (i.title ILIKE $? OR i.description ILIKE $? OR i.ticket_id ILIKE $? OR i.address ILIKE $?)',
+                `%${search}%`);
+        }
+        if (category) add(' AND i.category = $?', category);
+        if (status) add(' AND i.status = $?', status);
+        if (urgency) add(' AND i.urgency = $?', urgency);
+        if (state === 'open') where += ' AND i.closed_at IS NULL';
+        else if (state === 'closed') where += ' AND i.closed_at IS NOT NULL';
+        else if (state === 'disputed') where += ' AND i.dispute_count > 0';
+
         const result = await db.query(`
-            SELECT i.ticket_id, i.title, i.description, i.category, i.status,
+            SELECT i.ticket_id, i.title, i.description, i.category, i.status, i.urgency,
                    i.district, i.city, i.ward, i.address, i.lat, i.lng,
                    i.created_at, i.updated_at, i.closed_at, i.closure_reason,
                    i.closure_note, i.resolution_note, i.dispute_count,
@@ -2415,6 +2474,7 @@ router.get('/admin/export/issues.csv', requireAdmin, attachScope, async (req, re
             { key: 'description', label: 'Description' },
             { key: 'category', label: 'Category' },
             { key: 'status', label: 'Status' },
+            { key: 'urgency', label: 'Urgency' },
             { key: 'district', label: 'District' },
             { key: 'city', label: 'City' },
             { key: 'ward', label: 'Ward' },

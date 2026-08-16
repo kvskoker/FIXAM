@@ -5,10 +5,7 @@ require('./loadEnv');
 
 const apiRoutes = require('./routes/api');
 const db = require('./db');
-const whatsappService = require('./services/whatsappService');
-const FixamHandler = require('./services/whatsappHandler');
-
-const fixamHandler = new FixamHandler(whatsappService, db, null, console.log);
+const fixamHandler = require('./services/bot');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -80,8 +77,7 @@ app.use('/api', apiRoutes);
 // ── DPG FIX: Data deletion endpoint (Right to Erasure) ───────────────────────
 // DELETE /api/user/data — deletes the authenticated user's account and all data
 // Called by admin dashboard; WhatsApp-triggered deletion is handled in whatsappHandler.js
-const FixamDatabase = require('./services/fixamDatabase');
-const fixamDb = new FixamDatabase(db, console.log);
+const fixamDb = fixamHandler.fixamDb;
 
 app.delete('/api/user/data', async (req, res) => {
     // Expect phone_number in request body (admin tool) or from auth token
@@ -121,7 +117,10 @@ app.get('/api/user/data', async (req, res) => {
     }
 });
 
-// Webhook routes
+// Webhook routes. These are the only webhook handlers now: the router in
+// api.js used to expose a second copy under /api/webhook with different
+// failure behaviour, and nginx pointed Meta at this one, so this is the one
+// that stays.
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -139,15 +138,17 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-app.post('/webhook', async (req, res) => {
+app.post('/webhook', (req, res) => {
     const body = req.body;
 
     if (body.object) {
-        try {
-            await fixamHandler.processIncomingMessage(body);
-        } catch (err) {
-            console.error("Error processing message:", err);
-        }
+        // Acknowledge immediately and process in the background. Meta retries a
+        // webhook it has not heard from, so waiting for the whole conversation
+        // (AI, geocoding, media) before replying risks the same message being
+        // delivered again.
+        fixamHandler.processIncomingMessage(body)
+            .catch(err => console.error("Error processing message:", err));
+
         res.sendStatus(200);
     } else {
         res.sendStatus(404);
@@ -163,14 +164,22 @@ app.get('/', (req, res) => {
 const { ensureSuperAdmin } = require('./services/bootstrapAdmin');
 
 const retention = require('./services/retention');
+const slaService = require('./services/slaService');
 
 app.listen(PORT, async () => {
     console.log(`Server is running on port ${PORT}`);
     // After listen, so a slow database cannot delay the port opening.
     await ensureSuperAdmin(db);
 
+    // Ensure the pilot/SLA schema exists on databases that were created before
+    // the migration files ran, so the toggle works without a manual step.
+    await slaService.ensureSchema(db);
+
     // The privacy policy states retention periods; this is what enforces them.
     retention.schedule(db);
+
+    // Flags reports that have missed their acknowledge / progress SLA.
+    slaService.schedule(db);
 
     // Repairs reports left without an administrative area by a geocoder blip.
     require('./services/locationBackfill').schedule();

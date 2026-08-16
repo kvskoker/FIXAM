@@ -102,7 +102,7 @@ async function classifyPendingFeedback() {
         if (res.ok && data.success) {
             // The counts matter: anything left needing review is work for a
             // person, and saying so is more useful than "done".
-            alert(`Examined ${data.examined} item(s).
+            showAlert(`Examined ${data.examined} item(s).
 
 `
                 + `Filed as platform feedback: ${data.routed}
@@ -114,10 +114,10 @@ async function classifyPendingFeedback() {
 Could not be reached: ${data.failed}` : ''));
             loadFeedback();
         } else {
-            alert(data.message || 'Could not classify the pending feedback.');
+            showAlert(data.message || 'Could not classify the pending feedback.');
         }
     } catch (err) {
-        alert('Connection error while classifying feedback.');
+        showAlert('Connection error while classifying feedback.');
     } finally {
         btn.disabled = false;
         btn.innerHTML = original;
@@ -307,7 +307,7 @@ window.acknowledgeFeedback = async function(id) {
         if (response.ok) {
             loadFeedback(); // Refresh list to get updated status
         } else {
-            alert('Failed to acknowledge feedback');
+            showAlert('Failed to acknowledge feedback');
         }
     } catch (err) {
         console.error('Error acknowledging feedback:', err);

@@ -2,6 +2,7 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 require('../loadEnv');
+const { hashPassword } = require('../services/authService');
 
 const pool = new Pool({
     user: process.env.DB_USER,
@@ -10,8 +11,6 @@ const pool = new Pool({
     password: process.env.DB_PASSWORD,
     port: process.env.DB_PORT,
 });
-
-const crypto = require('crypto');
 
 async function runSqlFile(filename) {
     const filePath = path.join(__dirname, '../db', filename);
@@ -36,8 +35,11 @@ async function ensureSuperAdmin() {
 
     console.log(`Ensuring Super Admin (${phone}) exists...`);
     
-    // Hash password (SHA-512 with phone as salt)
-    const hashedPassword = crypto.createHash('sha512').update(password + phone).digest('hex');
+    // bcrypt, the same scheme the login path verifies. This script used the old
+    // SHA-512-with-phone-salt hash, which login only accepted through a legacy
+    // fallback -- the seed data should not depend on a path that exists to
+    // upgrade old accounts.
+    const hashedPassword = await hashPassword(password);
 
     try {
         // 1. Get Admin role ID

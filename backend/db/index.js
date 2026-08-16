@@ -39,6 +39,11 @@ const pool = new Pool({
     password: process.env.DB_PASSWORD,
     port: process.env.DB_PORT,
     ssl: sslConfig(),
+    // How many connections the pool may open. Left unset, node-postgres uses
+    // its default of 10; stating it makes the ceiling visible and tunable for a
+    // host whose postgres `max_connections` is lower. Under load a queue of
+    // requests waits here rather than erroring with "too many clients".
+    max: Number(process.env.DB_POOL_MAX) || 10,
 });
 
 /**

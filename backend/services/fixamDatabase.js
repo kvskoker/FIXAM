@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 class FixamDatabase {
     constructor(db, debugLog) {
         this.db = db;
@@ -12,6 +14,19 @@ class FixamDatabase {
             return result.rows.length > 0 ? result.rows[0] : null;
         } catch (error) {
             this.debugLog('Error fetching user', { error: error.message, phoneNumber });
+            return null;
+        }
+    }
+
+    // Read one platform setting (pilot mode, SLA numbers). These live in the
+    // database so they can be changed from the admin portal without a
+    // deployment. Returns null when the row has not been created yet.
+    async getPlatformSetting(key) {
+        try {
+            const result = await this.db.query('SELECT value FROM platform_settings WHERE key = $1', [key]);
+            return result.rows.length ? result.rows[0].value : null;
+        } catch (error) {
+            this.debugLog('Error reading platform setting', { error: error.message, key });
             return null;
         }
     }
@@ -129,6 +144,23 @@ class FixamDatabase {
             await client.query('DELETE FROM users WHERE id = $1', [userId]);
 
             await client.query('COMMIT');
+
+            // The disk copy, after the database copy is committed. "Delete my
+            // data" was true of the tables and false of ./logs, where the same
+            // conversations sat in plain text -- so the promise held only until
+            // someone opened a log file.
+            //
+            // Outside the transaction on purpose: a file that will not delete
+            // must not roll back an erasure the citizen asked for. It is
+            // reported instead, so the gap is visible rather than silent.
+            try {
+                const lines = await logger.purgeSubject(phoneNumber);
+                this.debugLog(`Log lines purged for deleted account: ${lines}`);
+            } catch (error) {
+                logger.logError('retention',
+                    'Account deleted but its log lines could not be purged', error);
+            }
+
             this.debugLog(`User deleted: ${phoneNumber}`);
             return true;
         } catch (error) {
@@ -271,7 +303,7 @@ class FixamDatabase {
             issueData.image_url,
             issueData.audio_url || null,
             issueData.reported_by,
-            issueData.status || 'critical',
+            issueData.status || 'reported',
             issueData.duplicate_of || null,
             issueData.urgency || 'medium',
             issueData.address || null,
@@ -368,21 +400,15 @@ class FixamDatabase {
 
     // Find potential duplicates within radius (in meters) and timeframe (days)
     /**
-     * Open reports of the SAME KIND near a point within the last `days`.
+     * Open reports near a point within the last `days` -- a broad fetch.
      *
-     * Category is a filter, not a ranking. It was briefly the latter, on the
-     * reasoning that AI misclassification could hide a real duplicate -- but
-     * that made proximity alone sufficient, so a report of street rubbish was
-     * offered a pothole and a broken streetlight as "similar issues". At a busy
-     * junction almost everything is within 100 m of something, and a prompt
-     * that is usually wrong trains people to dismiss it, including the one time
-     * it is right.
-     *
-     * The trade-off is accepted deliberately: a missed duplicate costs a
-     * redundant report that admins can merge, while a false one costs the
-     * citizen's trust in every future prompt.
+     * This returns everything nearby; it is not the final answer. The caller
+     * judges similarity (semantic comparison, with a category fallback) so that
+     * "garbage on the streets" is not offered as similar to "a truck is
+     * blocking the road" just because both are within the radius. Filtering by
+     * category here was tried and removed for exactly that reason.
      */
-    async findPotentialDuplicates(lat, lng, radiusMeters, category = null, days = 7) {
+    async findPotentialDuplicates(lat, lng, radiusMeters, days = 7, limit = 15) {
         if (lat == null || lng == null) return [];
 
         const windowDays = Number.isFinite(Number(days)) ? Math.floor(Number(days)) : 7;
@@ -398,18 +424,17 @@ class FixamDatabase {
         const sql = `
             SELECT i.*, ${distanceExpr} AS distance
             FROM issues i
-            WHERE i.created_at >= CURRENT_TIMESTAMP - ($4 || ' days')::interval
+            WHERE i.created_at >= CURRENT_TIMESTAMP - ($3 || ' days')::interval
               AND i.status NOT IN ('fixed', 'spam')
               AND i.duplicate_of IS NULL
               AND i.lat IS NOT NULL AND i.lng IS NOT NULL
-              AND ${distanceExpr} <= $3
-              AND ($5::text IS NULL OR i.category = $5::text)
+              AND ${distanceExpr} <= $4
             ORDER BY distance ASC
-            LIMIT 3
+            LIMIT $5
         `;
 
         try {
-            const result = await this.db.query(sql, [lat, lng, radiusMeters, windowDays, category]);
+            const result = await this.db.query(sql, [lat, lng, windowDays, radiusMeters, limit]);
             return result.rows;
         } catch (error) {
             this.debugLog('Error finding potential duplicates', { error: error.message, lat, lng });

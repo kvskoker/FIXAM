@@ -1,4 +1,12 @@
 // Include this after admin_common.js
+
+// "Critical Pending" counts reports the AI judged *critical* that nobody has
+// closed yet. Status is a separate axis -- it says how far the work has got, not
+// how bad the problem is. Keeping the two apart is the whole point of the
+// rename; this must match the backend definition in api.js.
+const isCriticalPending = (issue) =>
+    issue.urgency === 'critical' && !['fixed', 'spam'].includes(issue.status);
+
 document.addEventListener('DOMContentLoaded', () => {
     checkAuth(async () => {
         // Load categories first
@@ -68,7 +76,7 @@ async function loadDashboardData() {
         renderHeatmap(issues);
         
         const stats = {
-            critical_pending: issues.filter(i => i.status === 'critical').length,
+            critical_pending: issues.filter(isCriticalPending).length,
             resolution_rate: issues.length > 0 ? Math.round((issues.filter(i => i.status === 'fixed').length / issues.length) * 100) : 0
         };
         const insights = generateMockInsights(stats, issues);
@@ -103,7 +111,7 @@ function calculateAndDisplayStats(issues) {
     const total = issues.length;
     const resolved = issues.filter(i => i.status === 'fixed').length;
     const inProgress = issues.filter(i => i.status === 'progress').length;
-    const critical = issues.filter(i => i.status === 'critical').length;
+    const critical = issues.filter(isCriticalPending).length;
     const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0;
 
     document.getElementById('total-reports').textContent = total;
@@ -262,7 +270,7 @@ function renderCategoryChart(issues) {
 function generateMockInsights(stats, issues) {
     const insights = [];
     const total = issues.length;
-    const critical = issues.filter(i => i.status === 'critical').length;
+    const critical = issues.filter(isCriticalPending).length;
     const resolved = issues.filter(i => i.status === 'fixed').length;
     let sentiment = 'Neutral', sentimentDesc = 'Balanced feedback from community reports.', sentimentType = 'info';
 

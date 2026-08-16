@@ -53,12 +53,17 @@ const WINDOWS = {
     // audit answers questions asked after the fact -- often long after. Two
     // years covers the pilot and any review of it, and is a stated limit rather
     // than "forever", which is not a retention policy.
-    adminAudit: () => days('ADMIN_AUDIT_RETENTION_DAYS', 730)
+    adminAudit: () => days('ADMIN_AUDIT_RETENTION_DAYS', 730),
+
+    // Diagnostic log files on disk. Shorter than message history: logs exist to
+    // work out what went wrong recently, not to be a second copy of the
+    // conversation. Phone numbers in them are pseudonymised on the way in.
+    logFiles: () => days('LOG_RETENTION_DAYS', 30)
 };
 
 async function purgeOnce(db) {
     const result = { message_logs: 0, conversation_state: 0, pending_consent: 0,
-                     admin_audit: 0, orphan_media: 0 };
+                     admin_audit: 0, orphan_media: 0, log_files: 0 };
 
     const step = async (label, fn) => {
         try {
@@ -94,6 +99,11 @@ async function purgeOnce(db) {
     )).rowCount);
 
     await step('orphan_media', () => purgeOrphanMedia(db));
+
+    // Log files on disk. Purging the database while the same conversations sat
+    // in plain text in ./logs forever meant the retention policy was true of one
+    // copy and false of the other.
+    await step('log_files', () => logger.purgeExpired(WINDOWS.logFiles()));
 
     logger.log('retention', `Retention pass complete: ${JSON.stringify(result)}`);
 
@@ -177,7 +187,8 @@ function schedule(db) {
     logger.log('retention', `Retention scheduled: message logs ${WINDOWS.messageLogs()}d, `
         + `conversation state ${WINDOWS.conversationState()}d, `
         + `pending consent ${WINDOWS.pendingConsent()}d, `
-        + `audit trail ${WINDOWS.adminAudit()}d`);
+        + `audit trail ${WINDOWS.adminAudit()}d, `
+        + `log files ${WINDOWS.logFiles()}d`);
 }
 
 module.exports = { schedule, purgeOnce, purgeOrphanMedia, WINDOWS };

@@ -56,6 +56,10 @@ class AnalyzeIntentRequest(BaseModel):
 class AnalyzeFeedbackRequest(BaseModel):
     text: str
 
+class DuplicateCheckRequest(BaseModel):
+    text: str
+    candidates: List[str]
+
 # Feedback splits into two destinations that need different people. Anchors,
 # rather than keywords, because the same complaint arrives worded a dozen ways
 # and in Krio-inflected English that no keyword list survives contact with.
@@ -293,6 +297,7 @@ def health():
             "POST /detect-minor": "image file -> is_minor, per-face age groups",
             "POST /analyze-issue": "{description, categories} -> {summary, category, urgency}",
             "POST /analyze-intent": "{text} -> {intent, entities}",
+            "POST /duplicate-check": "{text, candidates} -> {scores}",
         },
     }
 
@@ -736,6 +741,38 @@ def analyze_feedback(request: AnalyzeFeedbackRequest):
         raise
     except Exception as e:
         logger.error("Exception in analyze_feedback: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/duplicate-check")
+def duplicate_check(request: DuplicateCheckRequest):
+    """
+    How similar is a new report to each candidate?
+
+    The duplicate prompt used to match on category and distance alone, which put
+    "garbage on the streets" next to "a truck is blocking the road" whenever both
+    were within 100 m. This endpoint returns an embedding cosine similarity per
+    candidate so the caller can keep only the genuinely similar ones.
+
+    Scores are aligned with the `candidates` list, one for each entry.
+    """
+    global intent_classifier
+
+    if intent_classifier is None or intent_classifier.model is None:
+        raise HTTPException(status_code=503, detail="Embeddings model is not loaded.")
+
+    text = (request.text or "").strip()
+    if not text or not request.candidates:
+        return {"scores": []}
+
+    try:
+        model = intent_classifier.model
+        text_embedding = model.encode([text])
+        candidate_embeddings = model.encode(request.candidates)
+        similarities = cosine_similarity(text_embedding, candidate_embeddings)[0]
+        return {"scores": [round(float(s), 4) for s in similarities]}
+    except Exception as e:
+        logger.error("Exception in duplicate_check: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 

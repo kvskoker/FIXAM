@@ -115,10 +115,18 @@
 
                     <select id="issue-filter-status" class="filter-input">
                         <option value="">All Statuses</option>
-                        <option value="critical">Critical</option>
+                        <option value="reported">Reported</option>
                         <option value="acknowledged">Acknowledged</option>
                         <option value="progress">In Progress</option>
                         <option value="fixed">Resolved</option>
+                    </select>
+
+                    <select id="issue-filter-urgency" class="filter-input">
+                        <option value="">All Urgencies</option>
+                        <option value="critical">Critical</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
                     </select>
 
                     <div style="display: flex; gap: 0.5rem; align-items: center;">
@@ -153,6 +161,7 @@
                                 <th style="padding: 1rem;">Title</th>
                                 <th style="padding: 1rem;">Location</th>
                                 <th style="padding: 1rem;">Votes</th>
+                                <th style="padding: 1rem;">Urgency</th>
                                 <th style="padding: 1rem;">Status</th>
                                 <th style="padding: 1rem;">Date</th>
                                 <th style="padding: 1rem;">Action</th>
@@ -256,6 +265,7 @@
 
     <!-- Scripts -->
     <script src="../js/theme.js"></script>
+    <script src="../js/ui.js"></script>
     <script src="../js/admin_common.js"></script>
     <script src="../js/admin_issues.js"></script>
 

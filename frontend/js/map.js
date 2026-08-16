@@ -148,7 +148,7 @@ const createIcon = (color) => {
 // Helper to get status color
 function getStatusColor(status) {
     switch(status) {
-        case 'critical': return '#ef4444';
+        case 'reported': return '#94a3b8';
         case 'progress': return '#f59e0b';
         case 'fixed': return '#22c55e';
         default: return '#64748b';
@@ -172,6 +172,47 @@ const getStatusType = (status) => {
     if (status === 'progress') return 'progress';
     return 'pending';
 };
+
+// Urgency is how bad the problem is; status is how far the work has got. The
+// map used to show only status, and a report's status began life as the word
+// "critical", so the public saw "critical" where the citizen had been told a
+// different urgency. Urgency is now shown alongside status, in the same words
+// the citizen was given over WhatsApp.
+const STATUS_LABELS = {
+    reported: 'Reported',
+    acknowledged: 'Acknowledged',
+    progress: 'In Progress',
+    fixed: 'Fixed',
+    spam: 'Spam',
+    critical: 'Reported' // legacy rows not yet migrated
+};
+
+const URGENCY_LABELS = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' };
+const URGENCY_COLORS = {
+    critical: 'var(--admin-danger)',
+    high: 'var(--admin-warning)',
+    medium: 'var(--text-secondary)',
+    low: 'var(--text-secondary)'
+};
+
+function statusLabel(status) {
+    return STATUS_LABELS[status] || status;
+}
+
+function urgencyBadge(urgency) {
+    const label = URGENCY_LABELS[urgency];
+    if (!label) return '';
+    const color = URGENCY_COLORS[urgency] || 'var(--text-secondary)';
+    return `<span style="color: ${color}; font-weight: 600;">${label}</span>`;
+}
+
+// A status with no dedicated dot colour falls back to "pending" (still
+// someone's work), matching the marker colour. Legacy 'critical' rows land
+// here too until the migration renames them.
+function statusDot(status) {
+    if (status === 'fixed' || status === 'progress' || status === 'acknowledged') return status;
+    return 'pending';
+}
 const issueList = document.getElementById('issue-list');
 const searchInput = document.getElementById('search-input');
 const categoryFilter = document.getElementById('category-filter');
@@ -465,7 +506,10 @@ function renderIssues(issues) {
                         
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
                              <div style="font-size: 0.7rem; font-weight: 650; color: ${currentColor}; text-transform: uppercase;">${escapeHtml(issue.category)}</div>
-                             <span style="background: rgba(${colors[currentStatusType].r}, ${colors[currentStatusType].g}, ${colors[currentStatusType].b}, 0.15); color: ${currentColor}; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: capitalize;">${issue.status}</span>
+                             <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
+                                 <span style="background: rgba(${colors[currentStatusType].r}, ${colors[currentStatusType].g}, ${colors[currentStatusType].b}, 0.15); color: ${currentColor}; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600;">${statusLabel(issue.status)}</span>
+                                 <span style="font-size: 0.7rem; color: var(--text-secondary);">Urgency: ${urgencyBadge(issue.urgency)}</span>
+                             </div>
                         </div>
                         <div class="popup-title" style="font-weight: 700; font-size: 1.1rem; margin-bottom: 12px; color: var(--text-primary); line-height: 1.3;">${escapeHtml(issue.title)}</div>
                         
@@ -508,7 +552,7 @@ function renderIssues(issues) {
             card.innerHTML = `
                 <div class="issue-header">
                     <span class="issue-category">${escapeHtml(issue.category)}</span>
-                    <div class="issue-status status-${issue.status}"></div>
+                    <div class="issue-status status-${statusDot(issue.status)}"></div>
                 </div>
                 <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.25rem;">#${escapeHtml(issue.ticket_id)}</div>
                 <div class="issue-title" style="font-weight: 600;">${escapeHtml(issue.title)}</div>
@@ -573,7 +617,7 @@ function locateUser() {
             }).addTo(map).bindPopup("You are here").openPopup();
         });
     } else {
-        alert("Geolocation is not supported by this browser.");
+        showAlert("Geolocation is not supported by this browser.");
     }
 }
 
@@ -581,7 +625,7 @@ function locateUser() {
 
 async function vote(issueId, voteType) {
     // Voting is temporarily disabled on the frontend
-    alert("Voting is currently disabled on the website. Please use our WhatsApp channel to vote.");
+    showAlert("Voting is currently disabled on the website. Please use our WhatsApp channel to vote.");
     return;
 
     /*
@@ -634,7 +678,7 @@ async function viewTracker(issueId) {
         const trackerLogs = await response.json();
 
         if (!response.ok) {
-            alert('Failed to load issue history');
+            showAlert('Failed to load issue history');
             return;
         }
 
@@ -678,7 +722,7 @@ async function viewTracker(issueId) {
                         <div>
                             <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem;">
                                 <span style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.5px;">${escapeHtml(issue.category)}</span>
-                                <span style="padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: capitalize; background: rgba(0,0,0,0.05); color: var(--text-primary); border: 1px solid var(--border-color);">${issue.status}</span>
+                                <span style="padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; background: rgba(0,0,0,0.05); color: var(--text-primary); border: 1px solid var(--border-color);">${statusLabel(issue.status)}</span>
                             </div>
                             <h2 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.75rem; line-height: 1.2; font-weight: 700;">${escapeHtml(issue.title)}</h2>
                             <div style="font-size: 1rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 1.5rem;">
@@ -695,6 +739,10 @@ async function viewTracker(issueId) {
                             <div>
                                 <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Reported On</div>
                                 <div style="color: var(--text-primary); font-weight: 600;">${new Date(issue.reported_on || issue.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Urgency</div>
+                                <div style="color: var(--text-primary); font-weight: 600;">${urgencyBadge(issue.urgency)}</div>
                             </div>
                             <div>
                                 <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Reported By</div>
@@ -809,7 +857,7 @@ async function viewTracker(issueId) {
 
     } catch (error) {
         console.error('Error fetching tracker logs:', error);
-        alert('Failed to load issue history');
+        showAlert('Failed to load issue history');
     }
 }
 

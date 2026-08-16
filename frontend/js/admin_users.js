@@ -27,6 +27,7 @@ function initEventListeners() {
                 groups: 'tab-groups-content',
                 categories: 'tab-categories-content',
                 audit: 'tab-audit-content',
+                pilot: 'tab-pilot-content',
             };
             Object.entries(panels).forEach(([key, elId]) => {
                 const el = document.getElementById(elId);
@@ -37,6 +38,7 @@ function initEventListeners() {
             else if (target === 'groups') loadGroups();
             else if (target === 'categories') loadCategoryAdmin();
             else if (target === 'audit') loadAuditLog();
+            else if (target === 'pilot') loadPilotSettings();
         });
     });
 
@@ -77,6 +79,7 @@ function initEventListeners() {
     document.getElementById('user-form').addEventListener('submit', handleUserSubmit);
     document.getElementById('group-form').addEventListener('submit', handleGroupSubmit);
     document.getElementById('penalty-form').addEventListener('submit', handlePenaltySubmit);
+    document.getElementById('btn-save-settings').addEventListener('click', savePilotSettings);
 
     // Pagination
     document.getElementById('prev-page').addEventListener('click', () => {
@@ -146,7 +149,7 @@ function renderUsers(users) {
                         ${(user.name || 'U').charAt(0).toUpperCase()}
                     </div>
                     <div style="text-align: left; overflow: hidden; text-overflow: ellipsis;">
-                        <div style="font-weight: 500;">${escapeHtml(user.name) || 'Anonymous'} ${isSelf ? '<span style="color: var(--admin-primary); font-size: 0.75rem; margin-left: 0.5rem;">(You)</span>' : ''}</div>
+                        <div style="font-weight: 500;">${escapeHtml(user.name) || 'Anonymous'} ${isSelf ? '<span style="color: var(--admin-primary); font-size: 0.75rem; margin-left: 0.5rem;">(You)</span>' : ''}${user.pilot_activated ? '<span style="background: rgba(245,158,11,0.15); color: var(--admin-warning); font-size: 0.7rem; padding: 1px 6px; border-radius: 8px; margin-left: 0.5rem; font-weight: 600;">Pilot</span>' : ''}</div>
                     </div>
                 </div>
             </td>
@@ -244,6 +247,7 @@ async function handleUserSubmit(e) {
     const phone_number = document.getElementById('user-phone').value;
     const password = document.getElementById('user-password').value;
     const is_disabled = document.getElementById('user-disabled').checked;
+    const pilot_activated = document.getElementById('user-pilot-activated').checked;
     
     const roles = Array.from(document.querySelectorAll('#roles-checkboxes input:checked')).map(cb => cb.value);
     const groups = Array.from(document.getElementById('groups-select').selectedOptions).map(opt => opt.value);
@@ -252,7 +256,7 @@ async function handleUserSubmit(e) {
     const adminUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
     const admin_id = adminUser ? adminUser.id : null;
 
-    const data = { name, phone_number, password, is_disabled, roles, groups, admin_id };
+    const data = { name, phone_number, password, is_disabled, pilot_activated, roles, groups, admin_id };
     const method = id ? 'PUT' : 'POST';
     const url = id ? `${API_BASE_URL}/admin/users/${id}` : `${API_BASE_URL}/admin/users`;
 
@@ -286,6 +290,7 @@ function editUser(user) {
     document.getElementById('user-name').value = user.name || '';
     document.getElementById('user-phone').value = user.phone_number;
     document.getElementById('user-disabled').checked = user.is_disabled;
+    document.getElementById('user-pilot-activated').checked = !!user.pilot_activated;
     
     // Hide self-disable group
     const currentUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
@@ -317,7 +322,7 @@ function editUser(user) {
 }
 
 async function deleteUser(id) {
-    if (!confirm('Are you sure you want to delete this user? This cannot be undone.')) return;
+    if (!await showConfirm('Are you sure you want to delete this user? This cannot be undone.')) return;
 
     // Get current admin ID from localStorage
     const adminUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
@@ -329,7 +334,7 @@ async function deleteUser(id) {
             loadUsers();
         } else {
             const err = await response.json();
-            alert(err.error || 'Failed to delete user');
+            showAlert(err.error || 'Failed to delete user');
         }
     } catch (err) {
         console.error('Error deleting user:', err);
@@ -341,6 +346,7 @@ function resetUserForm() {
     document.getElementById('edit-user-id').value = '';
     document.getElementById('user-error').style.display = 'none';
     document.getElementById('user-disabled-group').style.display = 'block';
+    document.getElementById('user-pilot-activated').checked = false;
     document.querySelectorAll('#roles-checkboxes input').forEach(cb => {
         cb.checked = cb.value === 'User'; // Default role
         cb.disabled = false;
@@ -362,6 +368,63 @@ function resetUserForm() {
 // ==========================================
 // GROUP FUNCTIONS
 // ==========================================
+
+// ── Pilot & SLA settings ─────────────────────────────────────────────────────
+// Full admin only (the tab is hidden for MDA users). The numbers are read from
+// and written to /api/admin/settings, so a change here takes effect in the bot
+// and the daily SLA sweep without a deployment.
+
+async function loadPilotSettings() {
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/settings`);
+        if (!res.ok) return;
+        const s = await res.json();
+
+        const toggle = document.getElementById('pilot-mode-toggle');
+        const status = document.getElementById('pilot-mode-status');
+        if (toggle) toggle.checked = s.pilot_mode === 'true';
+        if (status) {
+            status.textContent = s.pilot_mode === 'true'
+                ? 'Only pilot champions may report.'
+                : 'Anyone may report.';
+        }
+
+        document.getElementById('sla-acknowledge-hours').value = s.sla_acknowledge_hours || 24;
+        document.getElementById('sla-progress-hours').value = s.sla_progress_hours || 72;
+        document.getElementById('sla-resolution-days').value = s.sla_resolution_days || 30;
+    } catch (err) {
+        console.error('Error loading settings:', err);
+    }
+}
+
+async function savePilotSettings() {
+    const payload = {
+        pilot_mode: document.getElementById('pilot-mode-toggle').checked ? 'true' : 'false',
+        sla_acknowledge_hours: document.getElementById('sla-acknowledge-hours').value,
+        sla_progress_hours: document.getElementById('sla-progress-hours').value,
+        sla_resolution_days: document.getElementById('sla-resolution-days').value,
+    };
+
+    const saved = document.getElementById('settings-saved');
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/settings`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+            saved.style.display = 'inline';
+            setTimeout(() => { saved.style.display = 'none'; }, 3000);
+            loadPilotSettings();
+        } else {
+            showAlert('Could not save settings.');
+        }
+    } catch (err) {
+        console.error('Error saving settings:', err);
+        showAlert('Connection error while saving settings.');
+    }
+}
+
 
 
 async function loadGroups() {
@@ -525,7 +588,7 @@ function editGroup(group) {
 }
 
 async function deleteGroup(id) {
-    if (!confirm('Are you sure you want to delete this group?')) return;
+    if (!await showConfirm('Are you sure you want to delete this group?')) return;
 
     try {
         const response = await fetch(`${API_BASE_URL}/admin/groups/${id}`, { method: 'DELETE' });
@@ -533,7 +596,7 @@ async function deleteGroup(id) {
             loadGroups();
         } else {
             const err = await response.json();
-            alert(err.error || 'Failed to delete group');
+            showAlert(err.error || 'Failed to delete group');
         }
     } catch (err) {
         console.error('Error deleting group:', err);
@@ -934,7 +997,7 @@ async function handleCategorySubmit(e) {
             // The classifier reload can fail independently of the save; if it
             // did, the category exists but nothing will be assigned to it yet.
             if (data.classifier_updated === false) {
-                alert('Category saved, but the AI service could not be refreshed. '
+                showAlert('Category saved, but the AI service could not be refreshed. '
                     + 'It will pick up the change on its next restart.');
             }
             loadCategoryAdmin();
@@ -950,10 +1013,10 @@ async function handleCategorySubmit(e) {
 
 async function deleteCategory(id, name, count) {
     if (count > 0) {
-        alert(`"${name}" is used by ${count} report(s). Reassign those reports before deleting it.`);
+        showAlert(`"${name}" is used by ${count} report(s). Reassign those reports before deleting it.`);
         return;
     }
-    if (!confirm(`Delete the category "${name}"? This also removes its MDA assignments.`)) return;
+    if (!await showConfirm(`Delete the category "${name}"? This also removes its MDA assignments.`)) return;
 
     try {
         const response = await fetch(`${API_BASE_URL}/admin/categories/${id}`, { method: 'DELETE' });
@@ -961,10 +1024,10 @@ async function deleteCategory(id, name, count) {
         if (response.ok && data.success) {
             loadCategoryAdmin();
         } else {
-            alert(data.error || 'Could not delete the category.');
+            showAlert(data.error || 'Could not delete the category.');
         }
     } catch (err) {
-        alert('Connection error while deleting the category.');
+        showAlert('Connection error while deleting the category.');
     }
 }
 
@@ -1098,7 +1161,7 @@ async function exportAuditLog() {
         const res = await fetch(`${API_BASE_URL}/admin/export/audit.csv`);
         if (!res.ok) {
             const body = await res.json().catch(() => ({}));
-            alert(body.message || `Export failed (${res.status}).`);
+            showAlert(body.message || `Export failed (${res.status}).`);
             return;
         }
         const blob = await res.blob();
@@ -1110,6 +1173,6 @@ async function exportAuditLog() {
         link.remove();
         URL.revokeObjectURL(link.href);
     } catch (err) {
-        alert('Connection error while exporting the audit log.');
+        showAlert('Connection error while exporting the audit log.');
     }
 }

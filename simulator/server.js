@@ -88,6 +88,13 @@ async function createServer() {
 
     await verifySchema(db, dbName);
 
+    // The simulator runs the same handler as the backend, so it needs the same
+    // pilot/SLA schema. The backend creates it on boot; a simulator pointed at
+    // a scratch database must create it here too, or the pilot gate silently
+    // reads "off" and lets any number report.
+    const slaService = require('../backend/services/slaService');
+    await slaService.ensureSchema(db);
+
     const whatsAppService = new MockWhatsAppService({
         knownPhonesFile: path.join(__dirname, '.known-phones.json'),
         seedPhones: [DEFAULT_PHONE],
