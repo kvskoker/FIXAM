@@ -582,7 +582,7 @@ function renderLocationFixer(issue) {
     box.innerHTML = `
         <div style="font-size: 0.85rem; color: var(--admin-text-muted); margin-bottom: 0.5rem;">
             This report has no map position, so it does not appear on the map. The citizen described it as:
-            <em>${issue.address ? String(issue.address).replace(/</g, '&lt;') : 'no address given'}</em>
+            <em>${issue.address ? escapeHtml(issue.address) : 'no address given'}</em>
         </div>
         <button id="open-location-picker" style="background: var(--admin-primary); color: #fff; border: none; padding: 7px 14px; border-radius: 4px; cursor: pointer;">
             <i class="fa-solid fa-map-location-dot"></i> Set location on map
@@ -646,8 +646,8 @@ async function openLocationPicker(issue) {
     document.getElementById('location-picker-overlay').classList.remove('hidden');
 
     document.getElementById('lp-context').innerHTML =
-        `<strong>${issue.ticket_id}</strong> — ${String(issue.title || '').replace(/</g, '&lt;')}<br>`
-        + `Reported as: <em>${issue.address ? String(issue.address).replace(/</g, '&lt;') : 'no address given'}</em>`;
+        `<strong>${escapeHtml(issue.ticket_id)}</strong> — ${String(issue.title || '').replace(/</g, '&lt;')}<br>`
+        + `Reported as: <em>${issue.address ? escapeHtml(issue.address) : 'no address given'}</em>`;
 
     const area = await getServiceArea();
 
@@ -789,9 +789,9 @@ function renderIssuesTable(issues) {
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid var(--admin-border)';
         tr.innerHTML = `
-            <td data-label="Issue ID" style="padding: 1rem; font-family: monospace;">${issue.ticket_id || 'N/A'}</td>
-            <td data-label="Category" style="padding: 1rem;">${issue.category}</td>
-            <td data-label="Title" style="padding: 1rem; font-weight: 500;">${issue.title} ${formatEvidenceFlags(issue)}</td>
+            <td data-label="Issue ID" style="padding: 1rem; font-family: monospace;">${escapeHtml(issue.ticket_id) || 'N/A'}</td>
+            <td data-label="Category" style="padding: 1rem;">${escapeHtml(issue.category)}</td>
+            <td data-label="Title" style="padding: 1rem; font-weight: 500;">${escapeHtml(issue.title)} ${formatEvidenceFlags(issue)}</td>
             <td data-label="Location" style="padding: 1rem; color: var(--admin-text-muted);">${formatIssueLocation(issue)}</td>
             <td data-label="Votes" style="padding: 1rem;">${issue.upvotes || 0}</td>
             <td data-label="Status" style="padding: 1rem;">
@@ -835,7 +835,7 @@ function renderClosurePanel(issue) {
         };
         line.innerHTML = `<strong>Closed</strong> on ${new Date(issue.closed_at).toLocaleDateString('en-GB')}
             — ${reasons[issue.closure_reason] || issue.closure_reason || 'no reason recorded'}
-            ${issue.closure_note ? `<div style="margin-top: 4px; font-style: italic;">"${issue.closure_note}"</div>` : ''}
+            ${issue.closure_note ? `<div style="margin-top: 4px; font-style: italic;">"${escapeHtml(issue.closure_note)}"</div>` : ''}
             ${disputeLine}`;
         closeControls.style.display = 'none';
         reopenControls.style.display = 'block';
@@ -928,15 +928,15 @@ function renderReporter(issue) {
     }
 
     const phone = issue.reported_by_phone
-        ? `<a href="https://wa.me/${issue.reported_by_phone}" target="_blank" rel="noopener"
+        ? `<a href="https://wa.me/${escapeHtml(issue.reported_by_phone)}" target="_blank" rel="noopener"
               style="color: var(--admin-primary); text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
-             <i class="fa-brands fa-whatsapp"></i> ${issue.reported_by_phone}
+             <i class="fa-brands fa-whatsapp"></i> ${escapeHtml(issue.reported_by_phone)}
            </a>`
         : '<span style="font-style: italic; font-size: 0.85rem;">Contact details are not available to your role</span>';
 
     el.innerHTML = `
         <div style="font-weight: 600; color: var(--admin-text); margin-bottom: 4px;">
-            <i class="fa-solid fa-user" style="margin-right: 6px;"></i>${issue.reported_by_name}
+            <i class="fa-solid fa-user" style="margin-right: 6px;"></i>${escapeHtml(issue.reported_by_name)}
         </div>
         <div>${phone}</div>`;
 }
@@ -1093,14 +1093,14 @@ function renderIssueMedia(issue) {
 function setDetailPageHeading(issue) {
     const heading = document.getElementById('page-heading');
     const sub = document.getElementById('page-subheading');
-    if (heading) heading.textContent = `Report ${issue.ticket_id}`;
+    if (heading) heading.textContent = `Report ${escapeHtml(issue.ticket_id)}`;
     if (sub) {
         const reported = new Date(issue.created_at).toLocaleDateString('en-GB', {
             day: 'numeric', month: 'long', year: 'numeric'
         });
-        sub.textContent = `${issue.category} · reported ${reported}`;
+        sub.textContent = `${escapeHtml(issue.category)} · reported ${reported}`;
     }
-    document.title = `FIXAM - ${issue.ticket_id}`;
+    document.title = `FIXAM - ${escapeHtml(issue.ticket_id)}`;
 }
 
 async function openIssueDetails(id) {
@@ -1308,9 +1308,9 @@ function renderTimeline(logs) {
         item.innerHTML = `
             <div style="position: absolute; left: -1.35rem; top: 0; width: 12px; height: 12px; background: var(--admin-primary); border-radius: 50%; border: 2px solid var(--admin-card-bg);"></div>
             <div style="font-size: 0.85rem; color: var(--admin-text-muted); margin-bottom: 0.25rem;">${new Date(log.created_at).toLocaleString('en-GB')}</div>
-            <div style="font-weight: 600; margin-bottom: 0.25rem; text-transform: capitalize;">${log.action.replace('_', ' ')}</div>
-            <div style="font-size: 0.9rem; color: var(--admin-text-muted);">${log.description}</div>
-            ${log.performed_by_name ? `<div style="font-size: 0.8rem; color: var(--admin-primary); margin-top: 0.25rem;">By: ${log.performed_by_name}</div>` : ''}
+            <div style="font-weight: 600; margin-bottom: 0.25rem; text-transform: capitalize;">${escapeHtml(log.action.replace('_', ' '))}</div>
+            <div style="font-size: 0.9rem; color: var(--admin-text-muted);">${escapeHtml(log.description)}</div>
+            ${log.performed_by_name ? `<div style="font-size: 0.8rem; color: var(--admin-primary); margin-top: 0.25rem;">By: ${escapeHtml(log.performed_by_name)}</div>` : ''}
         `;
         container.appendChild(item);
     });
@@ -1762,10 +1762,10 @@ async function loadQuestionnaires(issueId) {
                 } else if (a.skipped) {
                     value = '<span style="color: var(--admin-text-muted); font-style: italic;">skipped</span>';
                 } else {
-                    value = `<strong>${a.value}</strong>`;
+                    value = `<strong>${escapeHtml(a.value)}</strong>`;
                 }
                 return `<div style="display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0; border-bottom: 1px solid var(--admin-border);">
-                            <span style="color: var(--admin-text-muted); font-size: 0.85rem;">${a.question}</span>
+                            <span style="color: var(--admin-text-muted); font-size: 0.85rem;">${escapeHtml(a.question)}</span>
                             <span style="text-align: right; font-size: 0.9rem;">${value}</span>
                         </div>`;
             }).join('');
@@ -1774,14 +1774,14 @@ async function loadQuestionnaires(issueId) {
                 && run.category_at_send !== currentIssueData.category
                 ? `<div style="font-size: 0.78rem; color: var(--admin-warning); margin-top: 0.5rem;">
                      <i class="fa-solid fa-circle-info"></i>
-                     Asked while this report was categorised as ${run.category_at_send}.
+                     Asked while this report was categorised as ${escapeHtml(run.category_at_send)}.
                    </div>`
                 : '';
 
             return `
                 <div style="border: 1px solid var(--admin-border); border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
-                        <strong>${run.flow_name}</strong>
+                        <strong>${escapeHtml(run.flow_name)}</strong>
                         <span style="color: ${state.colour}; font-size: 0.8rem; font-weight: 600;">${state.label}</span>
                     </div>
                     <div style="font-size: 0.78rem; color: var(--admin-text-muted); margin-bottom: 0.75rem;">

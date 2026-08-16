@@ -124,6 +124,27 @@ function isFullAdmin() {
  * matches their remit, not a fuller one with dead controls.
  */
 /**
+ * Make user-supplied text safe to put inside HTML.
+ *
+ * Report titles, descriptions and addresses are written by citizens over
+ * WhatsApp and rendered into admin pages with innerHTML. Without this, a report
+ * titled `<img src=x onerror=...>` runs script in the browser of every official
+ * who opens the issue list -- a citizen reaching into government machines.
+ *
+ * Escapes quotes as well as angle brackets, because several of these values are
+ * interpolated into attributes (alt, title) where a quote alone breaks out.
+ */
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/**
  * Show why a table is empty instead of leaving it blank.
  *
  * A failed request used to reach the renderer as `undefined`, which threw and

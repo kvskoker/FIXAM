@@ -1,4 +1,25 @@
 
+/**
+ * Make user-supplied text safe to put inside HTML.
+ *
+ * Report titles, descriptions and addresses are written by citizens over
+ * WhatsApp and rendered into admin pages with innerHTML. Without this, a report
+ * titled `<img src=x onerror=...>` runs script in the browser of every official
+ * who opens the issue list -- a citizen reaching into government machines.
+ *
+ * Escapes quotes as well as angle brackets, because several of these values are
+ * interpolated into attributes (alt, title) where a quote alone breaks out.
+ */
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // Closing a report without fixing it is a public statement, so the reason is
 // written the way it would be said to the person who reported it.
 const CLOSURE_LABELS = {
@@ -412,7 +433,7 @@ function renderIssues(issues) {
                 `;
             } else {
                 mediaContent = issue.image_url
-                    ? `<img src="${issue.image_url}" class="popup-image" alt="${issue.title}"
+                    ? `<img src="${issue.image_url}" class="popup-image" alt="${escapeHtml(issue.title)}"
                            style="width: 100%; height: 120px; object-fit: cover; border-radius: 8px; margin-bottom: 8px;"
                            onerror="this.outerHTML = noMediaBlock('120px')">`
                     : noMediaBlock('120px');
@@ -443,14 +464,14 @@ function renderIssues(issues) {
                         ${audioContent}
                         
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                             <div style="font-size: 0.7rem; font-weight: 650; color: ${currentColor}; text-transform: uppercase;">${issue.category}</div>
+                             <div style="font-size: 0.7rem; font-weight: 650; color: ${currentColor}; text-transform: uppercase;">${escapeHtml(issue.category)}</div>
                              <span style="background: rgba(${colors[currentStatusType].r}, ${colors[currentStatusType].g}, ${colors[currentStatusType].b}, 0.15); color: ${currentColor}; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: capitalize;">${issue.status}</span>
                         </div>
-                        <div class="popup-title" style="font-weight: 700; font-size: 1.1rem; margin-bottom: 12px; color: var(--text-primary); line-height: 1.3;">${issue.title}</div>
+                        <div class="popup-title" style="font-weight: 700; font-size: 1.1rem; margin-bottom: 12px; color: var(--text-primary); line-height: 1.3;">${escapeHtml(issue.title)}</div>
                         
                         <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
                             <span style="font-weight: 500;">Issue ID:</span>
-                            <span style="color: var(--text-primary); font-family: monospace; font-weight: 600;">#${issue.ticket_id}</span>
+                            <span style="color: var(--text-primary); font-family: monospace; font-weight: 600;">#${escapeHtml(issue.ticket_id)}</span>
                         </div>
 
                         ${paginationHtml}
@@ -486,11 +507,11 @@ function renderIssues(issues) {
             card.className = 'issue-card';
             card.innerHTML = `
                 <div class="issue-header">
-                    <span class="issue-category">${issue.category}</span>
+                    <span class="issue-category">${escapeHtml(issue.category)}</span>
                     <div class="issue-status status-${issue.status}"></div>
                 </div>
-                <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.25rem;">#${issue.ticket_id}</div>
-                <div class="issue-title" style="font-weight: 600;">${issue.title}</div>
+                <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.25rem;">#${escapeHtml(issue.ticket_id)}</div>
+                <div class="issue-title" style="font-weight: 600;">${escapeHtml(issue.title)}</div>
                 <div class="issue-location">
                     <i class="fa-solid fa-location-dot"></i> ${formatAddress(issue.address) || 'Freetown, SL'}
                 </div>            
@@ -656,12 +677,12 @@ async function viewTracker(issueId) {
                     <div class="details-col-left">
                         <div>
                             <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem;">
-                                <span style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.5px;">${issue.category}</span>
+                                <span style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.5px;">${escapeHtml(issue.category)}</span>
                                 <span style="padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: capitalize; background: rgba(0,0,0,0.05); color: var(--text-primary); border: 1px solid var(--border-color);">${issue.status}</span>
                             </div>
-                            <h2 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.75rem; line-height: 1.2; font-weight: 700;">${issue.title}</h2>
+                            <h2 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.75rem; line-height: 1.2; font-weight: 700;">${escapeHtml(issue.title)}</h2>
                             <div style="font-size: 1rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 1.5rem;">
-                                ${issue.description}${transcriptionConfidenceBadge(issue)}
+                                ${escapeHtml(issue.description)}${transcriptionConfidenceBadge(issue)}
                             </div>
                         </div>
 
@@ -669,7 +690,7 @@ async function viewTracker(issueId) {
                         <div style="background: var(--background-color); padding: 1.25rem; border-radius: 12px; border: 1px solid var(--border-color); display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
                             <div>
                                 <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Issue ID</div>
-                                <div style="color: var(--text-primary); font-family: monospace; font-weight: 700; font-size: 1.1rem;">#${issue.ticket_id}</div>
+                                <div style="color: var(--text-primary); font-family: monospace; font-weight: 700; font-size: 1.1rem;">#${escapeHtml(issue.ticket_id)}</div>
                             </div>
                             <div>
                                 <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Reported On</div>
@@ -706,7 +727,7 @@ async function viewTracker(issueId) {
                                         <i class="fa-solid fa-thumbs-up"></i> ${issue.endorsements || 0} Endorsed
                                     </div>
                                 </div>
-                                <div style="color: var(--text-primary); font-size: 0.95rem; line-height: 1.5;">${issue.resolution_note}</div>
+                                <div style="color: var(--text-primary); font-size: 0.95rem; line-height: 1.5;">${escapeHtml(issue.resolution_note)}</div>
                             </div>
                         ` : ''}
 
@@ -718,7 +739,7 @@ async function viewTracker(issueId) {
                                     <i class="fa-solid fa-folder-closed"></i>
                                     Closed without a repair · ${CLOSURE_LABELS[issue.closure_reason] || 'reason not recorded'}
                                 </div>
-                                <div style="color: var(--text-primary); font-size: 0.95rem; line-height: 1.5;">${issue.closure_note}</div>
+                                <div style="color: var(--text-primary); font-size: 0.95rem; line-height: 1.5;">${escapeHtml(issue.closure_note)}</div>
                             </div>
                         ` : ''}
 

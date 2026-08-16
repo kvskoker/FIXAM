@@ -18,19 +18,11 @@ const botFlow = require('../services/botFlow');
 // Initialize Handler
 const fixamHandler = new FixamHandler(whatsappService, db, null, console.log);
 
-// User session store to track conversation state (still in-memory for now)
-// User session store to track conversation state (still in-memory for now)
-const userSessions = {}; 
-
-// Helper to generate 10-char alphanumeric ticket ID
-function generateTicketId() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    for (let i = 0; i < 10; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-} 
+// Conversation state lives in PostgreSQL (conversation_state), and ticket IDs
+// come from fixamHelpers in the FIX-XXXXXX format. An in-memory session object
+// and a second ticket generator used to sit here; neither was ever read, and
+// the generator produced a different ID format from the one actually in use,
+// which is part of why two ID styles appeared in the database.
 
 // Records administrative changes. Mounted before the routes so it applies to
 // every one of them, including any added later.
@@ -122,8 +114,14 @@ async function resolveRequestScope(req) {
 router.get('/issues', async (req, res) => {
     try {
         const { search, category, status, sort, ticket, page = 1, limit = 1000 } = req.query;
-        const pageNum = parseInt(page);
-        const limitNum = parseInt(limit);
+
+        // Clamped, because these come straight from a query string. A request
+        // for limit=5000000 used to be honoured: one unauthenticated caller
+        // could pull the whole table repeatedly and exhaust the database.
+        // NaN falls back to the default rather than poisoning the arithmetic.
+        const MAX_PAGE_SIZE = 1000;
+        const pageNum = Math.max(1, parseInt(page, 10) || 1);
+        const limitNum = Math.min(Math.max(1, parseInt(limit, 10) || 1000), MAX_PAGE_SIZE);
         const offset = (pageNum - 1) * limitNum;
 
         let query = `
@@ -252,7 +250,7 @@ router.get('/issues', async (req, res) => {
         // trusting the SELECT list to stay safe.
         const rows = scope
             ? result.rows
-            : result.rows.map(({ reported_by, reported_by_name, reported_by_phone, ...rest }) => ({
+            : result.rows.map(({ reported_by: _id, reported_by_name, reported_by_phone: _phone, ...rest }) => ({
                 ...rest,
                 reported_by_name: reported_by_name ? 'Citizen' : null
             }));
@@ -283,7 +281,7 @@ router.post('/issues/:id/vote', async (req, res) => {
         }
 
         // Find or create user
-        let userResult = await db.query('SELECT id FROM users WHERE phone_number = $1', [user_phone]);
+        const userResult = await db.query('SELECT id FROM users WHERE phone_number = $1', [user_phone]);
         let userId;
 
         if (userResult.rows.length === 0) {
@@ -592,14 +590,6 @@ router.get('/stats', async (req, res) => {
     try {
         const { start_date, end_date, category } = req.query;
 
-        // Common condition for category
-        let categoryCond = '';
-        let categoryParams = [];
-        if (category) {
-            categoryCond = ` AND category = $${(start_date || end_date ? (start_date && end_date ? 3 : 2) : 1)}`;
-            categoryParams = [category];
-        }
-
         if (start_date || end_date) {
             const params = [];
             let pCount = 1;
@@ -622,17 +612,15 @@ router.get('/stats', async (req, res) => {
                 pCount++;
             }
 
-            const [totalRes, resolvedRes, criticalRes, allTimeRes] = await Promise.all([
+            const [totalRes, resolvedRes, criticalRes] = await Promise.all([
                 db.query(`SELECT COUNT(*) as count FROM issues ${whereClause}`, params),
                 db.query(`SELECT COUNT(*) as count FROM issue_tracker it JOIN issues i ON it.issue_id = i.id WHERE it.action = 'resolved' ${whereClause.replace(/created_at/g, 'it.created_at').replace(/category/g, 'i.category').replace('WHERE', 'AND')}`, params),
-                db.query(`SELECT COUNT(*) as count FROM issues ${whereClause} AND status = 'critical'`, params),
-                db.query(`SELECT COUNT(*) as count FROM issues ${category ? 'WHERE category = $1' : ''}`, category ? [category] : [])
+                db.query(`SELECT COUNT(*) as count FROM issues ${whereClause} AND status = 'critical'`, params)
             ]);
 
             const total = parseInt(totalRes.rows[0].count);
             const resolved = parseInt(resolvedRes.rows[0].count);
             const critical = parseInt(criticalRes.rows[0].count);
-            const allTime = parseInt(allTimeRes.rows[0].count);
             const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0;
 
             return res.json({
@@ -647,7 +635,6 @@ router.get('/stats', async (req, res) => {
 
         // Default logic: This Week vs Last Week
         const currentParams = category ? [category] : [];
-        const catIdx = category ? 1 : null;
         
         // 1. Total Reports (This Week)
         const totalReportsResult = await db.query(`
@@ -1956,7 +1943,7 @@ router.put('/admin/users/:id', requireFullAdmin, attachScope, async (req, res) =
         const { name, phone_number, is_disabled, roles, groups, password } = req.body;
 
         // 1. Prevent self-disabling
-        if (id == req.admin.id && is_disabled === true) {
+        if (Number(id) === req.admin.id && is_disabled === true) {
             return res.status(400).json({ error: 'You cannot disable your own account' });
         }
 
@@ -2015,7 +2002,7 @@ router.delete('/admin/users/:id', requireFullAdmin, attachScope, async (req, res
         const { id } = req.params;
 
         // Prevent self-deletion
-        if (id == req.admin.id) {
+        if (Number(id) === req.admin.id) {
             return res.status(400).json({ error: 'You cannot delete your own account' });
         }
 

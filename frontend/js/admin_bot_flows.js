@@ -147,9 +147,9 @@ async function loadFlows() {
             const everUsed = sent > 0;
 
             return `<tr style="${off ? 'opacity: 0.62;' : ''}">
-                <td data-label="Questionnaire"><strong>${flow.name}</strong>
-                    ${flow.description ? `<div style="font-size: 0.78rem; color: var(--admin-text-muted);">${flow.description}</div>` : ''}</td>
-                <td data-label="Applies to">${flow.category}</td>
+                <td data-label="Questionnaire"><strong>${escapeHtml(flow.name)}</strong>
+                    ${flow.description ? `<div style="font-size: 0.78rem; color: var(--admin-text-muted);">${escapeHtml(flow.description)}</div>` : ''}</td>
+                <td data-label="Applies to">${escapeHtml(flow.category)}</td>
                 <td data-label="Institution">${flow.group_name || '—'}</td>
                 <td data-label="Live version">${stateCell}</td>
                 <td data-label="Sent / answered">${rate}</td>
@@ -243,7 +243,7 @@ function openNewFlowModal() {
     // offering it others would only produce a refusal.
     const select = document.getElementById('new-flow-category');
     select.innerHTML = allCategories
-        .map((c) => `<option value="${c.name}">${c.name}</option>`)
+        .map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`)
         .join('');
 
     // An administrator can create on behalf of any institution, so they have to
@@ -385,7 +385,7 @@ function renderEditor() {
 
     document.getElementById('editor-title').textContent = flow.name;
     document.getElementById('editor-subtitle').textContent =
-        `${flow.category} · ${flow.group_name || 'Platform'} · editing version ${version.version_number}`;
+        `${escapeHtml(flow.category)} · ${flow.group_name || 'Platform'} · editing version ${version.version_number}`;
 
     const badge = STATE_BADGES[version.state] || { label: version.state, colour: 'var(--admin-text-muted)' };
     document.getElementById('editor-state-badge').innerHTML =
@@ -703,7 +703,7 @@ function renderVersions() {
             <td data-label="Version">v${v.version_number}</td>
             <td data-label="State"><span style="color: ${badge.colour}; font-weight: 600;">${badge.label}</span></td>
             <td data-label="Change" style="font-size: 0.85rem;">${v.change_note || '—'}
-                ${v.review_note ? `<div style="color: var(--admin-text-muted); font-style: italic;">“${v.review_note}”</div>` : ''}</td>
+                ${v.review_note ? `<div style="color: var(--admin-text-muted); font-style: italic;">“${escapeHtml(v.review_note)}”</div>` : ''}</td>
             <td data-label="Who" style="font-size: 0.82rem; color: var(--admin-text-muted);">${who}</td>
             <td data-label="Actions" style="text-align: right;">
                 ${canRollback ? `<button class="action-btn" title="Make this live again" onclick="rollbackVersion(${v.id}, ${v.version_number})">

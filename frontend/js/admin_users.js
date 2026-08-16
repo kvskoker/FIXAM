@@ -146,11 +146,11 @@ function renderUsers(users) {
                         ${(user.name || 'U').charAt(0).toUpperCase()}
                     </div>
                     <div style="text-align: left; overflow: hidden; text-overflow: ellipsis;">
-                        <div style="font-weight: 500;">${user.name || 'Anonymous'} ${isSelf ? '<span style="color: var(--admin-primary); font-size: 0.75rem; margin-left: 0.5rem;">(You)</span>' : ''}</div>
+                        <div style="font-weight: 500;">${escapeHtml(user.name) || 'Anonymous'} ${isSelf ? '<span style="color: var(--admin-primary); font-size: 0.75rem; margin-left: 0.5rem;">(You)</span>' : ''}</div>
                     </div>
                 </div>
             </td>
-            <td data-label="Phone">${user.phone_number}</td>
+            <td data-label="Phone">${escapeHtml(user.phone_number)}</td>
             <td data-label="Roles">
                 <div style="display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end;">
                     ${roles.map(r => `<span class="role-badge role-${r.toLowerCase()}">${r}</span>`).join('')}
@@ -388,12 +388,12 @@ function renderGroups(groups) {
     (Array.isArray(groups) ? groups : []).forEach(group => {
         const categories = Array.isArray(group.categories) ? group.categories : JSON.parse(group.categories || '[]');
         const categoriesHtml = categories.length > 0
-            ? categories.map(c => `<span class="badge" style="background: rgba(37, 99, 235, 0.1); color: var(--admin-primary); border: 1px solid rgba(37, 99, 235, 0.2); margin-right: 6px; padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; display: inline-block; margin-bottom: 4px;">${c.name}</span>`).join('')
+            ? categories.map(c => `<span class="badge" style="background: rgba(37, 99, 235, 0.1); color: var(--admin-primary); border: 1px solid rgba(37, 99, 235, 0.2); margin-right: 6px; padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; display: inline-block; margin-bottom: 4px;">${escapeHtml(c.name)}</span>`).join('')
             : '<span style="color: var(--admin-text-muted); font-style: italic;">None</span>';
 
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td data-label="Group Name" style="font-weight: 600; color: var(--admin-primary);">${group.name}</td>
+            <td data-label="Group Name" style="font-weight: 600; color: var(--admin-primary);">${escapeHtml(group.name)}</td>
             <td data-label="Description">${group.description || '<span style="color: var(--admin-text-muted);">No description</span>'}</td>
             <td data-label="Assigned Categories">${categoriesHtml}</td>
             <td data-label="Members">
@@ -857,7 +857,7 @@ function renderCategoryRows(rows, noMatches) {
         // An unmapped category is not broken -- default recipients cover it --
         // but it is configuration still to do, so it is called out.
         const mdaHtml = cat.mdas.length
-            ? cat.mdas.map((m) => `<span style="background: rgba(37,99,235,0.1); color: var(--admin-primary); border:1px solid rgba(37,99,235,0.2); padding:3px 8px; border-radius:12px; font-size:0.75rem; font-weight:600; margin-right:6px; display:inline-block;">${m.name}${m.role === 'lead' ? ' · lead' : ''}</span>`).join('')
+            ? cat.mdas.map((m) => `<span style="background: rgba(37,99,235,0.1); color: var(--admin-primary); border:1px solid rgba(37,99,235,0.2); padding:3px 8px; border-radius:12px; font-size:0.75rem; font-weight:600; margin-right:6px; display:inline-block;">${escapeHtml(m.name)}${m.role === 'lead' ? ' · lead' : ''}</span>`).join('')
             : '<span style="color: var(--admin-warning); font-size: 0.8rem;">Not assigned — goes to default recipients</span>';
 
         const tr = document.createElement('tr');
@@ -865,7 +865,7 @@ function renderCategoryRows(rows, noMatches) {
             <td data-label="Category">
                 <span style="display:inline-flex; align-items:center; gap:8px;">
                     <i class="fa-solid ${cat.icon || 'fa-tag'}" style="color: ${cat.color || '#64748b'};"></i>
-                    <strong>${cat.name}</strong>
+                    <strong>${escapeHtml(cat.name)}</strong>
                 </span>
             </td>
             <td data-label="Assigned MDAs">${mdaHtml}</td>
@@ -1077,13 +1077,13 @@ async function loadAuditLog() {
                 <td data-label="When" style="white-space: nowrap; color: var(--admin-text-muted); font-size: 0.85rem;">
                     ${new Date(entry.created_at).toLocaleString('en-GB')}
                 </td>
-                <td data-label="Who">${entry.actor_name || '<span style="color: var(--admin-text-muted);">unauthenticated</span>'}</td>
+                <td data-label="Who">${entry.actor_name ? escapeHtml(entry.actor_name) : '<span style="color: var(--admin-text-muted);">unauthenticated</span>'}</td>
                 <td data-label="Action" style="color: ${colour}; font-weight: 600;">
                     ${AUDIT_ACTION_LABELS[entry.action] || entry.action}
                 </td>
-                <td data-label="Target">${entry.target_label || (entry.target_id ? `#${entry.target_id}` : '—')}</td>
+                <td data-label="Target">${entry.target_label ? escapeHtml(entry.target_label) : (entry.target_id ? `#${escapeHtml(entry.target_id)}` : '—')}</td>
                 <td data-label="Detail" style="color: var(--admin-text-muted); font-size: 0.85rem; max-width: 380px;">
-                    ${entry.detail || '—'}
+                    ${escapeHtml(entry.detail) || '—'}
                 </td>`;
             list.appendChild(tr);
         });

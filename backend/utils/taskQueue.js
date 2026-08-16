@@ -1,4 +1,3 @@
-const logger = require('../services/logger');
 
 /**
  * simple-task-queue.js

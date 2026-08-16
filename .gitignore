@@ -34,3 +34,5 @@ coverage/
 
 # Media received from WhatsApp (and the simulator) — user data, served at /uploads
 frontend/uploads/
+docs/FIXAM_Full_Report.PDF
+docs/REVIEW_STATUS.md

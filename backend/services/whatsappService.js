@@ -83,8 +83,8 @@ async function downloadMedia(mediaId) {
         const fs = require('fs');
         const path = require('path');
         try {
-            let filename = mediaId === 'TEST_AUDIO' ? 'test_audio.ogg' : 'test_image.jpg';
-            let type = mediaId === 'TEST_AUDIO' ? 'audio/ogg' : 'image/jpeg';
+            const filename = mediaId === 'TEST_AUDIO' ? 'test_audio.ogg' : 'test_image.jpg';
+            const type = mediaId === 'TEST_AUDIO' ? 'audio/ogg' : 'image/jpeg';
             
             // Point to load_testing folder in backend
             const filePath = path.join(__dirname, '../load_testing', filename);

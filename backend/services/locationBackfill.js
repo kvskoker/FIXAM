@@ -34,7 +34,7 @@ async function backfillOnce() {
                 -- When a lookup fails the handler stores the coordinates in
                 -- place of an address, so the field is filled but says nothing
                 -- a person could act on. Those count as unresolved too.
-                OR address ~ '^-?[0-9]+\.[0-9]+, *-?[0-9]+\.[0-9]+$')
+                OR address ~ '^-?[0-9]+\\.[0-9]+, *-?[0-9]+\\.[0-9]+$')
          ORDER BY created_at DESC
          LIMIT $1`,
         [MAX_PER_PASS]
@@ -65,7 +65,7 @@ async function backfillOnce() {
                          -- Replace a placeholder coordinate string with the
                          -- real address; keep anything a human typed or fixed.
                          WHEN address IS NULL OR address = ''
-                              OR address ~ '^-?[0-9]+\.[0-9]+, *-?[0-9]+\.[0-9]+$'
+                              OR address ~ '^-?[0-9]+\\.[0-9]+, *-?[0-9]+\\.[0-9]+$'
                          THEN COALESCE($1, address)
                          ELSE address END,
                      district = COALESCE(district, $2),

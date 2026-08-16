@@ -591,6 +591,11 @@ def analyze_intent(request: AnalyzeIntentRequest):
 
     try:
         user_text = request.text.strip()
+        # Every keyword test below compares against a lowered copy of the
+        # message. It was never assigned, so the first comparison raised
+        # NameError, the handler returned 500, and the bot fell back to the
+        # numbered menu -- which is why free-text messaging has never worked.
+        lower_text = user_text.lower()
         logger.info("Analyzing intent for text: %s", user_text)
         
         # 1. Use Embedding Model to find best matching intent
@@ -602,10 +607,22 @@ def analyze_intent(request: AnalyzeIntentRequest):
             "entities": {}
         }
         
-        # Ticket ID Extraction (Improved to handle missing prefix)
-        # Matches FIX-G9IJIY or just G9IJIY (but only if it looks like a ticket ID)
-        ticket_pattern = r'\b(?:FIX-)?([A-Z0-9]{6})\b'
-        ticket_match = re.search(ticket_pattern, user_text.upper())
+        # Ticket ID extraction.
+        #
+        # The prefixed form is tried first and on its own. Making "FIX-" optional
+        # meant any six-letter word qualified, and because the search returns the
+        # first match, "upvote FIX-A1B2C3" yielded FIX-UPVOTE while "I want to
+        # report a pothole" invented FIX-REPORT for a citizen who had no ticket
+        # at all. This was invisible while the endpoint crashed on every call.
+        #
+        # A bare code is still accepted, but only with a digit in it, which no
+        # ordinary English word has. Someone typing a letters-only code without
+        # the prefix is handled by the Track flow, which asks for it directly.
+        upper_text = user_text.upper()
+        ticket_match = re.search(r'\bFIX-([A-Z0-9]{6})\b', upper_text)
+        if not ticket_match:
+            ticket_match = re.search(r'\b(?=[A-Z0-9]{6}\b)(?=[A-Z0-9]*[0-9])([A-Z0-9]{6})\b', upper_text)
+
         if ticket_match:
             ticket_id = f"FIX-{ticket_match.group(1)}"
             logger.info("Found Ticket ID: %s", ticket_id)

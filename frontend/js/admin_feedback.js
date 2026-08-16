@@ -33,7 +33,7 @@ async function loadRoutingCategories() {
         routingCategories = await res.json();
         const select = document.getElementById('routing-category');
         select.innerHTML = routingCategories
-            .map((c) => `<option value="${c.name}">${c.name}</option>`)
+            .map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`)
             .join('');
     } catch (err) {
         console.error('Could not load categories for routing:', err);
@@ -207,12 +207,12 @@ function renderFeedback(feedbackList) {
                 return '<span class="status-badge" style="background: rgba(99,102,241,0.12); color:#6366f1; border:1px solid rgba(99,102,241,0.3);">Platform · MoCTI/DSTI</span>';
             }
             if (item.scope === 'service' && item.routed_group_name) {
-                return `<span class="status-badge" style="background: rgba(37,99,235,0.1); color: var(--admin-primary); border:1px solid rgba(37,99,235,0.25);">${item.routed_group_name}</span>`
-                    + `<div style="font-size:0.75rem; color: var(--admin-text-muted); margin-top:4px;">${item.category || ''}</div>`;
+                return `<span class="status-badge" style="background: rgba(37,99,235,0.1); color: var(--admin-primary); border:1px solid rgba(37,99,235,0.25);">${escapeHtml(item.routed_group_name)}</span>`
+                    + `<div style="font-size:0.75rem; color: var(--admin-text-muted); margin-top:4px;">${escapeHtml(item.category) || ''}</div>`;
             }
             if (item.scope === 'suggested') {
                 return '<span class="status-badge" style="background: rgba(245,158,11,0.12); color: var(--admin-warning); border:1px dashed rgba(245,158,11,0.5);">Awaiting confirmation</span>'
-                    + `<div style="font-size:0.75rem; color: var(--admin-text-muted); margin-top:4px;">suggested: ${item.category || 'a service category'}</div>`;
+                    + `<div style="font-size:0.75rem; color: var(--admin-text-muted); margin-top:4px;">suggested: ${escapeHtml(item.category) || 'a service category'}</div>`;
             }
             return '<span class="status-badge" style="background: rgba(245,158,11,0.12); color: var(--admin-warning); border:1px solid rgba(245,158,11,0.3);">Needs routing</span>';
         })();
@@ -238,7 +238,7 @@ function renderFeedback(feedbackList) {
         row.innerHTML = `
             <td data-label="User">
                 <div style="font-weight: 500;">${item.user_name || 'Unknown'}</div>
-                <div style="font-size: 0.85rem; color: var(--admin-text-muted);">${item.phone_number}</div>
+                <div style="font-size: 0.85rem; color: var(--admin-text-muted);">${escapeHtml(item.phone_number)}</div>
             </td>
             <td data-label="Type">${typeIcon} ${item.type.toUpperCase()}</td>
             <td data-label="Feedback/Transcription">

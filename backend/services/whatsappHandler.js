@@ -17,8 +17,6 @@ const STOP_REPLIES = ['stop', 'no', 'no thanks', 'cancel', 'later'];
 const MENU_TRIGGERS = ['hi', 'hello', 'menu', 'start', 'help', 'report',
     '1', '2', '3', '4', '5', '6', '7', '8'];
 const { analyzeIssue, analyzeIntent } = aiService; // Keep backward compatibility for existing calls
-const axios = require('axios');
-const FormData = require('form-data');
 
 // Where media the bot receives is written so the static frontend can serve it at
 // /uploads/... Resolved from this file rather than process.cwd(), so it lands in
@@ -201,7 +199,7 @@ class FixamHandler {
         const lowerInput = input.toLowerCase();
 
         // Check if user exists
-        let user = await this.fixamDb.getUser(fromNumber);
+        const user = await this.fixamDb.getUser(fromNumber);
 
         // Every message from a citizen re-opens WhatsApp's 24-hour window.
         // Recorded here, at the one point every inbound message passes through,
@@ -413,7 +411,7 @@ class FixamHandler {
 
         if (!user) {
             // ── DPG: Consent-based registration flow ────────────────────────
-            let state = await this.fixamDb.getConversationState(fromNumber);
+            const state = await this.fixamDb.getConversationState(fromNumber);
             const pendingConsent = await this.fixamDb.getPendingConsent(fromNumber);
 
             // Already consented — proceed to name registration
@@ -1498,7 +1496,7 @@ class FixamHandler {
     }
 
     async handleLocationMessage(fromNumber, location) {
-        let state = await this.fixamDb.getConversationState(fromNumber);
+        const state = await this.fixamDb.getConversationState(fromNumber);
         // Also accepted while the citizen is deciding what to do about an
         // address we could not resolve -- that prompt invites a GPS pin.
         const acceptsLocation = ['awaiting_report_location', 'awaiting_unresolved_location_choice'];
@@ -1603,7 +1601,7 @@ class FixamHandler {
 
     async handleMediaMessage(fromNumber, message) {
         logger.log('media_handler', `========== handleMediaMessage called for ${fromNumber} ==========`);
-        let state = await this.fixamDb.getConversationState(fromNumber);
+        const state = await this.fixamDb.getConversationState(fromNumber);
         logger.log('media_handler', `User state: ${state?.current_step || 'null'}`);
         
         if (state && state.current_step === 'awaiting_report_evidence') {
@@ -1630,7 +1628,20 @@ class FixamHandler {
                     await this.sendMessage(fromNumber, "⚠️ This image contains sensitive content and has been rejected.");
                     return;
                 }
-                logger.log('media_handler', 'Image passed safety check matches');
+
+                if (!classification) {
+                    // The check could not run. "We don't know" was being treated
+                    // as "it's safe", so every unsafe image sent during an AI
+                    // outage was published to a public map. Not knowing is not
+                    // the same as being safe -- the same rule the child
+                    // safeguarding check below already follows.
+                    logger.log('media_handler', 'Safety check unavailable; refusing image');
+                    await this.sendMessage(fromNumber,
+                        "⚠️ We can't check this image right now. Please try sending it again in a moment, or type *skip* to continue without a photo.");
+                    return;
+                }
+
+                logger.log('media_handler', 'Image passed safety check');
 
                 // Child-safeguarding: refuse photographs showing a child's face.
                 // Runs before the file is written to disk, so a flagged image is
@@ -1824,7 +1835,7 @@ class FixamHandler {
     }
 
     async handleVoiceMessage(fromNumber, message) {
-        let state = await this.fixamDb.getConversationState(fromNumber);
+        const state = await this.fixamDb.getConversationState(fromNumber);
         if (state && state.current_step === 'awaiting_report_description') {
             const mediaId = message.voice ? message.voice.id : message.audio.id;
             

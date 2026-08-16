@@ -66,7 +66,7 @@ function analyzeIntentLocal(text) {
     const cleanText = text.trim();
     
     // Default result
-    let result = {
+    const result = {
         intent: 'unknown',
         entities: {}
     };
