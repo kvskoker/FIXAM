@@ -178,6 +178,7 @@ The variables you are most likely to change:
 | WhatsApp simulator | http://localhost:4001 | Only with `--profile simulator` |
 | Backend API | http://localhost:5000/api | Also proxied at `http://localhost/api` |
 | PostgreSQL | localhost:5432 | Credentials from `.env` |
+| Geocoding (Nominatim) | http://localhost:8080 | Self-hosted; needs a one-off import, see below |
 
 The AI engine is published on `http://localhost:8000` so it can be exercised
 directly with curl or Postman. The backend reaches it over the compose network
@@ -274,6 +275,48 @@ fabricated one.
 **Not using the AI features at all?** `docker compose up -d postgres backend frontend`
 runs on ~200 MB. The bot still works — reports fall back to `Uncategorized`,
 voice notes are stored untranscribed, and image safety checks are skipped.
+
+### Building the geocoding database
+
+FIXAM runs its own Nominatim so address lookups have no per-second limit and no
+dependency on an outside service. The map data has to be imported once.
+
+On first start with an empty `nominatim-data` volume, the container downloads
+the Sierra Leone extract and builds the search database by itself:
+
+```bash
+docker compose up -d nominatim
+```
+
+Follow it, because it takes a while — tens of minutes for a country this size,
+mostly index building:
+
+```bash
+docker compose logs -f nominatim
+```
+
+It is ready when this returns a status:
+
+```bash
+curl http://localhost:8080/status
+```
+
+The result lives in the `nominatim-data` volume and is **never rebuilt on
+restart**. It is only re-imported if that volume is removed, so avoid
+`docker compose down -v` unless you mean to rebuild everything.
+
+**The platform runs fine while the import is still going.** Reports record their
+coordinates, the address is left blank, and the hourly backfill fills in the
+district and ward once geocoding answers — so nothing is lost by starting the
+pilot before the import finishes.
+
+To import a different country, change `NOMINATIM_PBF_URL` and
+`NOMINATIM_REPLICATION_URL` together (both from
+[Geofabrik](https://download.geofabrik.de)), remove the volume, and start again.
+
+> Sizing: the import is the most demanding thing the stack does. Give it at
+> least 2 CPU cores and keep `NOMINATIM_SHM_SIZE` at 1gb or above — a smaller
+> value fails partway through rather than at the start.
 
 ### Pre-downloading the speech model
 

@@ -14,10 +14,56 @@ const SERVICE_AREA = require('./countries').getServiceArea();
 const NOMINATIM_BASE = process.env.NOMINATIM_URL || 'https://nominatim.openstreetmap.org';
 const NOMINATIM_ATTEMPTS = Number(process.env.NOMINATIM_ATTEMPTS) || 3;
 const NOMINATIM_TIMEOUT_MS = Number(process.env.NOMINATIM_TIMEOUT_MS) || 8000;
-// Nominatim's usage policy allows at most one request per second from an
-// application. Without this the bot can burst past it under load and get the
-// whole deployment blocked.
-const NOMINATIM_MIN_INTERVAL_MS = Number(process.env.NOMINATIM_MIN_INTERVAL_MS) || 1100;
+
+/**
+ * Is this Nominatim ours, or somebody else's?
+ *
+ * The one-request-per-second throttle below exists because the public
+ * OpenStreetMap service asks for it, and exceeding it gets the whole deployment
+ * blocked. Against an instance we run it protects nothing and costs a great
+ * deal: every geocode would queue behind the last one, so a busy hour of
+ * reporting would crawl.
+ *
+ * Decided from the host rather than a separate flag, so pointing the platform
+ * back at the public service cannot leave the throttle switched off by
+ * accident. The dangerous direction is the one that needs no thought.
+ */
+function isSelfHosted(url) {
+    let host;
+    try {
+        host = new URL(url).hostname.toLowerCase();
+    } catch (err) {
+        return false;   // Unparseable: assume somebody else's and be polite.
+    }
+
+    if (host === 'localhost' || host === '::1' || host.endsWith('.local') || host.endsWith('.internal')) {
+        return true;
+    }
+    // A bare name with no dots is a container or LAN hostname, not a public one.
+    if (!host.includes('.')) return true;
+
+    return /^127\./.test(host)
+        || /^10\./.test(host)
+        || /^192\.168\./.test(host)
+        || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+}
+
+const SELF_HOSTED_NOMINATIM = isSelfHosted(NOMINATIM_BASE);
+
+// The public service's usage policy allows at most one request per second from
+// an application. Our own instance has no such limit, so it is not throttled.
+// An explicit value always wins, for a self-hosted box that still wants pacing.
+const NOMINATIM_MIN_INTERVAL_MS = process.env.NOMINATIM_MIN_INTERVAL_MS !== undefined
+    && process.env.NOMINATIM_MIN_INTERVAL_MS !== ''
+    ? Number(process.env.NOMINATIM_MIN_INTERVAL_MS)
+    : (SELF_HOSTED_NOMINATIM ? 0 : 1100);
+
+// Retry backoff still needs a gap even when nothing is throttled, or three
+// attempts against a service that is starting up all fail inside a second.
+const NOMINATIM_RETRY_BASE_MS = NOMINATIM_MIN_INTERVAL_MS || 500;
+
+console.log(`Geocoding via ${NOMINATIM_BASE} (${SELF_HOSTED_NOMINATIM ? 'self-hosted' : 'public service'}, `
+    + `${NOMINATIM_MIN_INTERVAL_MS ? `${NOMINATIM_MIN_INTERVAL_MS}ms between requests` : 'unthrottled'})`);
 const GEO_CACHE_MAX = 500;
 
 // Shared across instances: the limit is per application, not per handler.
@@ -146,7 +192,7 @@ class FixamHelpers {
                     lastError = err;
                     if (tryNumber === NOMINATIM_ATTEMPTS || !isTransient(err)) break;
 
-                    const backoff = NOMINATIM_MIN_INTERVAL_MS * tryNumber;
+                    const backoff = NOMINATIM_RETRY_BASE_MS * tryNumber;
                     logger.log('geocoding',
                         `Nominatim attempt ${tryNumber} failed (${err.code || err.message}); `
                         + `retrying in ${backoff}ms`);

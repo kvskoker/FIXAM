@@ -71,6 +71,7 @@ The platform keeps persistent data in three Docker volumes:
 | `pgdata` | The database: reports, accounts, phone numbers, the audit trail |
 | `uploads-data` | Photographs, videos and voice notes sent by citizens |
 | `model-cache` | AI model weights — no personal data, encryption optional |
+| `nominatim-data` | Public OpenStreetMap map data — no personal data, encryption optional |
 
 ### Cloud deployments
 

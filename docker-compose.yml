@@ -39,6 +39,62 @@ services:
       timeout: 5s
       retries: 10
 
+  # Geocoding, self-hosted.
+  #
+  # Turns "Wilkinson Road, Freetown" into coordinates and coordinates back into
+  # a district and ward. Previously this went to the public OpenStreetMap
+  # service, which asks for no more than one request per second and blocks
+  # applications that exceed it -- a hard ceiling on how fast reports can be
+  # processed, and a dependency on somebody else's uptime for a service the
+  # pilot needs constantly.
+  #
+  # The import is a separate, one-off job: on first start with an empty volume
+  # this container downloads the Sierra Leone extract and builds the search
+  # database, which takes a while. The data then lives in the `nominatim-data`
+  # volume and survives restarts, so it is never rebuilt unless that volume is
+  # removed.
+  #
+  # While it is still importing, the platform keeps working: reports record
+  # their coordinates, the address is left blank, and the hourly backfill fills
+  # in the district and ward once this service answers.
+  nominatim:
+    image: mediagis/nominatim:4.4
+    environment:
+      # The country to import. Change both together -- the updates URL must
+      # match the extract, or replication will fail.
+      PBF_URL: ${NOMINATIM_PBF_URL:-https://download.geofabrik.de/africa/sierra-leone-latest.osm.pbf}
+      REPLICATION_URL: ${NOMINATIM_REPLICATION_URL:-https://download.geofabrik.de/africa/sierra-leone-updates/}
+      # Wikipedia importance data roughly doubles the import time and matters
+      # for disambiguating world-famous places, which is not this use case.
+      IMPORT_WIKIPEDIA: "false"
+      IMPORT_US_POSTCODES: "false"
+      IMPORT_GB_POSTCODES: "false"
+      NOMINATIM_PASSWORD: ${NOMINATIM_DB_PASSWORD:-fixam_nominatim}
+      # Threads for the import. More is faster up to the number of cores; too
+      # many on a small host will starve everything else.
+      THREADS: ${NOMINATIM_IMPORT_THREADS:-4}
+    # The built database. Path is tied to the Postgres version inside the 4.4
+    # image -- if the image tag changes, check this path against the new tag's
+    # documentation before starting, or the import will silently begin again.
+    volumes:
+      - nominatim-data:/var/lib/postgresql/14/main
+    # The import needs shared memory well beyond Docker's 64MB default and will
+    # fail partway through without it.
+    shm_size: ${NOMINATIM_SHM_SIZE:-1gb}
+    ports:
+      - "${NOMINATIM_PORT:-8080}:8080"
+    healthcheck:
+      # Reports ready only once the database is built and queryable, which is
+      # what "healthy" needs to mean here.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Generous, because a first import is measured in tens of minutes and the
+      # container should not be declared unhealthy while it is doing that.
+      start_period: 60m
+    restart: unless-stopped
+
   ai-engine:
     build: ./backend/ai_service
     restart: unless-stopped
@@ -112,9 +168,11 @@ services:
       # Geocoding. The public Nominatim service has a usage policy that a live
       # civic platform will exceed; point this at your own instance before the
       # pilot grows.
-      NOMINATIM_URL: ${NOMINATIM_URL:-https://nominatim.openstreetmap.org}
+      # Our own instance, so there is no per-second limit to respect. The
+      # throttle switches itself back on if this is pointed at a public host.
+      NOMINATIM_URL: ${NOMINATIM_URL:-http://nominatim:8080}
       NOMINATIM_TIMEOUT_MS: ${NOMINATIM_TIMEOUT_MS:-8000}
-      NOMINATIM_MIN_INTERVAL_MS: ${NOMINATIM_MIN_INTERVAL_MS:-1100}
+      NOMINATIM_MIN_INTERVAL_MS: ${NOMINATIM_MIN_INTERVAL_MS:-}
       # Forces the super admin password back to SUPER_ADMIN_PASSWORD on boot.
       # Recovery only -- leave unset so a changed password stays changed.
       SUPER_ADMIN_RESET_PASSWORD: ${SUPER_ADMIN_RESET_PASSWORD:-}
@@ -176,9 +234,11 @@ services:
       # Geocoding. The public Nominatim service has a usage policy that a live
       # civic platform will exceed; point this at your own instance before the
       # pilot grows.
-      NOMINATIM_URL: ${NOMINATIM_URL:-https://nominatim.openstreetmap.org}
+      # Our own instance, so there is no per-second limit to respect. The
+      # throttle switches itself back on if this is pointed at a public host.
+      NOMINATIM_URL: ${NOMINATIM_URL:-http://nominatim:8080}
       NOMINATIM_TIMEOUT_MS: ${NOMINATIM_TIMEOUT_MS:-8000}
-      NOMINATIM_MIN_INTERVAL_MS: ${NOMINATIM_MIN_INTERVAL_MS:-1100}
+      NOMINATIM_MIN_INTERVAL_MS: ${NOMINATIM_MIN_INTERVAL_MS:-}
       # Forces the super admin password back to SUPER_ADMIN_PASSWORD on boot.
       # Recovery only -- leave unset so a changed password stays changed.
       SUPER_ADMIN_RESET_PASSWORD: ${SUPER_ADMIN_RESET_PASSWORD:-}
@@ -235,5 +295,7 @@ services:
 
 volumes:
   pgdata:
+  # The built geocoding database. Removing this means a full re-import.
+  nominatim-data:
   uploads-data:
   model-cache:
