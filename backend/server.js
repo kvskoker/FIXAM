@@ -70,6 +70,11 @@ const apiLimiter = rateLimit({
 
 // Routes
 app.use('/api', apiLimiter);
+
+// Questionnaire authoring. A separate router because the approval workflow is
+// self-contained, and api.js is long enough already.
+app.use('/api', require('./routes/botFlowRoutes'));
+
 app.use('/api', apiRoutes);
 
 // ── DPG FIX: Data deletion endpoint (Right to Erasure) ───────────────────────
@@ -166,4 +171,7 @@ app.listen(PORT, async () => {
 
     // The privacy policy states retention periods; this is what enforces them.
     retention.schedule(db);
+
+    // Repairs reports left without an administrative area by a geocoder blip.
+    require('./services/locationBackfill').schedule();
 });

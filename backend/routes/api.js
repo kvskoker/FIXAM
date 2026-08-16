@@ -13,6 +13,7 @@ const { requireAdmin, requireFullAdmin } = require('../middleware/requireAdmin')
 const { getScope, attachScope, canAccessIssue } = require('../middleware/mdaScope');
 const auditLog = require('../services/auditLog');
 const adminOtp = require('../services/adminOtp');
+const botFlow = require('../services/botFlow');
 
 // Initialize Handler
 const fixamHandler = new FixamHandler(whatsappService, db, null, console.log);
@@ -413,7 +414,7 @@ async function reloadAiCategories() {
 // POST /api/admin/categories - Create a category
 router.post('/admin/categories', requireFullAdmin, attachScope, async (req, res) => {
     try {
-        const { name, icon, color } = req.body;
+        const { name, icon, color, examples } = req.body;
         const trimmed = (name || '').trim();
 
         if (!trimmed) {
@@ -429,8 +430,8 @@ router.post('/admin/categories', requireFullAdmin, attachScope, async (req, res)
         }
 
         const result = await db.query(
-            'INSERT INTO categories (name, icon, color) VALUES ($1, $2, $3) RETURNING *',
-            [trimmed, icon || 'fa-tag', color || '#64748b']
+            'INSERT INTO categories (name, icon, color, examples) VALUES ($1, $2, $3, $4) RETURNING *',
+            [trimmed, icon || 'fa-tag', color || '#64748b', (examples || '').trim() || null]
         );
 
         const reloaded = await reloadAiCategories();
@@ -445,7 +446,7 @@ router.post('/admin/categories', requireFullAdmin, attachScope, async (req, res)
 router.put('/admin/categories/:id', requireFullAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, icon, color } = req.body;
+        const { name, icon, color, examples } = req.body;
         const trimmed = (name || '').trim();
 
         if (!trimmed) {
@@ -466,8 +467,8 @@ router.put('/admin/categories/:id', requireFullAdmin, attachScope, async (req, r
         const previousName = current.rows[0].name;
 
         await db.query(
-            'UPDATE categories SET name = $1, icon = $2, color = $3 WHERE id = $4',
-            [trimmed, icon || 'fa-tag', color || '#64748b', id]
+            'UPDATE categories SET name = $1, icon = $2, color = $3, examples = $4 WHERE id = $5',
+            [trimmed, icon || 'fa-tag', color || '#64748b', (examples || '').trim() || null, id]
         );
 
         // issues.category stores the name, not the id. Without this a rename
@@ -1254,6 +1255,20 @@ router.put('/admin/issues/:id/status', requireAdmin, attachScope, async (req, re
             console.error('Error notifying reporters:', notifyErr);
         }
 
+        // An acknowledgement is the moment an institution confirms a report is
+        // theirs, which is the first point at which asking follow-up questions
+        // makes sense: before it, the category is a guess and the questions
+        // could be the wrong institution's.
+        if (status === 'acknowledged') {
+            try {
+                await triggerFollowUpQuestionnaire(id);
+            } catch (flowErr) {
+                // The status change is the important thing and it has already
+                // happened. A questionnaire that fails to send must not undo it.
+                console.error('Error starting the follow-up questionnaire:', flowErr);
+            }
+        }
+
         res.json({ success: true, message: 'Status updated successfully' });
 
     } catch (err) {
@@ -1261,6 +1276,63 @@ router.put('/admin/issues/:id/status', requireAdmin, attachScope, async (req, re
         res.status(500).json({ success: false, message: 'Internal Server Error' });
     }
 });
+
+/**
+ * Ask the reporter the institution's follow-up questions, if it has any.
+ *
+ * Most categories have none, and in that case the citizen never learns this was
+ * considered -- which is the point. Reporting stays three questions for
+ * everyone; only the institutions that genuinely need more ask for more.
+ */
+async function triggerFollowUpQuestionnaire(issueId) {
+    const result = await db.query(
+        `SELECT i.id, i.ticket_id, i.title, i.category, i.reported_by, i.duplicate_of, i.status,
+                u.phone_number
+         FROM issues i
+         LEFT JOIN users u ON u.id = i.reported_by
+         WHERE i.id = $1`,
+        [issueId]
+    );
+    if (result.rows.length === 0) return;
+
+    const issue = result.rows[0];
+
+    // Nobody to ask: the reporter deleted their account, or this is a duplicate
+    // whose original carries the conversation.
+    if (!issue.reported_by || !issue.phone_number) return;
+    if (issue.duplicate_of) return;
+    if (issue.status === 'spam') return;
+
+    const started = await botFlow.startRun(issue, issue.reported_by, { category: issue.category });
+    if (!started) return;  // No questionnaire for this category.
+
+    const { flow, windowOpen } = started;
+    const institution = flow.group_name || 'the responsible team';
+    const questionCount = (flow.definition.steps || []).length;
+
+    if (windowOpen) {
+        // The citizen has messaged within the last 24 hours, so the questions
+        // can simply be asked.
+        const intro = botFlow.text(flow.definition.intro);
+        if (intro) await whatsappService.sendMessage(issue.phone_number, intro);
+        await whatsappService.sendMessage(
+            issue.phone_number,
+            botFlow.promptFor({ ...started.run, definition: flow.definition })
+        );
+        return;
+    }
+
+    // Outside the window, WhatsApp allows only an approved template. This is
+    // that message: it asks the citizen to reply, and their reply re-opens the
+    // window so the questions can follow normally.
+    await whatsappService.sendMessage(
+        issue.phone_number,
+        `🔔 *Your report has been picked up*\n\n`
+        + `*${issue.title}* (#${issue.ticket_id}) has been acknowledged by *${institution}*.\n\n`
+        + `They need ${questionCount} more detail${questionCount === 1 ? '' : 's'} before they can act on it.\n\n`
+        + `Reply *CONTINUE* to answer, or *STOP* if you would rather not.`
+    );
+}
 
 /**
  * Reasons a report can be closed without being fixed.
@@ -1434,6 +1506,23 @@ router.post('/admin/issues/:id/reopen', requireAdmin, attachScope, async (req, r
     } catch (err) {
         console.error(err);
         res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
+});
+
+// GET /api/admin/issues/:id/questionnaires - Follow-up questions and answers.
+router.get('/admin/issues/:id/questionnaires', requireAdmin, attachScope, async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!(await canAccessIssue(req.scope, id))) {
+            return res.status(403).json({
+                success: false,
+                message: 'This report is not assigned to your institution.'
+            });
+        }
+        res.json(await botFlow.runsForIssue(id));
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 

@@ -1280,6 +1280,8 @@ async function openIssueDetails(id) {
             // to disable has to be applied after them.
             renderClosurePanel(issue);
         }
+        loadQuestionnaires(id);
+
         const trackerRes = await fetch(`${API_BASE_URL}/issues/${id}/tracker`);
         const trackerLogs = await trackerRes.json();
         
@@ -1715,4 +1717,84 @@ function wireStatusConfirmation() {
     });
 
     no.addEventListener('click', () => overlay.classList.add('hidden'));
+}
+
+// ── Follow-up questionnaires ─────────────────────────────────────────────────
+//
+// An institution's own questions, asked of the reporter after acknowledgement.
+// Most reports have none and the section stays hidden; showing an empty panel
+// on every report would train people to ignore the place the answers appear.
+
+const QUESTIONNAIRE_STATES = {
+    invited:     { label: 'Waiting for the citizen to reply', colour: 'var(--admin-warning)' },
+    in_progress: { label: 'Answering now',                    colour: 'var(--admin-primary)' },
+    completed:   { label: 'Answered',                         colour: 'var(--admin-success)' },
+    abandoned:   { label: 'Citizen declined or stopped',      colour: 'var(--admin-text-muted)' },
+    superseded:  { label: 'Replaced after recategorisation',  colour: 'var(--admin-text-muted)' }
+};
+
+async function loadQuestionnaires(issueId) {
+    const section = document.getElementById('questionnaire-section');
+    const list = document.getElementById('questionnaire-list');
+    if (!section || !list) return;
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/issues/${issueId}/questionnaires`);
+        if (!res.ok) { section.style.display = 'none'; return; }
+
+        const runs = await res.json();
+        if (!Array.isArray(runs) || runs.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
+
+        list.innerHTML = runs.map((run) => {
+            const state = QUESTIONNAIRE_STATES[run.state]
+                || { label: run.state, colour: 'var(--admin-text-muted)' };
+
+            const rows = run.answers.map((a) => {
+                // Three distinct outcomes, and they mean different things to
+                // whoever is reading: answered, deliberately skipped, and never
+                // reached because the citizen stopped before it.
+                let value;
+                if (!a.answered) {
+                    value = '<span style="color: var(--admin-text-muted); font-style: italic;">not reached</span>';
+                } else if (a.skipped) {
+                    value = '<span style="color: var(--admin-text-muted); font-style: italic;">skipped</span>';
+                } else {
+                    value = `<strong>${a.value}</strong>`;
+                }
+                return `<div style="display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0; border-bottom: 1px solid var(--admin-border);">
+                            <span style="color: var(--admin-text-muted); font-size: 0.85rem;">${a.question}</span>
+                            <span style="text-align: right; font-size: 0.9rem;">${value}</span>
+                        </div>`;
+            }).join('');
+
+            const movedNote = run.category_at_send && currentIssueData
+                && run.category_at_send !== currentIssueData.category
+                ? `<div style="font-size: 0.78rem; color: var(--admin-warning); margin-top: 0.5rem;">
+                     <i class="fa-solid fa-circle-info"></i>
+                     Asked while this report was categorised as ${run.category_at_send}.
+                   </div>`
+                : '';
+
+            return `
+                <div style="border: 1px solid var(--admin-border); border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+                        <strong>${run.flow_name}</strong>
+                        <span style="color: ${state.colour}; font-size: 0.8rem; font-weight: 600;">${state.label}</span>
+                    </div>
+                    <div style="font-size: 0.78rem; color: var(--admin-text-muted); margin-bottom: 0.75rem;">
+                        ${run.group_name || 'Platform'} · v${run.version_number} · ${run.progress} answered
+                    </div>
+                    ${rows}
+                    ${movedNote}
+                </div>`;
+        }).join('');
+
+        section.style.display = 'block';
+    } catch (err) {
+        console.error('Error loading follow-up questionnaires:', err);
+        section.style.display = 'none';
+    }
 }

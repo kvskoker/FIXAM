@@ -1,4 +1,5 @@
 const axios = require('axios');
+const logger = require('./logger');
 
 /**
  * The area this instance serves. Reports outside it are refused rather than
@@ -11,6 +12,7 @@ const axios = require('axios');
 const SERVICE_AREA = require('./countries').getServiceArea();
 
 const NOMINATIM_BASE = process.env.NOMINATIM_URL || 'https://nominatim.openstreetmap.org';
+const NOMINATIM_ATTEMPTS = Number(process.env.NOMINATIM_ATTEMPTS) || 3;
 const NOMINATIM_TIMEOUT_MS = Number(process.env.NOMINATIM_TIMEOUT_MS) || 8000;
 // Nominatim's usage policy allows at most one request per second from an
 // application. Without this the bot can burst past it under load and get the
@@ -101,7 +103,15 @@ class FixamHelpers {
     async _nominatim(endpoint, params, cacheKey) {
         if (geoCache.has(cacheKey)) return geoCache.get(cacheKey);
 
-        const run = async () => {
+        // Worth retrying: the connection never got made, or the service asked
+        // us to come back. Not worth retrying: it answered, and the answer was
+        // that there is nothing there.
+        const isTransient = (err) => {
+            if (err.response) return err.response.status === 429 || err.response.status >= 500;
+            return true;   // no response at all -- socket, DNS, TLS, timeout
+        };
+
+        const attempt = async () => {
             const wait = Math.max(0, lastRequestAt + NOMINATIM_MIN_INTERVAL_MS - Date.now());
             if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
             lastRequestAt = Date.now();
@@ -115,6 +125,35 @@ class FixamHelpers {
                 },
             });
             return response.data;
+        };
+
+        /**
+         * A single dropped connection should not cost a report its district.
+         *
+         * One TLS handshake failed mid-conversation and the citizen was told
+         * the address could not be found -- and because nothing ever tried
+         * again, that report kept coordinates and no administrative area for
+         * good. Three attempts with a widening gap covers the blips; anything
+         * that survives all three is a real outage and the caller still gets to
+         * tell the citizen honestly.
+         */
+        const run = async () => {
+            let lastError;
+            for (let tryNumber = 1; tryNumber <= NOMINATIM_ATTEMPTS; tryNumber++) {
+                try {
+                    return await attempt();
+                } catch (err) {
+                    lastError = err;
+                    if (tryNumber === NOMINATIM_ATTEMPTS || !isTransient(err)) break;
+
+                    const backoff = NOMINATIM_MIN_INTERVAL_MS * tryNumber;
+                    logger.log('geocoding',
+                        `Nominatim attempt ${tryNumber} failed (${err.code || err.message}); `
+                        + `retrying in ${backoff}ms`);
+                    await new Promise((resolve) => setTimeout(resolve, backoff));
+                }
+            }
+            throw lastError;
         };
 
         // Chain rather than fire in parallel so the interval actually holds.

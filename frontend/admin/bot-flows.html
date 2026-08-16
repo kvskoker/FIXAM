@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIXAM - Bot Questionnaires</title>
+
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-title" content="Fixam" />
+<link rel="manifest" href="/site.webmanifest" />
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Tom Select -->
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+    <!-- Login Overlay (Shared logic from admin_common.js) -->
+    <div id="login-overlay" class="login-overlay">
+        <div style="background: var(--admin-card-bg); padding: 2.5rem; border-radius: 12px; width: 400px; text-align: center; border: 1px solid var(--admin-border);">
+            <img src="../fixam-logo-blue.svg" alt="FIXAM" height="80" style="margin-bottom: 1rem;">
+            <form id="login-form">
+                <input type="tel" id="admin-phone" placeholder="Phone Number" class="form-control" style="margin-bottom: 1rem;" required>
+                <div class="password-wrapper" style="margin-bottom: 1.5rem;">
+                    <input type="password" id="admin-password" placeholder="Password" class="form-control" style="margin-bottom: 0;" required>
+                    <i class="fa-solid fa-eye password-toggle-icon" id="toggle-password"></i>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Access Portal</button>
+            </form>
+            <p id="login-error" style="color: var(--admin-danger); margin-top: 1rem; display: none;">Invalid credentials</p>
+        </div>
+    </div>
+
+    <div id="admin-container" class="admin-container hidden">
+        <aside class="admin-sidebar">
+            <div class="admin-header-section">
+                <img src="../fixam-logo.svg" alt="FIXAM" height="50" class="logo-full">
+                <img src="../fixam-icon.svg" alt="FIXAM" height="40" class="logo-icon">
+                <button id="theme-toggle-admin" style="background: rgba(255, 255, 255, 0.2); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer;">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+            </div>
+            <nav class="admin-nav">
+                <a href="/admin/overview" id="nav-overview" class="admin-nav-item">
+                    <i class="fa-solid fa-chart-line"></i> <span>Overview</span>
+                </a>
+                <a href="/admin/issues" id="nav-issues" class="admin-nav-item">
+                    <i class="fa-solid fa-triangle-exclamation"></i> <span>Issues</span>
+                </a>
+                <a href="/admin/users" id="nav-users" class="admin-nav-item">
+                    <i class="fa-solid fa-users"></i> <span>Users & Groups</span>
+                </a>
+                <a href="/admin/feedback" id="nav-feedback" class="admin-nav-item">
+                    <i class="fa-solid fa-comments"></i> <span>Feedback</span>
+                </a>
+                <a href="/admin/bot-flows" id="nav-bot-flows" class="admin-nav-item active">
+                    <i class="fa-solid fa-comment-dots"></i> <span>Questionnaires</span>
+                    <span id="nav-review-badge" style="display: none; background: var(--admin-danger); color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 0.7rem; font-weight: 700; margin-left: auto;"></span>
+                </a>
+                <div style="flex-grow: 1;"></div>
+                <a href="#" id="logout-btn" class="admin-nav-item">
+                    <i class="fa-solid fa-right-from-bracket"></i> <span>Logout</span>
+                </a>
+            </nav>
+        </aside>
+
+        <main class="admin-main">
+            <div class="admin-header">
+                <div>
+                    <h1>Bot Questionnaires</h1>
+                    <p style="color: var(--admin-text-muted);">
+                        Extra questions the bot asks a citizen after your institution acknowledges their report.
+                    </p>
+                </div>
+                <div class="admin-user-display"></div>
+            </div>
+
+            <div id="flows-view">
+                <div class="content-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 1rem;">
+                        <h2 style="font-size: 1.15rem; margin: 0;">Your questionnaires</h2>
+                        <button class="btn btn-primary" id="btn-new-flow">
+                            <i class="fa-solid fa-plus"></i> New Questionnaire
+                        </button>
+                    </div>
+
+                    <div class="admin-table-container">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Questionnaire</th>
+                                    <th>Applies to</th>
+                                    <th>Institution</th>
+                                    <th>Live version</th>
+                                    <th>Sent / answered</th>
+                                    <th style="text-align: right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="flow-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Editor. Replaces the list rather than opening over it: editing a
+                 questionnaire is a task in itself, not a glance. -->
+            <div id="editor-view" style="display: none;">
+                <div class="content-card">
+                    <a href="#" id="back-to-flows" style="display: inline-flex; align-items: center; gap: 0.5rem; color: var(--admin-primary); text-decoration: none; font-weight: 500; margin-bottom: 1rem;">
+                        <i class="fa-solid fa-arrow-left"></i> All questionnaires
+                    </a>
+
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            <h2 id="editor-title" style="margin: 0 0 0.25rem 0;"></h2>
+                            <p id="editor-subtitle" style="color: var(--admin-text-muted); margin: 0; font-size: 0.9rem;"></p>
+                        </div>
+                        <div id="editor-state-badge"></div>
+                    </div>
+
+                    <div id="editor-review-note" style="display: none; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.3); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1rem; font-size: 0.88rem;"></div>
+                    <div id="editor-problems" style="display: none; background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1rem; font-size: 0.88rem;"></div>
+                    <div id="editor-warnings" style="display: none; background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.25); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1rem; font-size: 0.88rem;"></div>
+
+                    <div class="form-group">
+                        <label>Opening message <span style="font-weight: 400; color: var(--admin-text-muted);">(optional)</span></label>
+                        <input type="text" id="flow-intro" class="form-control" maxlength="500"
+                               placeholder="e.g. EDSA needs a few details before sending a team.">
+                    </div>
+
+                    <h3 style="font-size: 1rem; margin: 1.5rem 0 0.75rem;">Questions</h3>
+                    <div id="steps-container"></div>
+
+                    <button class="btn btn-secondary" id="btn-add-step" style="margin-top: 0.5rem;">
+                        <i class="fa-solid fa-plus"></i> Add question
+                    </button>
+
+                    <div class="form-group" style="margin-top: 1.5rem;">
+                        <label>Closing message <span style="font-weight: 400; color: var(--admin-text-muted);">(optional)</span></label>
+                        <input type="text" id="flow-outro" class="form-control" maxlength="500"
+                               placeholder="e.g. Thank you — that is everything we need.">
+                    </div>
+
+                    <div class="form-group">
+                        <label>What changed, and why</label>
+                        <input type="text" id="flow-change-note" class="form-control" maxlength="200"
+                               placeholder="Seen by whoever reviews this">
+                    </div>
+
+                    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; border-top: 1px solid var(--admin-border); padding-top: 1.25rem; margin-top: 1.5rem;">
+                        <button class="btn btn-primary" id="btn-new-draft" style="display: none;" onclick="startNewDraft()">
+                            <i class="fa-solid fa-pen"></i> Edit — start a new draft
+                        </button>
+                        <button class="btn btn-secondary" id="btn-save-draft">
+                            <i class="fa-solid fa-floppy-disk"></i> Save draft
+                        </button>
+                        <button class="btn btn-secondary" id="btn-test-send">
+                            <i class="fa-brands fa-whatsapp"></i> Send a test
+                        </button>
+                        <div style="flex-grow: 1;"></div>
+                        <button class="btn btn-primary" id="btn-submit-review">
+                            <i class="fa-solid fa-paper-plane"></i> Submit for approval
+                        </button>
+                        <button class="btn btn-primary" id="btn-publish" data-admin-only style="display: none;">
+                            <i class="fa-solid fa-circle-check"></i> Approve and publish
+                        </button>
+                        <button class="btn btn-secondary" id="btn-request-changes" data-admin-only style="display: none;">
+                            <i class="fa-solid fa-rotate-left"></i> Request changes
+                        </button>
+                    </div>
+                </div>
+
+                <div class="content-card">
+                    <h3 style="font-size: 1rem; margin: 0 0 0.75rem;">Version history</h3>
+                    <div class="admin-table-container">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Version</th>
+                                    <th>State</th>
+                                    <th>Change</th>
+                                    <th>Who</th>
+                                    <th style="text-align: right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="version-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- New questionnaire -->
+    <div id="new-flow-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="font-size: 1.3rem;">New Questionnaire</h2>
+                <button class="action-btn" onclick="closeFlowModal('new-flow-modal')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="new-flow-form">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="new-flow-name" class="form-control" maxlength="120" required
+                           placeholder="e.g. Electricity outage — follow-up">
+                </div>
+                <div class="form-group">
+                    <label>Report category this applies to</label>
+                    <select id="new-flow-category" class="form-control" required></select>
+                    <small style="color: var(--admin-text-muted);">
+                        The questions are asked after a report in this category is acknowledged.
+                    </small>
+                </div>
+                <!-- Only an administrator chooses; an MDA's own institution is
+                     implicit and the field would be a single fixed option. -->
+                <div class="form-group" id="new-flow-institution-group" style="display: none;">
+                    <label>Which institution is asking?</label>
+                    <select id="new-flow-group" class="form-control"></select>
+                    <small style="color: var(--admin-text-muted);">
+                        The citizen is told who wants the extra detail, and this institution's staff maintain the questions.
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label>Description <span style="font-weight: 400; color: var(--admin-text-muted);">(optional)</span></label>
+                    <input type="text" id="new-flow-description" class="form-control" maxlength="200">
+                </div>
+                <div id="new-flow-error" style="display: none; color: var(--admin-danger); margin-bottom: 1rem; font-size: 0.9rem;"></div>
+                <div class="modal-footer" style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+                    <button type="button" class="btn btn-secondary" onclick="closeFlowModal('new-flow-modal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Test send -->
+    <div id="test-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="font-size: 1.3rem;">Send a test</h2>
+                <button class="action-btn" onclick="closeFlowModal('test-modal')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <p style="color: var(--admin-text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+                The questionnaire runs on a real phone exactly as a citizen would see it.
+                Answers are not attached to any report.
+            </p>
+            <div class="form-group">
+                <label>WhatsApp number</label>
+                <input type="tel" id="test-phone" class="form-control" placeholder="232…">
+                <small style="color: var(--admin-text-muted);">
+                    The number must have used the bot before, or there is no conversation to send into.
+                </small>
+            </div>
+            <div id="test-error" style="display: none; color: var(--admin-danger); margin-bottom: 1rem; font-size: 0.9rem;"></div>
+            <div class="modal-footer" style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeFlowModal('test-modal')">Cancel</button>
+                <button type="button" class="btn btn-primary" id="btn-send-test">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Request changes -->
+    <div id="review-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="font-size: 1.3rem;">Request changes</h2>
+                <button class="action-btn" onclick="closeFlowModal('review-modal')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="form-group">
+                <label>What needs changing?</label>
+                <textarea id="review-note" class="form-control" rows="4"
+                          placeholder="The institution sees this, so be specific."></textarea>
+            </div>
+            <div id="review-error" style="display: none; color: var(--admin-danger); margin-bottom: 1rem; font-size: 0.9rem;"></div>
+            <div class="modal-footer" style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeFlowModal('review-modal')">Cancel</button>
+                <button type="button" class="btn btn-primary" id="btn-send-review">Send back</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../js/theme.js"></script>
+    <script src="../js/admin_common.js"></script>
+    <script src="../js/admin_bot_flows.js"></script>
+</body>
+</html>

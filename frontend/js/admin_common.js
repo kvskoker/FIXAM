@@ -123,6 +123,23 @@ function isFullAdmin() {
  * fails is its own kind of broken -- an officer should see the portal that
  * matches their remit, not a fuller one with dead controls.
  */
+/**
+ * Show why a table is empty instead of leaving it blank.
+ *
+ * A failed request used to reach the renderer as `undefined`, which threw and
+ * left the page silently empty -- indistinguishable from "no records".
+ */
+function renderLoadError(elementId, colspan, status) {
+    const list = document.getElementById(elementId);
+    if (!list) return;
+    const message = status === 401
+        ? 'Your session has expired. Please sign in again.'
+        : status === 403
+            ? 'You do not have permission to view this.'
+            : 'Could not load this data. Please retry.';
+    list.innerHTML = `<tr><td colspan="${colspan}" style="text-align: center; padding: 2rem; color: var(--admin-text-muted);">${message}</td></tr>`;
+}
+
 function applyRoleVisibilityTo(root) {
     if (isFullAdmin()) return;
     (root || document).querySelectorAll('[data-admin-only]').forEach((el) => {

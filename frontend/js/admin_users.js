@@ -363,22 +363,6 @@ function resetUserForm() {
 // GROUP FUNCTIONS
 // ==========================================
 
-/**
- * Show why a table is empty instead of leaving it blank.
- *
- * A failed request used to reach the renderer as `undefined`, which threw and
- * left the page silently empty -- indistinguishable from "no records".
- */
-function renderLoadError(elementId, colspan, status) {
-    const list = document.getElementById(elementId);
-    if (!list) return;
-    const message = status === 401
-        ? 'Your session has expired. Please sign in again.'
-        : status === 403
-            ? 'You do not have permission to view this.'
-            : 'Could not load this data. Please retry.';
-    list.innerHTML = `<tr><td colspan="${colspan}" style="text-align: center; padding: 2rem; color: var(--admin-text-muted);">${message}</td></tr>`;
-}
 
 async function loadGroups() {
     try {
@@ -887,7 +871,7 @@ function renderCategoryRows(rows, noMatches) {
             <td data-label="Assigned MDAs">${mdaHtml}</td>
             <td data-label="Reports">${cat.reportCount}</td>
             <td data-label="Actions" style="text-align: right;" ${isFullAdmin() ? '' : 'data-admin-only'}>
-                <button class="action-btn" title="Edit" onclick='editCategory(${JSON.stringify({ id: cat.id, name: cat.name, icon: cat.icon, color: cat.color }).replace(/'/g, "&#39;")})'>
+                <button class="action-btn" title="Edit" onclick='editCategory(${JSON.stringify({ id: cat.id, name: cat.name, icon: cat.icon, color: cat.color, examples: cat.examples }).replace(/'/g, "&#39;")})'>
                     <i class="fa-solid fa-pen"></i>
                 </button>
                 <button class="action-btn" title="${cat.reportCount > 0 ? 'In use by ' + cat.reportCount + ' report(s)' : 'Delete'}"
@@ -908,6 +892,7 @@ function openCategoryModal() {
     document.getElementById('category-modal-title').textContent = 'Create Category';
     document.getElementById('category-icon').value = 'fa-tag';
     document.getElementById('category-color').value = '#64748b';
+    document.getElementById('category-examples').value = '';
     document.getElementById('category-error').style.display = 'none';
     openModal('category-modal');
 }
@@ -919,6 +904,7 @@ function editCategory(cat) {
     document.getElementById('category-name').value = cat.name;
     document.getElementById('category-icon').value = cat.icon || 'fa-tag';
     document.getElementById('category-color').value = cat.color || '#64748b';
+    document.getElementById('category-examples').value = cat.examples || '';
     document.getElementById('category-error').style.display = 'none';
     openModal('category-modal');
 }
@@ -929,6 +915,7 @@ async function handleCategorySubmit(e) {
     const name = document.getElementById('category-name').value.trim();
     const icon = document.getElementById('category-icon').value.trim();
     const color = document.getElementById('category-color').value;
+    const examples = document.getElementById('category-examples').value;
     const errorEl = document.getElementById('category-error');
 
     try {
@@ -937,7 +924,7 @@ async function handleCategorySubmit(e) {
             {
                 method: id ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, icon, color })
+                body: JSON.stringify({ name, icon, color, examples })
             }
         );
         const data = await response.json();

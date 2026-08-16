@@ -79,7 +79,18 @@ A powerful suite for government and operational teams.
 - **User & Group Management**: 
   - Manage personnel (Admins, Operations, Users).
   - Create Departments/Groups (e.g., "Roads Authority", "Water Board") to organize operational teams.
-- **Role-Based Access**: Granular permissions for Admins vs. Operational staff.
+- **Role-Based Access**: An MDA sees only the reports, users and categories for the
+  categories its institution owns. Administrators see everything. Enforced on every
+  request, not by hiding buttons.
+- **Open / Closed Lifecycle**: Resolving closes a report automatically; closing without
+  a repair requires a reason and a written explanation, both sent to the citizen and
+  published.
+- **Administrative Audit Log**: Account, role, group and category changes, sign-ins and
+  refused sign-ins, and every data export — Administrator only.
+- **Scoped Export**: CSV of the reports an account may see. Reporter names and phone
+  numbers are opt-in, Administrator-only, and every export is recorded.
+- **Two-Factor Sign-In**: Password plus a one-time code the administrator requests over
+  WhatsApp.
 - **Persistent Filtering**: Shareable URLs with pre-applied filters for efficient collaboration.
 
 ### 4. ⚡ Automatic Operational Alerts
@@ -91,13 +102,26 @@ Bridging the gap between report and resolution.
   - 🔗 Direct Link to Web Portal
 - **Broadcast System**: Ensures entire teams are synchronized on critical infrastructure failures.
 
-### 5. 🧠 Local AI Engine
+### 5. 📝 Institution Questionnaires
+Extra questions, asked by the institution that owns the report — without a deployment.
+- **Reporting stays three questions**: evidence, location, description. Most reports need nothing more.
+- **Follow-up on acknowledgement**: when an MDA confirms a report is theirs, the citizen is asked that institution's own questions — EDSA needs a meter number, FCC does not.
+- **Asked late, on purpose**: the category is a guess until a human confirms it, so asking at reporting time would collect the wrong institution's answers.
+- **Authored in the portal**: an MDA writes its own questions; MoCTI/DSTI approve before anything reaches a citizen. Versioned, with rollback and a full audit trail.
+- **Nothing to skip past**: every question can be skipped and the whole thing stopped, and answers land on the report.
+
+### 6. 🧠 Local AI Engine
 Privacy-focused, offline-capable AI services running alongside the platform.
 - **Text Classification**: Automatically tags issues (e.g., "Pothole" → "Road Infrastructure").
+  Each category carries **example reports**, written the way citizens actually report the
+  problem, which is what the classifier matches against. A category name alone is a poor
+  description of a complaint — "the transformer burnt" reads as a fire until something has
+  been told that a burnt transformer is an electricity problem. Editable under
+  **Users & Groups → Categories**, so a misfiled phrasing is corrected without a deployment.
 - **Transcription**: Voice-to-text for inclusive reporting.
 - **Content Safety**: On-device image analysis to protect the platform from abuse.
 
-### 6. 🏆 Citizen Rewards System
+### 7. 🏆 Citizen Rewards System
 Gamifying civic engagement to encourage consistent participation.
 - **Earn Points**: Citizens accumulate digital points for positive actions:
   - **+10 Points**: Reporting a valid issue.
@@ -155,16 +179,37 @@ The variables you are most likely to change:
 | Backend API | http://localhost:5000/api | Also proxied at `http://localhost/api` |
 | PostgreSQL | localhost:5432 | Credentials from `.env` |
 
-The AI engine has no published port; it is reached internally by the backend at `http://ai-engine:8000`.
+The AI engine is published on `http://localhost:8000` so it can be exercised
+directly with curl or Postman. The backend reaches it over the compose network
+and does not need the mapping — remove it to keep the engine internal-only.
 
 ### Logging in
 
-The super admin is created automatically on first backend boot from `SUPER_ADMIN_PHONE` / `SUPER_ADMIN_PASSWORD`:
+The super admin is created automatically on first backend boot from
+`SUPER_ADMIN_PHONE` / `SUPER_ADMIN_PASSWORD`:
 
 - **Phone:** `23200000000` (default)
 - **Password:** whatever `SUPER_ADMIN_PASSWORD` is set to
 
-Confirm it worked with `docker compose logs backend | grep "Super admin"`. Later restarts will **not** overwrite the password, so a change made in the dashboard survives redeploys. If you lock yourself out, set `SUPER_ADMIN_RESET_PASSWORD=true` for one boot.
+**Signing in takes three things, not two.** Administrator accounts use a second
+factor, so a phone number and password alone will not get you in:
+
+1. Enter the phone number and password.
+2. Send **`LOGIN`** to the FIXAM WhatsApp number. The bot replies with a 6-digit
+   code, valid for 10 minutes and usable once.
+3. Enter the code.
+
+The administrator asks for the code rather than the platform pushing it, which
+keeps every message inside WhatsApp's 24-hour service window and avoids needing
+an approved message template. On a simulator-only deployment, send `LOGIN` from
+the simulator and read the code from its reply.
+
+Set `ADMIN_2FA_ENABLED=false` to turn this off — recovery only, and put it back.
+
+Confirm the account exists with `docker compose logs backend | grep "Super admin"`.
+Later restarts will **not** overwrite the password, so a change made in the
+dashboard survives redeploys. If you lock yourself out, set
+`SUPER_ADMIN_RESET_PASSWORD=true` for one boot.
 
 ### Everyday commands
 

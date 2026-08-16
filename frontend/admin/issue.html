@@ -71,6 +71,10 @@
                 <a href="/admin/feedback" id="nav-feedback" class="admin-nav-item">
                     <i class="fa-solid fa-comments"></i> <span>Feedback</span>
                 </a>
+                <a href="/admin/bot-flows" id="nav-bot-flows" class="admin-nav-item">
+                    <i class="fa-solid fa-comment-dots"></i> <span>Questionnaires</span>
+                    <span id="nav-review-badge" style="display: none; background: var(--admin-danger); color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 0.7rem; font-weight: 700; margin-left: auto;"></span>
+                </a>
                 <div style="flex-grow: 1;"></div>
                 <a href="#" id="logout-btn" class="admin-nav-item">
                     <i class="fa-solid fa-right-from-bracket"></i> <span>Logout</span>
@@ -274,6 +278,13 @@
                         <button id="btn-flag-spam" onclick="flagAsSpam()" style="width: 100%; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--admin-danger); color: var(--admin-danger); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-weight: 500;">
                             <i class="fa-solid fa-flag"></i> Flag as SPAM
                         </button>
+                    </div>
+
+                    <!-- Answers to the institution's own follow-up questions,
+                         shown where the officer is deciding what to do. -->
+                    <div id="questionnaire-section" style="display: none; margin-bottom: 2rem;">
+                        <h3 style="margin-bottom: 0.75rem;">Follow-up Questions</h3>
+                        <div id="questionnaire-list"></div>
                     </div>
 
                     <h3 style="margin-bottom: 1rem;">Activity Timeline</h3>

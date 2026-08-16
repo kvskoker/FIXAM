@@ -4,6 +4,7 @@ services:
     # certificate. Encrypts backend-to-database traffic; a deployment with its
     # own CA should mount its key and certificate over /var/lib/postgresql/tls.
     build: ./backend/db
+    restart: unless-stopped
     command:
       - postgres
       - -c
@@ -27,6 +28,9 @@ services:
       - ./backend/db/migration_admin_audit.sql:/docker-entrypoint-initdb.d/05-admin-audit.sql
       - ./backend/db/migration_admin_otp.sql:/docker-entrypoint-initdb.d/06-admin-otp.sql
       - ./backend/db/migration_otp_verified.sql:/docker-entrypoint-initdb.d/07-otp-verified.sql
+      - ./backend/db/migration_bot_flows.sql:/docker-entrypoint-initdb.d/08-bot-flows.sql
+      - ./backend/db/migration_bot_flow_test_runs.sql:/docker-entrypoint-initdb.d/09-bot-flow-test-runs.sql
+      - ./backend/db/migration_category_examples.sql:/docker-entrypoint-initdb.d/10-category-examples.sql
     ports:
       - "${DB_PORT:-5432}:5432"
     healthcheck:
@@ -37,6 +41,7 @@ services:
 
   ai-engine:
     build: ./backend/ai_service
+    restart: unless-stopped
     environment:
       DB_USER: ${DB_USER:-fixam_db_admin}
       DB_HOST: postgres
@@ -66,6 +71,7 @@ services:
 
   backend:
     build: ./backend
+    restart: unless-stopped
     environment:
       PORT: 5000
       NODE_ENV: ${NODE_ENV:-development}
@@ -98,6 +104,20 @@ services:
       SUPER_ADMIN_PHONE: ${SUPER_ADMIN_PHONE:-23200000000}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-Adm1n@Fixam}
       BOT_PHONE_NUMBER: ${BOT_PHONE_NUMBER:-23233788736}
+      # Duplicate detection: how close, and how recent, two reports must be to
+      # be treated as the same problem. Tunable because the right answer differs
+      # between a dense market and a rural road.
+      DUPLICATE_RADIUS_METERS: ${DUPLICATE_RADIUS_METERS:-100}
+      DUPLICATE_WINDOW_DAYS: ${DUPLICATE_WINDOW_DAYS:-7}
+      # Geocoding. The public Nominatim service has a usage policy that a live
+      # civic platform will exceed; point this at your own instance before the
+      # pilot grows.
+      NOMINATIM_URL: ${NOMINATIM_URL:-https://nominatim.openstreetmap.org}
+      NOMINATIM_TIMEOUT_MS: ${NOMINATIM_TIMEOUT_MS:-8000}
+      NOMINATIM_MIN_INTERVAL_MS: ${NOMINATIM_MIN_INTERVAL_MS:-1100}
+      # Forces the super admin password back to SUPER_ADMIN_PASSWORD on boot.
+      # Recovery only -- leave unset so a changed password stays changed.
+      SUPER_ADMIN_RESET_PASSWORD: ${SUPER_ADMIN_RESET_PASSWORD:-}
       DEV_MODE: ${DEV_MODE:-false}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost,http://localhost:80}
       # Public address citizens see in ticket/privacy links. The frontend
@@ -148,6 +168,20 @@ services:
       SIMULATOR_BACKEND_URL: http://backend:5000
       SIMULATOR_ENABLED: "true"
       BOT_PHONE_NUMBER: ${BOT_PHONE_NUMBER:-23233788736}
+      # Duplicate detection: how close, and how recent, two reports must be to
+      # be treated as the same problem. Tunable because the right answer differs
+      # between a dense market and a rural road.
+      DUPLICATE_RADIUS_METERS: ${DUPLICATE_RADIUS_METERS:-100}
+      DUPLICATE_WINDOW_DAYS: ${DUPLICATE_WINDOW_DAYS:-7}
+      # Geocoding. The public Nominatim service has a usage policy that a live
+      # civic platform will exceed; point this at your own instance before the
+      # pilot grows.
+      NOMINATIM_URL: ${NOMINATIM_URL:-https://nominatim.openstreetmap.org}
+      NOMINATIM_TIMEOUT_MS: ${NOMINATIM_TIMEOUT_MS:-8000}
+      NOMINATIM_MIN_INTERVAL_MS: ${NOMINATIM_MIN_INTERVAL_MS:-1100}
+      # Forces the super admin password back to SUPER_ADMIN_PASSWORD on boot.
+      # Recovery only -- leave unset so a changed password stays changed.
+      SUPER_ADMIN_RESET_PASSWORD: ${SUPER_ADMIN_RESET_PASSWORD:-}
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
       WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
@@ -177,6 +211,7 @@ services:
       - uploads-data:/data/uploads
     ports:
       - "${SIMULATOR_PORT:-4001}:4001"
+    restart: unless-stopped
     profiles:
       - simulator
     depends_on:
@@ -186,6 +221,7 @@ services:
   frontend:
     build:
       context: ./frontend
+    restart: unless-stopped
     environment:
       NGINX_HOST: localhost
       NGINX_PORT: "80"

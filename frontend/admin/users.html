@@ -67,6 +67,10 @@
                 <a href="/admin/feedback" id="nav-feedback" class="admin-nav-item">
                     <i class="fa-solid fa-comments"></i> <span>Feedback</span>
                 </a>
+                <a href="/admin/bot-flows" id="nav-bot-flows" class="admin-nav-item">
+                    <i class="fa-solid fa-comment-dots"></i> <span>Questionnaires</span>
+                    <span id="nav-review-badge" style="display: none; background: var(--admin-danger); color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 0.7rem; font-weight: 700; margin-left: auto;"></span>
+                </a>
                 <div style="flex-grow: 1;"></div>
                 <a href="#" id="logout-btn" class="admin-nav-item">
                     <i class="fa-solid fa-right-from-bracket"></i> <span>Logout</span>
@@ -296,6 +300,19 @@
                         <label>Colour</label>
                         <input type="color" id="category-color" class="form-control" value="#64748b" style="height: 42px;">
                     </div>
+                </div>
+
+                <!-- What the classifier matches against, alongside the name.
+                     A category name alone is a poor description of how people
+                     actually report a problem. -->
+                <div class="form-group">
+                    <label>Example reports <span style="font-weight: 400; color: var(--admin-text-muted);">(one per line)</span></label>
+                    <textarea id="category-examples" class="form-control" rows="5"
+                              placeholder="the transformer burnt and there is no power&#10;power lines are down and sparking&#10;no electricity in the whole area since morning"></textarea>
+                    <small style="color: var(--admin-text-muted);">
+                        Write them the way a citizen would. These decide which reports land in this
+                        category, so adding a phrasing you have seen misfiled is the way to correct it.
+                    </small>
                 </div>
                 <p id="category-error" style="color: var(--admin-danger); display: none; margin-top: 0.5rem;"></p>
                 <div style="display: flex; gap: 1rem; margin-top: 2rem;">

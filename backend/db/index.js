@@ -41,4 +41,18 @@ const pool = new Pool({
     ssl: sslConfig(),
 });
 
+/**
+ * An idle connection dropping is not a reason to stop serving.
+ *
+ * node-postgres emits 'error' on pooled clients that fail while idle -- most
+ * often because the database restarted underneath them. Unhandled, that event
+ * throws and takes the whole process down: a routine database restart killed
+ * the simulator outright and it stayed dead. The pool discards the broken
+ * client and makes a new one on the next query, so the right response is to
+ * note it and carry on.
+ */
+pool.on('error', (err) => {
+    console.error('Idle database client error (the pool will reconnect):', err.message);
+});
+
 module.exports = pool;

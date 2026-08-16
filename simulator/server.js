@@ -67,6 +67,13 @@ async function createServer() {
             : false,
     });
 
+    // Without this, an idle client failing -- as happens whenever the database
+    // restarts -- raises an unhandled 'error' event and ends the process. The
+    // simulator died exactly that way and stayed down until it was noticed.
+    db.on('error', (err) => {
+        console.error('  [sim] Idle database client error (the pool will reconnect):', err.message);
+    });
+
     console.log(`  Simulator database: ${dbName} @ ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || 5432} as ${process.env.DB_USER}`);
     if (!process.env.SIMULATOR_DB_NAME) {
         console.log(`  NOTE: writing to the main database. Set SIMULATOR_DB_NAME to use a scratch copy.`);

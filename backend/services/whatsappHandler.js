@@ -7,6 +7,15 @@ const logger = require('./logger');
 const simulator = require('./simulator');
 const aiService = require('./aiService');
 const adminOtp = require('./adminOtp');
+const botFlow = require('./botFlow');
+
+// Replies that decline a follow-up questionnaire before it starts.
+const STOP_REPLIES = ['stop', 'no', 'no thanks', 'cancel', 'later'];
+
+// Commands that mean "I came here to do something else". An unanswered
+// invitation must not swallow these.
+const MENU_TRIGGERS = ['hi', 'hello', 'menu', 'start', 'help', 'report',
+    '1', '2', '3', '4', '5', '6', '7', '8'];
 const { analyzeIssue, analyzeIntent } = aiService; // Keep backward compatibility for existing calls
 const axios = require('axios');
 const FormData = require('form-data');
@@ -193,6 +202,70 @@ class FixamHandler {
 
         // Check if user exists
         let user = await this.fixamDb.getUser(fromNumber);
+
+        // Every message from a citizen re-opens WhatsApp's 24-hour window.
+        // Recorded here, at the one point every inbound message passes through,
+        // so nothing has to remember to do it.
+        if (user) {
+            await this.fixamDb.db.query(
+                'UPDATE users SET last_inbound_at = CURRENT_TIMESTAMP WHERE id = $1',
+                [user.id]
+            ).catch(() => { /* never block a conversation on a timestamp */ });
+        }
+
+        // ── Follow-up questionnaire ─────────────────────────────────────────────
+        //
+        // Sits ahead of the menu because someone part-way through answering an
+        // institution's questions is in a conversation, not at a menu. Their
+        // "1" means the first option, not "report an issue".
+        if (user) {
+            const run = await botFlow.activeRunForUser(user.id);
+
+            if (run && run.state === "invited") {
+                // The window had closed when the MDA acknowledged, so the
+                // citizen was invited rather than asked.
+                //
+                // Any reply is taken as consent -- insisting on the exact word
+                // CONTINUE would strand anyone who typed "ok" or "yes" -- with
+                // one exception. Someone who opens the bot to do something else
+                // entirely must not be captured by an invitation they had
+                // already decided to ignore, so a recognised menu command
+                // quietly retires the invitation and carries on to what they
+                // actually asked for.
+                if (MENU_TRIGGERS.includes(lowerInput)) {
+                    await this.fixamDb.db.query(
+                        "UPDATE bot_flow_runs SET state = 'abandoned', completed_at = CURRENT_TIMESTAMP WHERE id = $1",
+                        [run.id]
+                    );
+                    // Deliberately falls through to normal handling below.
+                } else if (STOP_REPLIES.includes(lowerInput)) {
+                    await this.fixamDb.db.query(
+                        "UPDATE bot_flow_runs SET state = 'abandoned', completed_at = CURRENT_TIMESTAMP WHERE id = $1",
+                        [run.id]
+                    );
+                    await this.sendMessage(fromNumber,
+                        "No problem — your report is still with the team. Type *Hi* for the menu.");
+                    return;
+                } else {
+                    await this.fixamDb.db.query(
+                        "UPDATE bot_flow_runs SET state = 'in_progress', started_at = CURRENT_TIMESTAMP WHERE id = $1",
+                        [run.id]
+                    );
+                    run.state = "in_progress";
+
+                    const intro = botFlow.text(run.definition.intro);
+                    if (intro) await this.sendMessage(fromNumber, intro);
+                    await this.sendMessage(fromNumber, botFlow.promptFor(run));
+                    return;
+                }
+            }
+
+            if (run && run.state === "in_progress") {
+                const result = await botFlow.handleAnswer(run, input);
+                if (result.reply) await this.sendMessage(fromNumber, result.reply);
+                return;
+            }
+        }
 
         // ── Administrator sign-in code ──────────────────────────────────────────
         //

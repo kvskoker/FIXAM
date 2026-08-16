@@ -39,6 +39,7 @@ minor_detector = None
 intent_classifier = None
 categories_list = []
 category_embeddings = None
+category_example_embeddings = []
 urgency_list = ["Low", "Medium", "High", "Critical"]
 urgency_embeddings = None
 
@@ -94,6 +95,7 @@ def load_categories():
     so the two stay in step.
     """
     global categories_list, category_embeddings, urgency_embeddings
+    global category_example_embeddings
 
     print("Loading categories from database...")
     try:
@@ -109,10 +111,23 @@ def load_categories():
             sslmode="require" if os.environ.get("DB_SSL", "").lower() == "true" else "prefer"
         )
         cur = conn.cursor()
-        cur.execute("SELECT name FROM categories ORDER BY name;")
+        cur.execute("SELECT name, COALESCE(examples, '') FROM categories ORDER BY name;")
         rows = cur.fetchall()
         categories_list = [row[0] for row in rows]
-        print(f"Loaded {len(categories_list)} categories from database.")
+
+        # Each category is represented by its name *and* by the way people
+        # actually report it. Matching on the name alone put "the transformer
+        # burnt" in Fire Services -- correct about English, wrong about Sierra
+        # Leone, because nothing had told it that a burnt transformer is an
+        # electricity problem.
+        category_examples = [
+            [line.strip() for line in (row[1] or "").split("\n") if line.strip()]
+            for row in rows
+        ]
+
+        with_examples = sum(1 for e in category_examples if e)
+        print(f"Loaded {len(categories_list)} categories from database "
+              f"({with_examples} with example phrases).")
         cur.close()
         conn.close()
     except Exception as e:
@@ -134,6 +149,15 @@ def load_categories():
         try:
             category_embeddings = intent_classifier.model.encode(categories_list)
             urgency_embeddings = intent_classifier.model.encode(urgency_list)
+
+            # One embedding per example phrase, kept grouped by category so a
+            # category's score can be the best of its name and its examples.
+            category_example_embeddings = []
+            for examples in category_examples:
+                category_example_embeddings.append(
+                    intent_classifier.model.encode(examples) if examples else None
+                )
+
             print("Embeddings computed successfully.")
         except Exception as e:
             print(f"Failed to compute embeddings: {e}")
@@ -442,7 +466,20 @@ def analyze_issue(request: AnalyzeIssueRequest):
         desc_embedding = intent_classifier.model.encode([user_description])
         
         # 2. Find Best Category
+        #
+        # A category scores as the best match among its name and its example
+        # phrases. Taking the best rather than the average matters: a category
+        # covers several different complaints, and a report only has to look
+        # like one of them.
         cat_sims = cosine_similarity(desc_embedding, category_embeddings)[0]
+
+        for index, example_vectors in enumerate(category_example_embeddings or []):
+            if example_vectors is None or index >= len(cat_sims):
+                continue
+            example_best = float(np.max(cosine_similarity(desc_embedding, example_vectors)[0]))
+            if example_best > cat_sims[index]:
+                cat_sims[index] = example_best
+
         best_cat_idx = np.argmax(cat_sims)
         best_category = categories_list[best_cat_idx]
         
