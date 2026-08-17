@@ -348,12 +348,24 @@ To import a different country, change `NOMINATIM_PBF_URL` and
 > least 2 CPU cores and keep `NOMINATIM_SHM_SIZE` at 1gb or above — a smaller
 > value fails partway through rather than at the start.
 
-### Pre-downloading the speech model
+### Pre-downloading the AI models
 
-The AI engine fetches its speech-to-text model (~2.5 GB) the first time it
-starts. That happens in the background, so a failed download leaves the
-container up and looking healthy while `/transcribe` returns 500. Pulling it as
-a foreground step first is easier to watch and safe to retry:
+The AI engine fetches its models — speech-to-text (Parakeet, ~2.5 GB), age
+classification (SigLIP2) and the intent embeddings (MiniLM), ~3.5 GB in total —
+the first time it starts. That happens in the background, so a failed download
+leaves the container up and looking healthy while `/transcribe` and friends
+return 500. Pulling them as a foreground step first is easier to watch and safe
+to retry:
+
+```bash
+./download-models.sh                # Linux / macOS / Git Bash / WSL
+```
+
+```powershell
+.\download-models.cmd               # Windows
+```
+
+or the raw command those wrappers run:
 
 ```bash
 docker compose stop ai-engine
@@ -364,6 +376,10 @@ docker compose up -d ai-engine
 Progress is shown as it downloads, and it retries automatically on the CDN
 drops that are common on a poor connection. Interrupting it is safe -- nothing
 is lost and re-running resumes from where it stopped.
+
+The models deliberately do **not** download at image-build time: they are ~3.5 GB
+and belong in the `model-cache` volume, not the image layer. The wrapper above is
+the post-build step that warms them once.
 
 Everything the engine downloads lands in the `model-cache` Docker volume --
 speech (Parakeet), age classification (SigLIP2) and the intent embeddings
