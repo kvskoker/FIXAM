@@ -135,14 +135,44 @@ Gamifying civic engagement to encourage consistent participation.
 Everything — database, API, AI engine, web portal and the WhatsApp simulator — comes up with one command:
 
 ```bash
-docker compose --profile simulator up -d --build
+./start.sh                          # Linux / macOS / Git Bash / WSL
 ```
+
+```powershell
+.\start.ps1                         # Windows PowerShell
+```
+
+These first check that the ports the stack publishes are free, then run
+`docker compose --profile simulator up -d --build`. They exist because the most
+common first-run failure is a port conflict — typically a PostgreSQL already
+listening on **5432** — which Docker reports only as an unhelpful
+"dependency postgres failed to start". The helpers fail up front with the port
+name and the variable to change instead.
+
+If you prefer the raw command, it still works — just be ready to change the port
+variables below if something is already listening on one of them.
 
 That is the whole install. No `.env` is required to start: every value has a working default in `docker-compose.yml`. Those defaults are public, so before exposing the stack to anyone, copy the template and set your own:
 
 ```bash
 cp .env.example .env
 ```
+
+### Ports
+
+The stack publishes these host ports, each overridable in `.env`:
+
+| Port | Service | Variable |
+|---|---|---|
+| 5432 | PostgreSQL | `DB_PORT` |
+| 8080 | Geocoding (Nominatim) | `NOMINATIM_PORT` |
+| 8000 | AI engine | `AI_ENGINE_PORT` |
+| 5000 | Backend API | `BACKEND_PORT` |
+| 4001 | WhatsApp simulator | `SIMULATOR_PORT` |
+| 80 | Frontend (nginx) | `FRONTEND_PORT` |
+
+If a port is already in use, either stop the other service or set its variable
+to a free port in `.env` (for example `DB_PORT=5433`) and start again.
 
 First run builds the images and downloads the speech model (~2.5 GB), so allow 30–60 minutes on a normal connection — the AI engine's dependency install is the slow part. Later starts take seconds. Consider [pre-downloading the model](#pre-downloading-the-speech-model) so the download is a visible, retryable step rather than a background one.
 
