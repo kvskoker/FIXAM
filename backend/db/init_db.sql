@@ -316,3 +316,15 @@ BEGIN
     (cat_waste, grp_epa)
     ON CONFLICT DO NOTHING;
 END $$;
+
+-- Routing roles, folded in from migration_routing_roles.sql so a fresh volume
+-- ends in the same state as a migrated one. A category mapped to exactly one
+-- MDA has an unambiguous owner, so promote it to 'lead'; genuinely shared ones
+-- stay 'support' until an admin nominates the lead. The pilot institutions are
+-- refined further by migration_pilot_routing.sql (runs after this).
+UPDATE category_groups cg
+SET role = 'lead'
+WHERE role = 'support'
+  AND (SELECT COUNT(*) FROM category_groups x WHERE x.category_id = cg.category_id) = 1;
+
+CREATE INDEX IF NOT EXISTS idx_groups_is_default ON groups (is_default) WHERE is_default;

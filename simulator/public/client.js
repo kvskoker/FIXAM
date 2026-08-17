@@ -562,6 +562,10 @@ setInterval(checkStatus, 10000);
         if (cfg.countryName) countryName = cfg.countryName;
     } catch (_) {}
 
+    // Show the expected shape as the input hint, country-aware rather than
+    // the hardcoded "232…" the HTML ships with.
+    phoneInput.placeholder = phoneDialCode + '0'.repeat(phoneDigits - phoneDialCode.length);
+
     // Loads history and sets the notification cursor before polling starts.
     await switchToPhone(defaultPhone);
     setInterval(pollNotifications, 5000);

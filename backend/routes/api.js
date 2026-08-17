@@ -1771,9 +1771,11 @@ router.put('/admin/users/:id/pilot', requireFullAdmin, attachScope, async (req, 
 //
 // Critical open reports, unscoped: the centre is staffed by the full admins and
 // the point is a whole-city view of life-safety emergencies, so the normal
-// per-institution filtering would hide exactly what it exists to show. Search,
-// category filter, sort and pagination mirror the main issues list.
-router.get('/admin/emergency/issues', requireAdmin, attachScope, async (req, res) => {
+// per-institution filtering would hide exactly what it exists to show. Full
+// admins only -- an MDA operations user must not be handed every institution's
+// critical reports, which would undo the scoping the rest of the portal
+// enforces. Search, category filter, sort and pagination mirror the main list.
+router.get('/admin/emergency/issues', requireFullAdmin, attachScope, async (req, res) => {
     try {
         const { search, category, sort, page = 1, limit = 20 } = req.query;
         const pageNum = Math.max(1, parseInt(page, 10) || 1);

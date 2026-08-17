@@ -18,12 +18,29 @@ const RETENTION_DAYS = Number(process.env.LOG_RETENTION_DAYS || 30);
 const PSEUDONYM_SECRET = process.env.SESSION_SECRET || process.env.OTP_SECRET || 'fixam-log-pseudonym';
 
 /**
- * Sierra Leone numbers arrive as 232XXXXXXXX, but logs also carry numbers typed
- * by citizens in local format and numbers embedded in JSON. The pattern is
- * deliberately broad: over-tagging a long digit string is harmless, letting a
- * real number through is not.
+ * The configured country's calling code, read lazily so the logger works even
+ * when it is required before the environment is loaded. A local "0…" number is
+ * normalised to this prefix, so the same person written "076…" and "23276…"
+ * ends up with one tag.
  */
-const PHONE_PATTERN = /(?:\+?232|0)?[0-9]{8,14}/g;
+let _dialCode = null;
+function dialCode() {
+    if (_dialCode === null) {
+        try {
+            _dialCode = require('./countries').getServiceArea().dialCode;
+        } catch (err) {
+            _dialCode = '232';
+        }
+    }
+    return _dialCode;
+}
+
+/**
+ * Logs carry numbers typed in local format, with a country code, and embedded
+ * in JSON. The pattern is deliberately broad: over-tagging a long digit string
+ * is harmless, letting a real number through is not.
+ */
+const PHONE_PATTERN = /(?:\+\d{1,4}|0)?[0-9]{8,14}/g;
 
 function pseudonym(value) {
     return 'p:' + crypto.createHmac('sha256', PSEUDONYM_SECRET)
@@ -44,7 +61,7 @@ function redact(text) {
         // 076... all reduce to one tag and a conversation stays followable.
         const digits = match.replace(/\D/g, '');
         if (digits.length < 8) return match;
-        return pseudonym(digits.replace(/^0/, '232'));
+        return pseudonym(digits.replace(/^0/, dialCode()));
     });
 }
 
@@ -199,7 +216,7 @@ class Logger {
     async purgeSubject(phoneNumber) {
         await this.flush();
 
-        const digits = String(phoneNumber).replace(/\D/g, '').replace(/^0/, '232');
+        const digits = String(phoneNumber).replace(/\D/g, '').replace(/^0/, dialCode());
         const tag = pseudonym(digits);
         // Also matched raw, in case the file predates redaction.
         const raw = String(phoneNumber).replace(/\D/g, '');
