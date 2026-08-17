@@ -27,6 +27,14 @@ Thumbs.db
 *.swo
 *~
 
+# AI agent configuration and local notes (Claude, Gemini, opencode)
+.claude/
+.gemini/
+.opencode/
+
+# Generated knowledge graph (graphify). Local-only; rebuild with `graphify update .`
+graphify-out/
+
 # Ignore build outputs
 dist/
 build/
