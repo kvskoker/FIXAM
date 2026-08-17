@@ -25,6 +25,12 @@ let isSending = false;
 // cannot silently send the next message as somebody else.
 let activePhone = '';
 
+// The country's phone rules, fetched from /config at boot. Defaults are Sierra
+// Leone; the server overwrites them when another country is configured.
+let phoneDialCode = '232';
+let phoneDigits = 11;
+let countryName = 'Sierra Leone';
+
 attachBtn.addEventListener('click', () => {
     attachMenu.classList.toggle('open');
     attachBtn.classList.toggle('active');
@@ -97,15 +103,34 @@ function getPhone() {
 
 // ── Switching the number being simulated ────────────────────────────────────
 
+/** The country's digits, or null when the text is not a valid number. */
+function normalizedDigits(raw) {
+    const digits = String(raw || '').replace(/[^\d]/g, '').replace(/^00/, '');
+    if (!digits.startsWith(phoneDialCode)) return null;
+    if (digits.length !== phoneDigits) return null;
+    return digits;
+}
+
+/** The human error line for an invalid number, so it is written once. */
+function invalidNumberText() {
+    return `❌ Invalid number. ${countryName} numbers are ${phoneDigits} digits — "${phoneDialCode}" then ${phoneDigits - phoneDialCode.length} (e.g. ${phoneDialCode}${'0'.repeat(phoneDigits - phoneDialCode.length)}).`;
+}
+
 /**
  * Adopt the number in the input field: reload that user's conversation and
  * start notifications from now, so the window shows their chat and nothing
  * else. The server normalises the number and returns the form it used, which
- * keeps the "232..." rules in one place rather than duplicated here.
+ * keeps the country rules in one place rather than duplicated here.
  */
 async function switchToPhone(raw) {
     const requested = String(raw || '').trim();
     if (!requested) return;
+
+    const digits = normalizedDigits(requested);
+    if (!digits) {
+        addMessage(invalidNumberText(), 'incoming');
+        return;
+    }
 
     phoneApplyBtn.disabled = true;
     try {
@@ -129,14 +154,30 @@ async function switchToPhone(raw) {
     }
 }
 
-/** Reflect whether the typed number differs from the one in use. */
+/**
+ * Reflect whether the typed number differs from the one in use, and keep the
+ * button disabled until it is a valid number for the configured country.
+ */
 function updatePhoneButton() {
     const typed = phoneInput.value.trim();
-    const pending = typed !== '' && typed !== activePhone;
+    const digits = normalizedDigits(typed);
+
+    if (!digits) {
+        phoneApplyBtn.disabled = true;
+        phoneApplyBtn.classList.remove('pending');
+        phoneApplyBtn.textContent = typed ? 'Invalid number' : 'Use number';
+        phoneApplyBtn.title = typed
+            ? `${countryName} numbers are ${phoneDigits} digits — "${phoneDialCode}" then ${phoneDigits - phoneDialCode.length}.`
+            : 'Enter a number to simulate';
+        return;
+    }
+
+    const pending = digits !== activePhone;
+    phoneApplyBtn.disabled = false;
     phoneApplyBtn.classList.toggle('pending', pending);
     phoneApplyBtn.textContent = pending ? 'Change number' : 'Use number';
     phoneApplyBtn.title = pending
-        ? 'Switch the simulator to ' + typed
+        ? 'Switch the simulator to ' + digits
         : 'Reload the conversation for ' + (activePhone || 'this number');
 }
 
@@ -516,6 +557,9 @@ setInterval(checkStatus, 10000);
     try {
         const cfg = await (await fetch('/config')).json();
         if (cfg.defaultPhone) defaultPhone = cfg.defaultPhone;
+        if (cfg.phoneDialCode) phoneDialCode = cfg.phoneDialCode;
+        if (cfg.phoneDigits) phoneDigits = cfg.phoneDigits;
+        if (cfg.countryName) countryName = cfg.countryName;
     } catch (_) {}
 
     // Loads history and sets the notification cursor before polling starts.

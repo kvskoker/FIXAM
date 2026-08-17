@@ -614,6 +614,28 @@ class FixamDatabase {
         }
     }
 
+    /**
+     * Everyone who should be alerted to an emergency: admins plus anyone
+     * explicitly flagged onto the emergency coordination team.
+     */
+    async getEmergencyTeamMembers() {
+        const sql = `
+            SELECT DISTINCT u.id, u.phone_number, u.name
+            FROM users u
+            LEFT JOIN user_roles ur ON u.id = ur.user_id
+            LEFT JOIN roles r ON ur.role_id = r.id
+            WHERE u.is_disabled = FALSE
+              AND (u.emergency_team = TRUE OR r.name = 'Admin')
+        `;
+        try {
+            const result = await this.db.query(sql);
+            return result.rows;
+        } catch (error) {
+            this.debugLog('Error fetching emergency team members', { error: error.message });
+            return [];
+        }
+    }
+
     // Get group members by group name
     async getGroupMembers(groupName) {
         const sql = `

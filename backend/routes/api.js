@@ -1564,35 +1564,44 @@ router.put('/admin/issues/:id/details', requireAdmin, attachScope, async (req, r
             });
         }
 
-        const { title, description, category } = req.body;
+        const { title, description, category, urgency } = req.body;
 
         if (!title || !description || !category) {
             return res.status(400).json({ success: false, message: 'Title, description, and category are required' });
         }
 
+        // Urgency is a judgement the AI makes and admins can correct. Only the
+        // four words the classifier uses are accepted, so a typo cannot write
+        // junk into a field the map and the dashboard key off.
+        const URGENCIES = ['low', 'medium', 'high', 'critical'];
+        const newUrgency = URGENCIES.includes(urgency) ? urgency : null;
+
         // Check if issue is spam
-        const check = await db.query('SELECT status, category FROM issues WHERE id = $1', [id]);
+        const check = await db.query('SELECT status, category, urgency FROM issues WHERE id = $1', [id]);
         if (check.rows.length === 0) return res.status(404).json({ success: false, message: 'Issue not found' });
         if (check.rows[0].status === 'spam') {
              return res.status(403).json({ success: false, message: 'Cannot edit details of a SPAM issue.' });
         }
         const previousCategory = check.rows[0].category;
+        const previousUrgency = check.rows[0].urgency;
 
-        // Update issue
-        const sql = `UPDATE issues SET title = $1, description = $2, category = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4`;
-        await db.query(sql, [title, description, category, id]);
+        // Update issue (urgency only when the caller actually supplied one)
+        const sql = `UPDATE issues SET title = $1, description = $2, category = $3, urgency = COALESCE($4, urgency), updated_at = CURRENT_TIMESTAMP WHERE id = $5`;
+        await db.query(sql, [title, description, category, newUrgency, id]);
 
         // Log to tracker
         const reassigned = previousCategory !== category;
+        const urgencyChanged = newUrgency && newUrgency !== previousUrgency;
+        const changes = [];
+        if (reassigned) changes.push(`Reassigned from ${previousCategory} to ${category}`);
+        if (urgencyChanged) changes.push(`Urgency changed from ${previousUrgency} to ${newUrgency}`);
         await db.query(`
             INSERT INTO issue_tracker (issue_id, action, description, performed_by)
             VALUES ($1, $2, $3, $4)
         `, [
             id,
             reassigned ? 'reassigned' : 'edited',
-            reassigned
-                ? `Reassigned from ${previousCategory} to ${category}`
-                : 'Issue details updated by admin',
+            changes.length ? changes.join('; ') : 'Issue details updated by admin',
             req.admin.id
         ]);
 
@@ -1758,6 +1767,73 @@ router.put('/admin/users/:id/pilot', requireFullAdmin, attachScope, async (req, 
     }
 });
 
+// GET /api/admin/emergency/issues - the coordination centre's feed
+//
+// Critical open reports, unscoped: the centre is staffed by the full admins and
+// the point is a whole-city view of life-safety emergencies, so the normal
+// per-institution filtering would hide exactly what it exists to show. Search,
+// category filter, sort and pagination mirror the main issues list.
+router.get('/admin/emergency/issues', requireAdmin, attachScope, async (req, res) => {
+    try {
+        const { search, category, sort, page = 1, limit = 20 } = req.query;
+        const pageNum = Math.max(1, parseInt(page, 10) || 1);
+        const limitNum = Math.min(Math.max(1, parseInt(limit, 10) || 20), 100);
+        const offset = (pageNum - 1) * limitNum;
+
+        const params = [];
+        const add = (clause, value) => {
+            params.push(value);
+            return clause.split('$?').join(`$${params.length}`);
+        };
+
+        const base = `
+            i.urgency = 'critical'
+            AND i.status NOT IN ('fixed', 'spam')
+            AND i.closed_at IS NULL
+        `;
+        let clause = '';
+        if (search) {
+            clause += ` AND ${add('(i.title ILIKE $? OR i.description ILIKE $? OR i.ticket_id ILIKE $? OR i.address ILIKE $?)', `%${search}%`)}`;
+        }
+        if (category) {
+            clause += ` AND ${add('i.category = $?', category)}`;
+        }
+
+        const order = sort === 'oldest' ? 'i.created_at ASC' : 'i.created_at DESC';
+
+        const countResult = await db.query(
+            `SELECT COUNT(*) AS total FROM issues i WHERE ${base}${clause}`,
+            params
+        );
+        const total = parseInt(countResult.rows[0].total);
+
+        const result = await db.query(`
+            SELECT i.id, i.ticket_id, i.title, i.description, i.category, i.status,
+                   i.urgency, i.address, i.district, i.city, i.ward, i.lat, i.lng,
+                   i.created_at, i.acknowledged_at, i.progress_at,
+                   u.name AS reported_by_name, u.phone_number AS reported_by_phone
+            FROM issues i
+            LEFT JOIN users u ON i.reported_by = u.id
+            WHERE ${base}${clause}
+            ORDER BY ${order}
+            LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+        `, [...params, limitNum, offset]);
+
+        res.json({
+            data: result.rows,
+            pagination: {
+                current_page: pageNum,
+                per_page: limitNum,
+                total_items: total,
+                total_pages: Math.ceil(total / limitNum)
+            }
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // GET /api/admin/users - List users with roles and groups
 router.get('/admin/users', requireAdmin, attachScope, async (req, res) => {
     try {
@@ -1817,6 +1893,7 @@ router.get('/admin/users', requireAdmin, attachScope, async (req, res) => {
                 u.is_disabled,
                 u.points,
                 u.pilot_activated,
+                u.emergency_team,
                 (
                     SELECT COALESCE(array_agg(r.name), '{}')
                     FROM user_roles ur
@@ -1913,7 +1990,7 @@ router.post('/admin/users/:id/penalize', requireFullAdmin, attachScope, async (r
 // POST /api/admin/users - Create User
 router.post('/admin/users', requireFullAdmin, attachScope, async (req, res) => {
     try {
-        const { phone_number, name, password, roles, groups, pilot_activated } = req.body;
+        const { phone_number, name, password, roles, groups, pilot_activated, emergency_team } = req.body;
         if (!phone_number) return res.status(400).json({ error: 'Phone number is required' });
 
         // Check if phone number already exists
@@ -1927,8 +2004,8 @@ router.post('/admin/users', requireFullAdmin, attachScope, async (req, res) => {
         const hashedPassword = password ? await authService.hashPassword(password) : null;
 
         const userInsert = await db.query(
-            'INSERT INTO users (phone_number, name, password, pilot_activated) VALUES ($1, $2, $3, $4) RETURNING id',
-            [phone_number, name, hashedPassword, pilot_activated ? true : false]
+            'INSERT INTO users (phone_number, name, password, pilot_activated, emergency_team) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+            [phone_number, name, hashedPassword, pilot_activated ? true : false, emergency_team ? true : false]
         );
         const userId = userInsert.rows[0].id;
 
@@ -1962,7 +2039,7 @@ router.post('/admin/users', requireFullAdmin, attachScope, async (req, res) => {
 router.put('/admin/users/:id', requireFullAdmin, attachScope, async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, phone_number, is_disabled, roles, groups, password, pilot_activated } = req.body;
+        const { name, phone_number, is_disabled, roles, groups, password, pilot_activated, emergency_team } = req.body;
 
         // 1. Prevent self-disabling
         if (Number(id) === req.admin.id && is_disabled === true) {
@@ -1976,15 +2053,15 @@ router.put('/admin/users/:id', requireFullAdmin, attachScope, async (req, res) =
         }
 
         // Update basic info
-        let updateQuery = 'UPDATE users SET name = $1, phone_number = $2, is_disabled = $3, pilot_activated = $4, updated_at = CURRENT_TIMESTAMP';
-        const params = [name, phone_number, is_disabled, pilot_activated ? true : false, id];
+        let updateQuery = 'UPDATE users SET name = $1, phone_number = $2, is_disabled = $3, pilot_activated = $4, emergency_team = $5, updated_at = CURRENT_TIMESTAMP';
+        const params = [name, phone_number, is_disabled, pilot_activated ? true : false, emergency_team ? true : false, id];
         
         if (password) {
             const hashedPassword = await authService.hashPassword(password);
-            updateQuery += ', password = $6 WHERE id = $5';
+            updateQuery += ', password = $7 WHERE id = $6';
             params.push(hashedPassword);
         } else {
-            updateQuery += ' WHERE id = $5';
+            updateQuery += ' WHERE id = $6';
         }
 
         await db.query(updateQuery, params);

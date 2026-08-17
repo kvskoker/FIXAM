@@ -149,7 +149,7 @@ function renderUsers(users) {
                         ${(user.name || 'U').charAt(0).toUpperCase()}
                     </div>
                     <div style="text-align: left; overflow: hidden; text-overflow: ellipsis;">
-                        <div style="font-weight: 500;">${escapeHtml(user.name) || 'Anonymous'} ${isSelf ? '<span style="color: var(--admin-primary); font-size: 0.75rem; margin-left: 0.5rem;">(You)</span>' : ''}${user.pilot_activated ? '<span style="background: rgba(245,158,11,0.15); color: var(--admin-warning); font-size: 0.7rem; padding: 1px 6px; border-radius: 8px; margin-left: 0.5rem; font-weight: 600;">Pilot</span>' : ''}</div>
+                        <div style="font-weight: 500;">${escapeHtml(user.name) || 'Anonymous'} ${isSelf ? '<span style="color: var(--admin-primary); font-size: 0.75rem; margin-left: 0.5rem;">(You)</span>' : ''}${user.pilot_activated ? '<span style="background: rgba(245,158,11,0.15); color: var(--admin-warning); font-size: 0.7rem; padding: 1px 6px; border-radius: 8px; margin-left: 0.5rem; font-weight: 600;">Pilot</span>' : ''}${user.emergency_team ? '<span style="background: rgba(239,68,68,0.15); color: var(--admin-danger); font-size: 0.7rem; padding: 1px 6px; border-radius: 8px; margin-left: 0.5rem; font-weight: 600;">Emergency</span>' : ''}</div>
                     </div>
                 </div>
             </td>
@@ -248,6 +248,7 @@ async function handleUserSubmit(e) {
     const password = document.getElementById('user-password').value;
     const is_disabled = document.getElementById('user-disabled').checked;
     const pilot_activated = document.getElementById('user-pilot-activated').checked;
+    const emergency_team = document.getElementById('user-emergency-team').checked;
     
     const roles = Array.from(document.querySelectorAll('#roles-checkboxes input:checked')).map(cb => cb.value);
     const groups = Array.from(document.getElementById('groups-select').selectedOptions).map(opt => opt.value);
@@ -256,7 +257,7 @@ async function handleUserSubmit(e) {
     const adminUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
     const admin_id = adminUser ? adminUser.id : null;
 
-    const data = { name, phone_number, password, is_disabled, pilot_activated, roles, groups, admin_id };
+    const data = { name, phone_number, password, is_disabled, pilot_activated, emergency_team, roles, groups, admin_id };
     const method = id ? 'PUT' : 'POST';
     const url = id ? `${API_BASE_URL}/admin/users/${id}` : `${API_BASE_URL}/admin/users`;
 
@@ -291,6 +292,7 @@ function editUser(user) {
     document.getElementById('user-phone').value = user.phone_number;
     document.getElementById('user-disabled').checked = user.is_disabled;
     document.getElementById('user-pilot-activated').checked = !!user.pilot_activated;
+    document.getElementById('user-emergency-team').checked = !!user.emergency_team;
     
     // Hide self-disable group
     const currentUser = JSON.parse(localStorage.getItem('fixam_admin_user'));
@@ -347,6 +349,7 @@ function resetUserForm() {
     document.getElementById('user-error').style.display = 'none';
     document.getElementById('user-disabled-group').style.display = 'block';
     document.getElementById('user-pilot-activated').checked = false;
+    document.getElementById('user-emergency-team').checked = false;
     document.querySelectorAll('#roles-checkboxes input').forEach(cb => {
         cb.checked = cb.value === 'User'; // Default role
         cb.disabled = false;
@@ -392,6 +395,8 @@ async function loadPilotSettings() {
         document.getElementById('sla-acknowledge-hours').value = s.sla_acknowledge_hours || 24;
         document.getElementById('sla-progress-hours').value = s.sla_progress_hours || 72;
         document.getElementById('sla-resolution-days').value = s.sla_resolution_days || 30;
+        document.getElementById('emergency-categories').value = s.emergency_categories || '';
+        document.getElementById('emergency-keywords').value = s.emergency_keywords || '';
     } catch (err) {
         console.error('Error loading settings:', err);
     }
@@ -403,6 +408,8 @@ async function savePilotSettings() {
         sla_acknowledge_hours: document.getElementById('sla-acknowledge-hours').value,
         sla_progress_hours: document.getElementById('sla-progress-hours').value,
         sla_resolution_days: document.getElementById('sla-resolution-days').value,
+        emergency_categories: document.getElementById('emergency-categories').value,
+        emergency_keywords: document.getElementById('emergency-keywords').value,
     };
 
     const saved = document.getElementById('settings-saved');
@@ -684,16 +691,8 @@ function resetGroupForm() {
 // UTILITY FUNCTIONS
 // ==========================================
 
-function openModal(id) {
-    document.getElementById(id).classList.add('active');
-}
+// openModal / closeModal now live in admin_common.js (shared across pages).
 
-function closeModal(id) {
-    document.getElementById(id).classList.remove('active');
-}
-
-// Shared closeModal for onclick
-window.closeModal = closeModal;
 // ==========================================
 // PENALTY FUNCTIONS
 // ==========================================

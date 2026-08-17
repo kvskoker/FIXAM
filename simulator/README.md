@@ -76,9 +76,12 @@ classification, geocoding and database writes.
 
 ## Notes
 
-- **Phone numbers.** The bot only accepts Sierra Leone numbers in digits-only
-  form (`23272123456`). The simulator normalises whatever you type — `+232 72
-  123456`, `072123456` — to that form.
+- **Phone numbers.** The bot accepts only the configured country's numbers (see
+  `FIXAM_COUNTRY_CODE` in the root `.env`), and the simulator enforces the same:
+  the country calling code followed by the national number, at that country's
+  length. For Sierra Leone that is **11 digits, `232` then 8** (e.g.
+  `23272123456`). Decorations are tolerated (`+232 72 123456`), but a local
+  `0…` number, a foreign code, or the wrong length is refused with an error.
 - **Real data.** Simulated conversations create real rows: users, issues, votes,
   points. Set `SIMULATOR_DB_NAME` to a scratch database if that matters.
 - **Schema check.** On startup the simulator verifies the tables and columns the

@@ -200,30 +200,33 @@ function renderFeedback(feedbackList) {
             '<span class="status-badge status-acknowledged">Acknowledged</span>' : 
             '<span class="status-badge status-pending">Pending</span>';
 
-        // Three visually distinct states, because a confirmed destination and a
-        // machine's guess should never look alike to the person acting on them.
-        const routingBadge = (() => {
+        // One badge and at most one short hint, instead of the sentence stacked
+        // under a sentence that used to make this column unreadable. The long
+        // explanations live in the tooltip and in the routing modal.
+        const routingCell = (() => {
+            let badge;
             if (item.scope === 'platform') {
-                return '<span class="status-badge" style="background: rgba(99,102,241,0.12); color:#6366f1; border:1px solid rgba(99,102,241,0.3);">Platform · MoCTI/DSTI</span>';
+                badge = '<span class="status-badge" style="background: rgba(99,102,241,0.12); color:#6366f1; border:1px solid rgba(99,102,241,0.3);">MoCTI / DSTI</span>';
+            } else if (item.scope === 'service' && item.routed_group_name) {
+                badge = `<span class="status-badge" style="background: rgba(37,99,235,0.1); color: var(--admin-primary); border:1px solid rgba(37,99,235,0.25);">${escapeHtml(item.routed_group_name)}</span>`;
+            } else if (item.scope === 'suggested') {
+                badge = `<span class="status-badge" style="background: rgba(245,158,11,0.12); color: var(--admin-warning); border:1px dashed rgba(245,158,11,0.5);">${escapeHtml(item.category || 'Uncategorised')} <span style="opacity:0.6;">· suggested</span></span>`;
+            } else {
+                badge = '<span class="status-badge" style="background: rgba(245,158,11,0.12); color: var(--admin-warning); border:1px solid rgba(245,158,11,0.3);">Needs routing</span>';
             }
-            if (item.scope === 'service' && item.routed_group_name) {
-                return `<span class="status-badge" style="background: rgba(37,99,235,0.1); color: var(--admin-primary); border:1px solid rgba(37,99,235,0.25);">${escapeHtml(item.routed_group_name)}</span>`
-                    + `<div style="font-size:0.75rem; color: var(--admin-text-muted); margin-top:4px;">${escapeHtml(item.category) || ''}</div>`;
-            }
-            if (item.scope === 'suggested') {
-                return '<span class="status-badge" style="background: rgba(245,158,11,0.12); color: var(--admin-warning); border:1px dashed rgba(245,158,11,0.5);">Awaiting confirmation</span>'
-                    + `<div style="font-size:0.75rem; color: var(--admin-text-muted); margin-top:4px;">suggested: ${escapeHtml(item.category) || 'a service category'}</div>`;
-            }
-            return '<span class="status-badge" style="background: rgba(245,158,11,0.12); color: var(--admin-warning); border:1px solid rgba(245,158,11,0.3);">Needs routing</span>';
-        })();
 
-        const sourceNote = item.routing_source === 'ai_suggested'
-            ? `<div style="font-size:0.7rem; color: var(--admin-text-muted); margin-top:2px;"><i class="fa-solid fa-wand-magic-sparkles"></i> AI suggestion${item.routing_confidence ? ` · ${Math.round(item.routing_confidence * 100)}%` : ''} — confirm before it reaches the MDA</div>`
-            : (item.routing_source === 'ai'
-                ? `<div style="font-size:0.7rem; color: var(--admin-text-muted); margin-top:2px;"><i class="fa-solid fa-wand-magic-sparkles"></i> classified automatically${item.routing_confidence ? ` · ${Math.round(item.routing_confidence * 100)}%` : ''}</div>`
-                : (item.routing_source === 'admin'
-                    ? '<div style="font-size:0.7rem; color: var(--admin-text-muted); margin-top:2px;"><i class="fa-solid fa-user-check"></i> set by admin</div>'
-                    : ''));
+            const pct = item.routing_confidence != null ? ` · ${Math.round(item.routing_confidence * 100)}%` : '';
+            let hint = '';
+            if (item.routing_source === 'ai_suggested') {
+                hint = `<span title="AI suggestion — confirm before it reaches the MDA" style="font-size:0.72rem; color: var(--admin-text-muted);"><i class="fa-solid fa-wand-magic-sparkles"></i> AI${pct}</span>`;
+            } else if (item.routing_source === 'ai') {
+                hint = `<span title="Classified automatically" style="font-size:0.72rem; color: var(--admin-text-muted);"><i class="fa-solid fa-wand-magic-sparkles"></i> AI${pct}</span>`;
+            } else if (item.routing_source === 'admin') {
+                hint = '<span title="Set by an admin" style="font-size:0.72rem; color: var(--admin-text-muted);"><i class="fa-solid fa-user-check"></i> admin</span>';
+            }
+
+            return `<div style="display:flex; flex-direction:column; align-items:flex-start; gap:4px;">${badge}${hint ? `<div>${hint}</div>` : ''}</div>`;
+        })();
 
         const routeBtn = `<button class="action-btn" data-admin-only onclick="openRoutingModal(${item.id})" title="Change routing" style="margin-right: 0.4rem;">
                 <i class="fa-solid fa-route"></i>
@@ -242,13 +245,13 @@ function renderFeedback(feedbackList) {
             </td>
             <td data-label="Type">${typeIcon} ${item.type.toUpperCase()}</td>
             <td data-label="Feedback/Transcription">
-                <div style="max-width: 300px; white-space: pre-wrap;">${item.transcription || item.content || '-'}</div>
+                <div style="max-width: 300px; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;">${item.transcription || item.content || '-'}</div>
             </td>
             <td data-label="Audio">${audioPlayer}</td>
-            <td data-label="Date" style="font-size: 0.9rem; color: var(--admin-text-muted);">
+            <td data-label="Date" style="font-size: 0.9rem; color: var(--admin-text-muted); white-space: nowrap;">
                 ${new Date(item.created_at).toLocaleString()}
             </td>
-            <td data-label="Routed To">${routingBadge}${sourceNote}</td>
+            <td data-label="Routed To">${routingCell}</td>
             <td data-label="Status">${statusBadge}</td>
             <td data-label="Actions" style="text-align: right; white-space: nowrap;">
                 ${routeBtn}${actionBtn}

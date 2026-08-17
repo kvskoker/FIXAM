@@ -361,6 +361,43 @@ function getURLParams() {
     return result;
 }
 
+/**
+ * Update the emergency badge in the nav with the count of open critical reports.
+ * A convenience on every page; the coordination centre itself updates faster.
+ */
+async function refreshEmergencyBadge() {
+    const badge = document.getElementById('nav-emergency-badge');
+    if (!badge) return;
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/emergency/issues`);
+        if (!res.ok) return;
+        const payload = await res.json();
+        // The feed is paginated; the badge is the total, not the page size.
+        const count = payload.pagination && payload.pagination.total_items != null
+            ? payload.pagination.total_items
+            : (payload.data || []).length;
+        badge.textContent = count;
+        badge.style.display = count > 0 ? 'inline-block' : 'none';
+    } catch (err) { /* the badge is a convenience, not a requirement */ }
+}
+
+/**
+ * Open/close a `.modal` overlay by id.
+ *
+ * Defined here so every admin page has them. The feedback page used to call
+ * these and crash with "openModal is not defined", because they only lived in
+ * the user-management script, which that page does not load.
+ */
+function openModal(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('active');
+}
+
+function closeModal(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('active');
+}
+
 // Common Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
     // Login Form Handler
@@ -368,6 +405,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (loginForm) {
         loginForm.addEventListener('submit', handleLogin);
     }
+
+    // Emergency badge in the nav, refreshed periodically so a new critical
+    // report is visible from any page, not just the coordination centre.
+    refreshEmergencyBadge();
+    setInterval(refreshEmergencyBadge, 60 * 1000);
 
     // Logout Handler
     const logoutBtn = document.getElementById('logout-btn');

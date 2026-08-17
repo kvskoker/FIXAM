@@ -12,26 +12,13 @@ require('../backend/loadEnv');
 
 const FixamHandler = require('../backend/services/whatsappHandler');
 const simulator = require('../backend/services/simulator');
+const { normalizePhone, getServiceArea } = require('../backend/services/countries');
 const MockWhatsAppService = require('./mockWhatsApp');
 
 const PORT = process.env.SIMULATOR_PORT || 4001;
 const DEFAULT_PHONE = normalizePhone(process.env.SIMULATOR_PHONE || '23272123456');
 const BACKEND_URL = (process.env.SIMULATOR_BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`)
     .replace(/\/+$/, '');
-
-/**
- * Normalise a phone number to the form the bot expects: digits only, country
- * code included. The handler rejects anything that does not start with 232, so
- * "+232 72 123456", "072123456" and "23272123456" all have to end up the same.
- */
-function normalizePhone(input) {
-    if (!input) return '';
-    let digits = String(input).replace(/[^\d]/g, '');
-    if (digits.startsWith('00')) digits = digits.slice(2);
-    if (digits.startsWith('0')) digits = digits.slice(1);          // local 0-prefix
-    if (!digits.startsWith('232')) digits = `232${digits}`;        // assume Sierra Leone
-    return digits;
-}
 
 async function createServer() {
     const app = express();
@@ -247,7 +234,12 @@ async function createServer() {
     // from the bot's point of view: "incoming" is what the citizen sent.
     app.get('/simulate/history', async (req, res) => {
         const phone = normalizePhone(req.query.phone);
-        if (!phone) return res.status(400).json({ error: 'phone is required.' });
+        if (!phone) {
+            const area = getServiceArea();
+            return res.status(400).json({
+                error: `Invalid ${area.name} number. Use ${area.phoneDigits} digits: ${area.dialCode} followed by ${area.phoneDigits - area.dialCode.length}.`
+            });
+        }
 
         const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
 
@@ -349,10 +341,16 @@ async function createServer() {
     });
 
     app.get('/config', (_req, res) => {
+        const area = getServiceArea();
         res.json({
             defaultPhone: DEFAULT_PHONE,
             backendUrl: BACKEND_URL,
             simulatorRecognised: simulator.isEnabled(),
+            // The client validates numbers with the same country rules the bot
+            // uses, instead of hardcoding a country prefix of its own.
+            phoneDialCode: area.dialCode,
+            phoneDigits: area.phoneDigits,
+            countryName: area.name,
         });
     });
 

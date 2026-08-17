@@ -139,6 +139,29 @@ class FixamHandler {
         return true;
     }
 
+    /**
+     * Is this report an emergency?
+     *
+     * A report qualifies when its category is on the emergency list or its
+     * description carries an emergency keyword. Both lists are configurable in
+     * the admin portal, so what counts as an emergency is a governance decision,
+     * not a hardcoded one.
+     */
+    async isEmergencyReport(category, description) {
+        const categoriesRaw = await this.fixamDb.getPlatformSetting('emergency_categories');
+        const keywordsRaw = await this.fixamDb.getPlatformSetting('emergency_keywords');
+
+        const categories = (categoriesRaw || '')
+            .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+        const keywords = (keywordsRaw || '')
+            .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+
+        if (category && categories.includes(String(category).toLowerCase())) return true;
+
+        const lower = (description || '').toLowerCase();
+        return keywords.some((k) => lower.includes(k));
+    }
+
     async processIncomingMessage(data) {
         logger.log('webhook', '========== Received webhook ==========');
         logger.logObject('webhook', 'Full webhook data', data);
@@ -165,10 +188,13 @@ class FixamHandler {
             const message = data.entry[0].changes[0].value.messages[0];
             const fromNumber = message.from;
 
-            // Restrict to Sierra Leone numbers (232)
-            if (!fromNumber.startsWith('232')) {
+            // Restrict to the configured country's numbers. The dial code comes
+            // from services/countries.js, so a deployment for another country
+            // changes this without touching the handler.
+            const serviceArea = this.helpers.serviceArea;
+            if (!fromNumber.startsWith(serviceArea.dialCode)) {
                 logger.log('webhook', `Rejected message from unsupported region: ${fromNumber}`);
-                await this.sendMessage(fromNumber, "Fixam is not yet supported in your country. Use a Sierra Leone phone number.");
+                await this.sendMessage(fromNumber, `Fixam is not yet supported in your country. Use a ${serviceArea.name} phone number.`);
                 return;
             }
 
@@ -2090,6 +2116,21 @@ class FixamHandler {
      * "report as new" and the issue is filed for admins to review.
      */
     async promptDuplicatesOrConfirm(fromNumber, currentData) {
+        // Emergencies take the fast path: no duplicate check (a second report
+        // of a burning building is not noise), forced critical urgency, and
+        // straight to confirmation. The duplicate prompt exists to cut spam, and
+        // an emergency must not be slowed by it.
+        if (await this.isEmergencyReport(currentData.category, currentData.description)) {
+            currentData.is_emergency = true;
+            currentData.urgency = 'critical';
+            await this.fixamDb.updateConversationState(fromNumber, {
+                current_step: 'awaiting_report_confirmation',
+                data: currentData
+            });
+            await this.sendReportSummary(fromNumber, currentData);
+            return;
+        }
+
         let candidates = [];
         try {
             candidates = await this.fixamDb.findPotentialDuplicates(
@@ -2189,6 +2230,7 @@ class FixamHandler {
         const unresolved = data.location_source === 'unresolved';
 
         await this.sendMessage(fromNumber,
+            (data.is_emergency ? '🚨 *EMERGENCY REPORT* 🚨\n\n' : '') +
             `Please review your report:\n\n` +
             `📋 *Title*: ${data.title || 'Untitled'}\n` +
             `📍 *Location*: ${data.address}\n` +
@@ -2198,6 +2240,9 @@ class FixamHandler {
             `${urgencyEmoji[data.urgency] || '🟡'} *Urgency*: ${(data.urgency || 'medium').toUpperCase()}\n` +
             `📝 *Description*: ${data.description}\n` +
             `📸 *Evidence*: ${data.image_url ? 'Attached' : 'None'}\n\n` +
+            (data.is_emergency
+                ? `This is being treated as an emergency and has been sent to the response team.\n\n`
+                : '') +
             `Type the number *1* to confirm.` + REPORT_NAV_FOOTER
         );
     }
@@ -2258,9 +2303,16 @@ class FixamHandler {
             await this.sendMessage(fromNumber, `✅ *Report Submitted Successfully!*\n\nIssue ID: *${ticketId}*${assignedLine}\n\nYou can track this issue here: ${this.getIssueUrl(ticketId)}`);
             
             // 2. Alert Operational Team if necessary
-            await this.alertOperationalTeam(issue, data.address);
+            await this.alertOperationalTeam(issue, data.address, !!data.is_emergency);
 
-            // 3. Send Sharing Link
+            // 3. An emergency also alerts the coordination team (admins plus
+            // everyone flagged onto it), so a life-safety report is seen by a
+            // person even if the owning MDA's users are all away.
+            if (data.is_emergency) {
+                await this.alertEmergencyTeam(issue, data.address);
+            }
+
+            // 4. Send Sharing Link
             const botNumber = process.env.BOT_PHONE_NUMBER || '23274598229'; 
             const shareLink = `https://wa.me/${botNumber}?text=${ticketId}`;
             const shareMsg = `📢 *Share to Compile Votes!*\n\n*Issue:* ${data.title}\n*Location:* ${data.address}\n\nForward this message to your community to help prioritize this issue:\n\n"Help fix this issue! Click the link below to vote:"\n${shareLink}`;
@@ -2304,7 +2356,7 @@ class FixamHandler {
         return sent;
     }
 
-    async alertOperationalTeam(issue, address) {
+    async alertOperationalTeam(issue, address, isEmergency = false) {
         // Alert relevant groups for ALL issues regardless of urgency
 
         // Get mapped groups for this category
@@ -2315,8 +2367,7 @@ class FixamHandler {
             return;
         }
 
-        const isEmergencyCategory = ['Fire Services', 'Road Safety', 'Natural Disaster Response', 'Public Safety'].includes(issue.category);
-        const header = isEmergencyCategory ? "🚨 *EMERGENCY DISPATCH* 🚨" : "📢 *ISSUE ALERT* 📢";
+        const header = isEmergency ? "🚨 *EMERGENCY DISPATCH* 🚨" : "📢 *ISSUE ALERT* 📢";
         const urgencyLabel = (issue.urgency || 'medium').toUpperCase();
 
         for (const group of groups) {
@@ -2353,6 +2404,37 @@ class FixamHandler {
                 } catch (err) {
                     logger.logError('alert_system', `Failed to send alert to ${member.phone_number}`, err);
                 }
+            }
+        }
+    }
+
+    /**
+     * Alert the emergency coordination team -- admins plus anyone flagged onto
+     * it -- so an emergency is seen by a person even if the owning MDA's users
+     * are all away. Separate from the MDA dispatch above: the team are the
+     * accountable layer, not the owners of the fix.
+     */
+    async alertEmergencyTeam(issue, address) {
+        const members = await this.fixamDb.getEmergencyTeamMembers();
+        if (!members || members.length === 0) {
+            logger.log('alert_system', `No emergency team members to alert for ${issue.ticket_id}`);
+            return;
+        }
+
+        const message = `🚨 *EMERGENCY REPORT* 🚨\n\n`
+            + `*Urgency:* CRITICAL\n`
+            + `*Category:* ${issue.category}\n`
+            + `*Issue:* ${issue.title}\n`
+            + `*Loc:* ${address || `${issue.lat}, ${issue.lng}`}\n`
+            + `*ID:* ${issue.ticket_id}\n`
+            + `*Link:* ${this.getIssueUrl(issue.ticket_id)}`;
+
+        for (const member of members) {
+            try {
+                await this.sendMessage(member.phone_number, message);
+                logger.log('alert_system', `Emergency alert sent to ${member.name} (${member.phone_number})`);
+            } catch (err) {
+                logger.logError('alert_system', `Failed to send emergency alert to ${member.phone_number}`, err);
             }
         }
     }

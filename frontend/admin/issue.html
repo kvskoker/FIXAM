@@ -18,7 +18,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     
     <!-- Flatpickr CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
@@ -64,6 +64,10 @@
                 </a>
                 <a href="/admin/issues" id="nav-issues" class="admin-nav-item active">
                     <i class="fa-solid fa-triangle-exclamation"></i> <span>Issues</span>
+                </a>
+                <a href="/admin/emergency" id="nav-emergency" class="admin-nav-item">
+                    <i class="fa-solid fa-tower-broadcast"></i> <span>Emergency</span>
+                    <span id="nav-emergency-badge" style="display: none; background: var(--admin-danger); color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 0.7rem; font-weight: 700; margin-left: auto;"></span>
                 </a>
                 <a href="/admin/users" id="nav-users" class="admin-nav-item">
                     <i class="fa-solid fa-users"></i> <span>Users & Groups</span>
@@ -168,6 +172,17 @@
                             <textarea id="edit-description" class="filter-input" rows="5" style="width: 100%;"></textarea>
                         </div>
 
+                        <div style="margin-bottom: 1.5rem;">
+                            <label style="display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.5rem;">Urgency</label>
+                            <select id="edit-urgency" class="filter-input" style="width: 100%;">
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                                <option value="critical">Critical</option>
+                            </select>
+                            <small style="display: block; margin-top: 0.4rem; color: var(--admin-text-muted);">The AI's first guess; correct it if it is wrong.</small>
+                        </div>
+
                         <div style="display: flex; gap: 1rem;">
                             <button onclick="saveIssueDetails()" style="background: var(--admin-primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Save Changes</button>
                             <button onclick="toggleEditMode(false)" style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); color: var(--admin-text); padding: 0.75rem 1.5rem; border-radius: 6px; cursor: pointer;">Cancel</button>
@@ -199,8 +214,8 @@
                                 <i class="fa-solid fa-expand"></i> Full screen
                             </button>
                         </div>
-                        <img id="modal-image" src="" alt="Issue Image" style="width: 100%; border-radius: 8px; max-height: 200px; object-fit: cover; background: #334155;">
-                        <video id="modal-video" src="" controls playsinline preload="metadata" style="width: 100%; border-radius: 8px; max-height: 340px; background: #000; display: none;"></video>
+                        <img id="modal-image" alt="Issue Image" style="width: 100%; border-radius: 8px; max-height: 200px; object-fit: cover; background: #334155; display: none;">
+                        <video id="modal-video" controls playsinline preload="metadata" style="width: 100%; border-radius: 8px; max-height: 340px; background: #000; display: none;"></video>
                         <div id="modal-media-empty" style="display: none; padding: 1.25rem; border: 1px dashed var(--admin-border); border-radius: 8px; color: var(--admin-text-muted); font-size: 0.9rem; text-align: center;"></div>
                     </div>
                 </div>

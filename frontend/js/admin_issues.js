@@ -92,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Modal Close
     const closeModalBtn = document.getElementById('close-modal');
-    if (closeModalBtn) closeModalBtn.addEventListener('click', closeModal);
+    if (closeModalBtn) closeModalBtn.addEventListener('click', closeIssueModal);
 
     // Confirmation Modal Handlers
     const confirmYes = document.getElementById('confirm-yes-btn');
@@ -176,7 +176,9 @@ async function loadCategories() {
         const res = await fetch(`${API_BASE_URL}/categories`);
         const categories = await res.json();
         const select = document.getElementById('issue-filter-category');
-        
+        // The list page owns this element; the single-report page does not.
+        if (!select) return;
+
         // Reset to default
         select.innerHTML = '<option value="">All Categories</option>';
         
@@ -400,7 +402,12 @@ async function runExport() {
 }
 
 async function loadIssues() {
-    const search = document.getElementById('issue-search').value;
+    // The list page owns these filters; the single-report page has none of
+    // them, so guard rather than crash on a missing element.
+    const searchEl = document.getElementById('issue-search');
+    if (!searchEl) return;
+
+    const search = searchEl.value;
     const category = document.getElementById('issue-filter-category').value;
     const status = document.getElementById('issue-filter-status').value;
     const urgency = document.getElementById('issue-filter-urgency').value;
@@ -762,7 +769,7 @@ async function saveLocationPicker() {
         if (data.success) {
             msg.style.color = 'var(--admin-success)';
             msg.textContent = 'Location saved.';
-            setTimeout(() => { closeLocationPicker(); closeModal(); loadIssues(); }, 700);
+            setTimeout(() => { closeLocationPicker(); closeIssueModal(); loadIssues(); }, 700);
         } else {
             msg.style.color = 'var(--admin-danger)';
             msg.textContent = data.message || 'Could not save the location.';
@@ -1373,7 +1380,7 @@ function renderTimeline(logs) {
     });
 }
 
-function closeModal() {
+function closeIssueModal() {
     // On the report page, closing means going back to the list.
     if (isDetailPage()) {
         window.location.href = backToIssueList();
@@ -1532,6 +1539,7 @@ async function toggleEditMode(show) {
         // Populate inputs
         document.getElementById('edit-title').value = currentIssueData.title;
         document.getElementById('edit-description').value = currentIssueData.description;
+        document.getElementById('edit-urgency').value = currentIssueData.urgency || 'medium';
         
         // Fetch categories dynamically
         try {
@@ -1571,6 +1579,7 @@ async function saveIssueDetails() {
     const title = document.getElementById('edit-title').value.trim();
     const description = document.getElementById('edit-description').value.trim();
     const category = document.getElementById('edit-category').value;
+    const urgency = document.getElementById('edit-urgency').value;
     
     if (!title || !description || !category) {
         showAlert('All fields are required.');
@@ -1587,6 +1596,7 @@ async function saveIssueDetails() {
                  title, 
                  description, 
                  category, 
+                 urgency,
                  admin_id: adminUser?.id 
              })
         });
@@ -1596,7 +1606,6 @@ async function saveIssueDetails() {
         if (data.success) {
             toggleEditMode(false);
             openIssueDetails(currentIssueId); // Reload details
-            loadIssues(); // Refresh list background
         } else {
             showAlert(data.message || 'Failed to update issue');
         }
@@ -1672,7 +1681,7 @@ async function executeSpamFlag(reason) {
                  document.getElementById('confirm-title').style.color = "var(--admin-text)";
              }
              
-            closeModal();
+            closeIssueModal();
             loadIssues();
         } else {
             showAlert(data.message || 'Failed to flag as spam');
@@ -1739,7 +1748,6 @@ function initIssueDetailPage() {
             return;
         }
 
-        await loadCategories();
         await openIssueDetails(id);
     });
 }

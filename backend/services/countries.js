@@ -15,22 +15,22 @@
  */
 
 const COUNTRIES = {
-    SL: { name: 'Sierra Leone', minLat: 6.87, maxLat: 10.05, minLng: -13.35, maxLng: -10.25 },
-    LR: { name: 'Liberia', minLat: 4.30, maxLat: 8.56, minLng: -11.50, maxLng: -7.36 },
-    GN: { name: 'Guinea', minLat: 7.17, maxLat: 12.70, minLng: -15.10, maxLng: -7.63 },
-    GW: { name: 'Guinea-Bissau', minLat: 10.85, maxLat: 12.70, minLng: -16.75, maxLng: -13.63 },
-    SN: { name: 'Senegal', minLat: 12.28, maxLat: 16.70, minLng: -17.55, maxLng: -11.34 },
-    GM: { name: 'Gambia', minLat: 13.05, maxLat: 13.85, minLng: -16.85, maxLng: -13.78 },
-    ML: { name: 'Mali', minLat: 10.13, maxLat: 25.01, minLng: -12.25, maxLng: 4.27 },
-    BF: { name: 'Burkina Faso', minLat: 9.39, maxLat: 15.09, minLng: -5.53, maxLng: 2.41 },
-    CI: { name: "Côte d'Ivoire", minLat: 4.34, maxLat: 10.75, minLng: -8.61, maxLng: -2.48 },
-    GH: { name: 'Ghana', minLat: 4.72, maxLat: 11.18, minLng: -3.27, maxLng: 1.20 },
-    TG: { name: 'Togo', minLat: 6.09, maxLat: 11.15, minLng: -0.16, maxLng: 1.82 },
-    BJ: { name: 'Benin', minLat: 6.21, maxLat: 12.43, minLng: 0.76, maxLng: 3.86 },
-    NE: { name: 'Niger', minLat: 11.69, maxLat: 23.54, minLng: 0.16, maxLng: 16.00 },
-    NG: { name: 'Nigeria', minLat: 4.26, maxLat: 13.90, minLng: 2.66, maxLng: 14.69 },
-    MR: { name: 'Mauritania', minLat: 14.71, maxLat: 27.31, minLng: -17.08, maxLng: -4.82 },
-    CV: { name: 'Cape Verde', minLat: 14.79, maxLat: 17.21, minLng: -25.37, maxLng: -22.66 },
+    SL: { name: 'Sierra Leone', dialCode: '232', phoneDigits: 11, minLat: 6.87, maxLat: 10.05, minLng: -13.35, maxLng: -10.25 },
+    LR: { name: 'Liberia', dialCode: '231', phoneDigits: 9, minLat: 4.30, maxLat: 8.56, minLng: -11.50, maxLng: -7.36 },
+    GN: { name: 'Guinea', dialCode: '224', phoneDigits: 11, minLat: 7.17, maxLat: 12.70, minLng: -15.10, maxLng: -7.63 },
+    GW: { name: 'Guinea-Bissau', dialCode: '245', phoneDigits: 9, minLat: 10.85, maxLat: 12.70, minLng: -16.75, maxLng: -13.63 },
+    SN: { name: 'Senegal', dialCode: '221', phoneDigits: 12, minLat: 12.28, maxLat: 16.70, minLng: -17.55, maxLng: -11.34 },
+    GM: { name: 'Gambia', dialCode: '220', phoneDigits: 9, minLat: 13.05, maxLat: 13.85, minLng: -16.85, maxLng: -13.78 },
+    ML: { name: 'Mali', dialCode: '223', phoneDigits: 11, minLat: 10.13, maxLat: 25.01, minLng: -12.25, maxLng: 4.27 },
+    BF: { name: 'Burkina Faso', dialCode: '226', phoneDigits: 11, minLat: 9.39, maxLat: 15.09, minLng: -5.53, maxLng: 2.41 },
+    CI: { name: "Côte d'Ivoire", dialCode: '225', phoneDigits: 11, minLat: 4.34, maxLat: 10.75, minLng: -8.61, maxLng: -2.48 },
+    GH: { name: 'Ghana', dialCode: '233', phoneDigits: 12, minLat: 4.72, maxLat: 11.18, minLng: -3.27, maxLng: 1.20 },
+    TG: { name: 'Togo', dialCode: '228', phoneDigits: 11, minLat: 6.09, maxLat: 11.15, minLng: -0.16, maxLng: 1.82 },
+    BJ: { name: 'Benin', dialCode: '229', phoneDigits: 11, minLat: 6.21, maxLat: 12.43, minLng: 0.76, maxLng: 3.86 },
+    NE: { name: 'Niger', dialCode: '227', phoneDigits: 11, minLat: 11.69, maxLat: 23.54, minLng: 0.16, maxLng: 16.00 },
+    NG: { name: 'Nigeria', dialCode: '234', phoneDigits: 13, minLat: 4.26, maxLat: 13.90, minLng: 2.66, maxLng: 14.69 },
+    MR: { name: 'Mauritania', dialCode: '222', phoneDigits: 11, minLat: 14.71, maxLat: 27.31, minLng: -17.08, maxLng: -4.82 },
+    CV: { name: 'Cape Verde', dialCode: '238', phoneDigits: 9, minLat: 14.79, maxLat: 17.21, minLng: -25.37, maxLng: -22.66 },
 };
 
 const DEFAULT_CODE = 'SL';
@@ -84,9 +84,31 @@ function getServiceAreaFor(code) {
         code,
         countryCode: code.toLowerCase(),        // what Nominatim expects
         name: country.name,
+        // Country calling code and the total length of a mobile number
+        // (dial code + national number), so the bot and the simulator accept
+        // this country's numbers and refuse everyone else's.
+        dialCode: country.dialCode,
+        phoneDigits: country.phoneDigits,
         minLat, maxLat, minLng, maxLng,
         center: [(minLat + maxLat) / 2, (minLng + maxLng) / 2],
     };
+}
+
+/**
+ * Normalise a phone number for the configured country, or return ''.
+ *
+ * Tolerates decorations ("+232 72 123456") and a leading "00", but requires the
+ * number to be exactly this country's format: the dial code followed by the
+ * national number, at the country's expected total length. Anything else is
+ * refused rather than guessed into shape.
+ */
+function normalizePhone(input) {
+    const area = getServiceArea();
+    let digits = String(input || '').replace(/[^\d]/g, '');
+    if (digits.startsWith('00')) digits = digits.slice(2);
+    if (!digits.startsWith(area.dialCode)) return '';
+    if (digits.length !== area.phoneDigits) return '';
+    return digits;
 }
 
 /** Every supported country, for a picker or documentation. */
@@ -96,4 +118,4 @@ function listCountries() {
         .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-module.exports = { COUNTRIES, getServiceArea, listCountries };
+module.exports = { COUNTRIES, getServiceArea, listCountries, normalizePhone };

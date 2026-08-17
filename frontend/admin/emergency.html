@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIXAM - Emergency Coordination Centre</title>
+
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="Fixam" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+    <div id="login-overlay" class="login-overlay">
+        <div style="background: var(--admin-card-bg); padding: 2.5rem; border-radius: 12px; width: 400px; text-align: center; border: 1px solid var(--admin-border);">
+            <img src="../fixam-logo-blue.svg" alt="FIXAM" height="80" style="margin-bottom: 1rem;">
+            <form id="login-form">
+                <input type="tel" id="admin-phone" placeholder="Phone Number" class="form-control" style="margin-bottom: 1rem;" required>
+                <div class="password-wrapper" style="margin-bottom: 1.5rem;">
+                    <input type="password" id="admin-password" placeholder="Password" class="form-control" style="margin-bottom: 0;" required>
+                    <i class="fa-solid fa-eye password-toggle-icon" id="toggle-password"></i>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Access Portal</button>
+            </form>
+            <p id="login-error" style="color: var(--admin-danger); margin-top: 1rem; display: none;">Invalid credentials</p>
+        </div>
+    </div>
+
+    <div id="admin-container" class="admin-container hidden">
+        <aside class="admin-sidebar">
+            <div class="admin-header-section">
+                <img src="../fixam-logo.svg" alt="FIXAM" height="50" class="logo-full">
+                <img src="../fixam-icon.svg" alt="FIXAM" height="40" class="logo-icon">
+                <button id="theme-toggle-admin" style="background: rgba(255, 255, 255, 0.2); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer;">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+            </div>
+            <nav class="admin-nav">
+                <a href="/admin/overview" id="nav-overview" class="admin-nav-item">
+                    <i class="fa-solid fa-chart-line"></i> <span>Overview</span>
+                </a>
+                <a href="/admin/issues" id="nav-issues" class="admin-nav-item">
+                    <i class="fa-solid fa-triangle-exclamation"></i> <span>Issues</span>
+                </a>
+                <a href="/admin/emergency" id="nav-emergency" class="admin-nav-item active">
+                    <i class="fa-solid fa-tower-broadcast"></i> <span>Emergency</span>
+                    <span id="nav-emergency-badge" style="display: none; background: var(--admin-danger); color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 0.7rem; font-weight: 700; margin-left: auto;"></span>
+                </a>
+                <a href="/admin/users" id="nav-users" class="admin-nav-item">
+                    <i class="fa-solid fa-users"></i> <span>Users &amp; Groups</span>
+                </a>
+                <a href="/admin/feedback" id="nav-feedback" class="admin-nav-item">
+                    <i class="fa-solid fa-comments"></i> <span>Feedback</span>
+                </a>
+                <a href="/admin/bot-flows" id="nav-bot-flows" class="admin-nav-item">
+                    <i class="fa-solid fa-comment-dots"></i> <span>Questionnaires</span>
+                </a>
+                <div style="flex-grow: 1;"></div>
+                <a href="#" id="logout-btn" class="admin-nav-item">
+                    <i class="fa-solid fa-right-from-bracket"></i> <span>Logout</span>
+                </a>
+            </nav>
+        </aside>
+
+        <main class="admin-main">
+            <div class="admin-header">
+                <div>
+                    <h1>Emergency Coordination Centre</h1>
+                    <p style="color: var(--admin-text-muted);">Critical reports, newest first. Auto-refreshes.</p>
+                </div>
+                <div class="admin-user-display"></div>
+            </div>
+
+            <div id="emergency-banner" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 0.6rem 1rem; margin-bottom: 1rem; font-size: 0.88rem; color: var(--admin-text); display: none;">
+                <i class="fa-solid fa-bell" style="color: var(--admin-danger);"></i>
+                <span id="emergency-banner-text"></span>
+            </div>
+
+            <div class="content-card">
+                <div style="display: flex; margin-bottom: 1.5rem; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                    <div style="position: relative; width: 280px;">
+                        <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--admin-text-muted);"></i>
+                        <input type="text" id="emergency-search" placeholder="Search title, ticket, or location..." class="filter-input" style="padding-left: 36px; width: 100%;">
+                    </div>
+                    <select id="emergency-filter-category" class="filter-input" style="width: auto;">
+                        <option value="">All Categories</option>
+                    </select>
+                    <select id="emergency-sort" class="filter-input" style="width: auto;">
+                        <option value="newest">Newest first</option>
+                        <option value="oldest">Oldest first</option>
+                    </select>
+                    <span id="emergency-refresh-note" style="margin-left: auto; font-size: 0.8rem; color: var(--admin-text-muted);"></span>
+                </div>
+
+                <div class="admin-table-container">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Ticket</th>
+                                <th>Issue</th>
+                                <th>Category</th>
+                                <th>Location</th>
+                                <th>Reported</th>
+                                <th>Age</th>
+                                <th style="text-align: right;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="emergency-list">
+                            <tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--admin-text-muted);">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="emergency-pagination" style="margin-top: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                    <span id="emergency-pagination-info" style="font-size: 0.9rem; color: var(--admin-text-muted);"></span>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="action-btn" id="emergency-prev" title="Previous"><i class="fa-solid fa-chevron-left"></i></button>
+                        <button class="action-btn" id="emergency-next" title="Next"><i class="fa-solid fa-chevron-right"></i></button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="../js/theme.js"></script>
+    <script src="../js/ui.js"></script>
+    <script src="../js/admin_common.js"></script>
+    <script src="../js/admin_emergency.js"></script>
+</body>
+</html>

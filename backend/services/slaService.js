@@ -18,6 +18,10 @@ const DEFAULTS = {
     sla_acknowledge_hours: '24',
     sla_progress_hours: '72',
     sla_resolution_days: '30',
+    // A report whose category is on this list -- or whose description carries
+    // one of the keywords -- takes the emergency fast path.
+    emergency_categories: 'Fire Services,Natural Disaster Response,Public Safety,Road Safety',
+    emergency_keywords: 'emergency,fire,on fire,burning,collapse,collapsed,flood,flooding,injury,serious accident,trapped,drowning',
 };
 
 const ALLOWED_SETTINGS = Object.keys(DEFAULTS);
@@ -38,6 +42,7 @@ async function ensureSchema(db) {
         )
     `);
     await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS pilot_activated BOOLEAN NOT NULL DEFAULT FALSE');
+    await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS emergency_team BOOLEAN NOT NULL DEFAULT FALSE');
     await db.query('ALTER TABLE issues ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMP');
     await db.query('ALTER TABLE issues ADD COLUMN IF NOT EXISTS progress_at TIMESTAMP');
 
@@ -46,7 +51,9 @@ async function ensureSchema(db) {
             ('pilot_mode', 'false'),
             ('sla_acknowledge_hours', '24'),
             ('sla_progress_hours', '72'),
-            ('sla_resolution_days', '30')
+            ('sla_resolution_days', '30'),
+            ('emergency_categories', 'Fire Services,Natural Disaster Response,Public Safety,Road Safety'),
+            ('emergency_keywords', 'emergency,fire,on fire,burning,collapse,collapsed,flood,flooding,injury,serious accident,trapped,drowning')
         ON CONFLICT (key) DO NOTHING
     `);
 }
