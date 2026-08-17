@@ -1,0 +1,11 @@
+# Keep line endings consistent regardless of the host OS's git config.
+#
+# Shell scripts must stay LF: a CRLF checkout breaks their `#!/bin/sh` shebang
+# inside the Linux containers ("exec ...: no such file or directory"). Dockerfiles
+# and the compose file are included for the same reason.
+*.sh   text eol=lf
+*.md   text eol=lf
+Dockerfile     text eol=lf
+docker-compose.yml text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf

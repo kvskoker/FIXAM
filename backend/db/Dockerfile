@@ -9,7 +9,11 @@ FROM postgres:17-alpine
 RUN apk add --no-cache openssl
 
 COPY postgres-tls-entrypoint.sh /usr/local/bin/postgres-tls-entrypoint.sh
-RUN chmod +x /usr/local/bin/postgres-tls-entrypoint.sh
+# Strip carriage returns in case the script was checked out with CRLF on
+# Windows: its shebang would otherwise be "#!/bin/sh\r" and the container fails
+# with "exec ...: no such file or directory".
+RUN sed -i 's/\r$//' /usr/local/bin/postgres-tls-entrypoint.sh \
+    && chmod +x /usr/local/bin/postgres-tls-entrypoint.sh
 
 ENTRYPOINT ["/usr/local/bin/postgres-tls-entrypoint.sh"]
 CMD ["postgres"]
