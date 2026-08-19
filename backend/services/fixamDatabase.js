@@ -50,13 +50,56 @@ class FixamDatabase {
     }
 
     // Register user — only called AFTER consent is confirmed
-    async registerUser(phoneNumber, name) {
-        const sql = "INSERT INTO users (phone_number, name, consent_given, consent_timestamp) VALUES ($1, $2, TRUE, CURRENT_TIMESTAMP) ON CONFLICT (phone_number) DO UPDATE SET name = COALESCE(EXCLUDED.name, users.name) RETURNING id";
+    /**
+     * Register a citizen, or update the name of one already registered.
+     *
+     * `parts` carries the split produced by services/nameValidator.js. It is
+     * optional so the older two-argument call still works, but a name that
+     * arrives without it is stored unverified: name_verified means "a validator
+     * looked at this", and nothing else should be able to claim that.
+     */
+    async registerUser(phoneNumber, name, parts = null) {
+        const firstName = parts && parts.firstName ? parts.firstName : null;
+        const lastName = parts && parts.lastName ? parts.lastName : null;
+        const verified = Boolean(firstName && lastName);
+
+        const sql = `
+            INSERT INTO users (phone_number, name, first_name, last_name, name_verified, consent_given, consent_timestamp)
+            VALUES ($1, $2, $3, $4, $5, TRUE, CURRENT_TIMESTAMP)
+            ON CONFLICT (phone_number) DO UPDATE SET
+                name          = COALESCE(EXCLUDED.name, users.name),
+                first_name    = COALESCE(EXCLUDED.first_name, users.first_name),
+                last_name     = COALESCE(EXCLUDED.last_name, users.last_name),
+                -- Once verified, always verified: a later two-argument call
+                -- must not quietly downgrade a name that was checked.
+                name_verified = users.name_verified OR EXCLUDED.name_verified
+            RETURNING id`;
         try {
-            const result = await this.db.query(sql, [phoneNumber, name]);
-            this.debugLog(`User registered/updated: ${phoneNumber}`, { name });
+            const result = await this.db.query(sql, [phoneNumber, name, firstName, lastName, verified]);
+            this.debugLog(`User registered/updated: ${phoneNumber}`, { name, verified });
             return result.rows[0].id;
         } catch (error) {
+            // 42703 is "undefined column": the code is ahead of the database
+            // because migration_name_quality.sql has not been applied yet.
+            // Registering somebody with the columns we do have beats refusing
+            // them until an operator notices; the split is recovered when the
+            // migration runs and they next give their name.
+            if (error && error.code === '42703') {
+                this.debugLog('users.first_name missing — run db/migration_name_quality.sql', { phoneNumber });
+                try {
+                    const legacy = await this.db.query(
+                        'INSERT INTO users (phone_number, name, consent_given, consent_timestamp) '
+                        + 'VALUES ($1, $2, TRUE, CURRENT_TIMESTAMP) '
+                        + 'ON CONFLICT (phone_number) DO UPDATE SET name = COALESCE(EXCLUDED.name, users.name) '
+                        + 'RETURNING id',
+                        [phoneNumber, name]
+                    );
+                    return legacy.rows[0].id;
+                } catch (fallbackError) {
+                    this.debugLog('Error registering user (fallback)', { error: fallbackError.message, phoneNumber });
+                    return null;
+                }
+            }
             this.debugLog('Error registering user', { error: error.message, phoneNumber });
             return null;
         }

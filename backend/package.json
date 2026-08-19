@@ -9,6 +9,7 @@
     "db:init": "node scripts/setupDb.js init",
     "db:seed": "node scripts/setupDb.js seed",
     "db:setup": "node scripts/setupDb.js init seed",
+    "db:audit-names": "node scripts/auditNames.js",
     "test": "jest --detectOpenHandles --forceExit",
     "test:watch": "jest --watch",
     "lint": "eslint . --ext .js",

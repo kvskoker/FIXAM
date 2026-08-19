@@ -34,6 +34,8 @@ services:
       - ./backend/db/migration_report_status.sql:/docker-entrypoint-initdb.d/11-report-status.sql
       - ./backend/db/migration_pilot_scope.sql:/docker-entrypoint-initdb.d/12-pilot-scope.sql
       - ./backend/db/migration_emergency.sql:/docker-entrypoint-initdb.d/13-emergency.sql
+      # After pilot-scope: it writes to platform_settings, which that one creates.
+      - ./backend/db/migration_name_quality.sql:/docker-entrypoint-initdb.d/14-name-quality.sql
     ports:
       - "${DB_PORT:-5432}:5432"
     healthcheck:

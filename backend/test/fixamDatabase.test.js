@@ -56,7 +56,50 @@ describe('FixamDatabase — DPG Compliance Features', () => {
             expect(userId).toBe(1);
             expect(mockDb.query).toHaveBeenCalledWith(
                 expect.stringContaining('consent_given'),
-                ['23276123456', 'Jane Doe']
+                ['23276123456', 'Jane Doe', null, null, false]
+            );
+        });
+
+        test('registerUser stores the validated split and marks the name verified', async () => {
+            mockDb.query.mockResolvedValueOnce({ rows: [{ id: 2 }] });
+            await fixamDb.registerUser('23276123457', 'Aminata Kamara', {
+                firstName: 'Aminata',
+                lastName: 'Kamara',
+            });
+            expect(mockDb.query).toHaveBeenCalledWith(
+                expect.stringContaining('first_name'),
+                ['23276123457', 'Aminata Kamara', 'Aminata', 'Kamara', true]
+            );
+        });
+
+        test('registerUser without a split leaves the name unverified', async () => {
+            // name_verified means "a validator looked at this". Nothing that
+            // skips the parser may claim it.
+            mockDb.query.mockResolvedValueOnce({ rows: [{ id: 3 }] });
+            await fixamDb.registerUser('23276123458', 'Whatever They Typed');
+            const [, params] = mockDb.query.mock.calls[0];
+            expect(params[4]).toBe(false);
+        });
+
+        test('registerUser falls back to the legacy insert when the columns are missing', async () => {
+            // A deployment running this code before applying
+            // db/migration_name_quality.sql must still be able to register
+            // citizens rather than failing silently.
+            const undefinedColumn = new Error('column "first_name" of relation "users" does not exist');
+            undefinedColumn.code = '42703';
+            mockDb.query
+                .mockRejectedValueOnce(undefinedColumn)
+                .mockResolvedValueOnce({ rows: [{ id: 4 }] });
+
+            const userId = await fixamDb.registerUser('23276123459', 'Sorie Kamara', {
+                firstName: 'Sorie',
+                lastName: 'Kamara',
+            });
+
+            expect(userId).toBe(4);
+            expect(mockDb.query).toHaveBeenLastCalledWith(
+                expect.not.stringContaining('first_name'),
+                ['23276123459', 'Sorie Kamara']
             );
         });
     });

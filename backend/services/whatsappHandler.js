@@ -8,6 +8,9 @@ const simulator = require('./simulator');
 const aiService = require('./aiService');
 const adminOtp = require('./adminOtp');
 const botFlow = require('./botFlow');
+const sanitizer = require('./inputSanitizer');
+const smallTalk = require('./smallTalk');
+const nameValidator = require('./nameValidator');
 
 // Replies that decline a follow-up questionnaire before it starts.
 const STOP_REPLIES = ['stop', 'no', 'no thanks', 'cancel', 'later'];
@@ -47,6 +50,58 @@ const MINOR_DETECTION_ENABLED = process.env.MINOR_DETECTION_ENABLED !== 'false';
 // an unbounded description is a novel stored and billed as a report.
 const MAX_DESCRIPTION_LENGTH = Number(process.env.MAX_DESCRIPTION_LENGTH) || 1000;
 const MAX_ADDRESS_LENGTH = Number(process.env.MAX_ADDRESS_LENGTH) || 200;
+
+// The ceiling every inbound message is cut to before anything -- the logger,
+// the state machine, the AI -- sees it. Sits above MAX_DESCRIPTION_LENGTH so
+// the description step can still give its own, kinder refusal rather than
+// silently receiving a truncated report.
+const MAX_MESSAGE_LENGTH = Number(process.env.MAX_MESSAGE_LENGTH) || 4096;
+
+// A name is asked for again rather than accepted, but not forever without help:
+// after this many refusals the bot stops rephrasing and spells out the exact
+// two words it wants.
+const NAME_HELP_AFTER_ATTEMPTS = 3;
+
+/**
+ * Steps where the bot is waiting for one specific answer.
+ *
+ * Small talk arriving at one of these must not be stored as the answer and must
+ * not throw the citizen back to the menu -- four questions into a report,
+ * "ok" means "I am still here", not "start again". Everything that is not the
+ * menu is in here, which is the point: the menu is the only place where
+ * changing the subject is free.
+ */
+const ANSWER_EXPECTED_STEPS = new Set([
+    'awaiting_name',
+    'awaiting_consent',
+    'awaiting_delete_confirmation',
+    'awaiting_feedback',
+    'awaiting_report_evidence',
+    'awaiting_report_location',
+    'awaiting_report_description',
+    'awaiting_report_confirmation',
+    'awaiting_address_selection',
+    'awaiting_unresolved_location_choice',
+    'awaiting_reused_photo_choice',
+    'awaiting_duplicate_action',
+    'awaiting_duplicate_selection_for_vote',
+    'awaiting_vote_ticket_id',
+    'awaiting_vote_confirmation',
+    'awaiting_track_ticket_id',
+    'awaiting_track_action_selection',
+    'awaiting_endorse_confirmation',
+    'awaiting_trending_community',
+    'awaiting_trending_selection',
+]);
+
+// What to say to bring somebody back to the question they were on. Steps with
+// nothing listed get the generic line below.
+const STEP_REMINDERS = {
+    awaiting_delete_confirmation: 'Type *YES* to confirm deletion, or *9* to cancel.',
+    awaiting_feedback: 'Please type your feedback, or send a voice note.',
+    awaiting_vote_ticket_id: 'Please send the Issue ID (for example *FIX-A1B2C3*), or *9* to cancel.',
+    awaiting_track_ticket_id: 'Please send the Issue ID (for example *FIX-A1B2C3*), or *9* to cancel.',
+};
 
 /**
  * The reporting flow as an ordered list, so "back" has something to walk.
@@ -212,8 +267,18 @@ class FixamHandler {
             logger.log('webhook', `Message from: ${fromNumber}, Type: ${message.type}`);
             logger.logObject('webhook', 'Message object', message);
 
-            // Log message
-            const messageBody = message.text?.body || message.type;
+            // Clean before anything reads it -- including the log. A message
+            // padded with zero-width characters or reversed with a bidi
+            // override should not reach the database in that state, and an
+            // operator reading the transcript should see what the state machine
+            // saw, not something that renders differently.
+            const rawBody = message.text?.body || message.type;
+            const cleaned = sanitizer.sanitize(rawBody, { maxLength: MAX_MESSAGE_LENGTH });
+            if (cleaned.flags.length) {
+                logger.log('webhook', `Input sanitised [${cleaned.flags.join(', ')}] from ${logger.pseudonym(fromNumber)}`);
+            }
+            const messageBody = cleaned.text;
+
             await this.fixamDb.logMessage({
                 conversationId: fromNumber,
                 direction: 'incoming',
@@ -253,11 +318,25 @@ class FixamHandler {
     }
 
     async handleTextMessage(fromNumber, text) {
-        const input = text.trim();
+        // Sanitised again here rather than trusted from the caller: this method
+        // is re-entered from inside the state machine (a ticket ID pulled out of
+        // a sentence, for instance), and it is cheap and idempotent.
+        const input = sanitizer.sanitizeText(text, { maxLength: MAX_MESSAGE_LENGTH });
         const lowerInput = input.toLowerCase();
 
         // Check if user exists
         const user = await this.fixamDb.getUser(fromNumber);
+
+        // Nothing survived cleaning: the message was invisible characters,
+        // formatting marks, or empty to begin with. Say so rather than feeding
+        // an empty string into whichever step is waiting.
+        if (sanitizer.isBlank(input)) {
+            await this.sendMessage(fromNumber,
+                user
+                    ? "I didn't get any text in that message. Please type your reply, or send *Hi* for the menu."
+                    : "I didn't get any text in that message. Please type *Hi* to start.");
+            return;
+        }
 
         // Every message from a citizen re-opens WhatsApp's 24-hour window.
         // Recorded here, at the one point every inbound message passes through,
@@ -474,14 +553,35 @@ class FixamHandler {
 
             // Already consented — proceed to name registration
             if (state && state.current_step === 'awaiting_name') {
-                const name = this.extractName(input);
-                if (name.length < 2) {
-                    await this.sendMessage(fromNumber, "Please enter a valid name.");
+                const stateData = (state && state.data) || {};
+                const parsed = nameValidator.parseName(input, {
+                    blacklist: await this.getNameBlacklist(),
+                });
+
+                if (!parsed.ok) {
+                    // Keep everything already in the state -- a pending vote
+                    // ticket must survive however many attempts the name takes.
+                    const attempts = (stateData.name_attempts || 0) + 1;
+                    await this.fixamDb.updateConversationState(fromNumber, {
+                        current_step: 'awaiting_name',
+                        data: { ...stateData, name_attempts: attempts },
+                    });
+                    logger.log('webhook', `Name refused (${parsed.reason}), attempt ${attempts}`);
+
+                    // Repeating the same guidance a fourth time is not help.
+                    const spellItOut = attempts >= NAME_HELP_AFTER_ATTEMPTS
+                        ? '\n\nSend just the two words and nothing else, like this:\n*Aminata Kamara*'
+                        : '';
+                    await this.sendMessage(fromNumber, parsed.message + spellItOut);
                     return;
                 }
-                await this.fixamDb.registerUser(fromNumber, name);
 
-                const pendingTicket = state.data && state.data.pending_vote_ticket;
+                await this.fixamDb.registerUser(fromNumber, parsed.fullName, {
+                    firstName: parsed.firstName,
+                    lastName: parsed.lastName,
+                });
+
+                const pendingTicket = stateData.pending_vote_ticket;
                 if (pendingTicket) {
                     const issue = await this.fixamDb.getIssueByTicketId(pendingTicket);
                     if (issue) {
@@ -489,13 +589,13 @@ class FixamHandler {
                             current_step: 'awaiting_vote_confirmation',
                             data: { issue_id: issue.id, ticket_id: issue.ticket_id, title: issue.title }
                         });
-                        await this.sendMessage(fromNumber, `Thanks ${name}! ✅\n\nNow back to your vote:\n\n🗳️ *${issue.title}*\nType *1* to Upvote 👍\nType *2* to Downvote 👎\n`);
+                        await this.sendMessage(fromNumber, `Thanks ${parsed.firstName}! ✅\n\nNow back to your vote:\n\n🗳️ *${issue.title}*\nType *1* to Upvote 👍\nType *2* to Downvote 👎\n`);
                         return;
                     }
                 }
 
                 await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
-                await this.sendMainMenu(fromNumber, name);
+                await this.sendMainMenu(fromNumber, parsed.firstName);
                 return;
             }
 
@@ -535,48 +635,66 @@ class FixamHandler {
             state = await this.fixamDb.getConversationState(fromNumber);
         }
 
-        // --- GLOBAL NATIVE LOGIC START ---
-        // 1. Greetings & Small Talk
-        const greetings = ['hi', 'hello', 'hey', 'start', 'fixam', 'good morning', 'good afternoon', 'good evening', 'wotoko', 'greeting'];
-        const appreciation = ['thanks', 'thank you', 'thx', 'appreciate', 'tenki', 'na wa', 'good job', 'bravo'];
-        const acknowledgement = ['ok', 'okay', 'k', 'cool', 'alright', 'fine', 'done', 'yes', 'sure', 'noted', 'no problem'];
-
-        if (greetings.includes(lowerInput) || greetings.some(g => lowerInput.startsWith(g + ' '))) {
-            await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
-            await this.sendMainMenu(fromNumber, user.name);
-            return;
-        }
-
-        if (appreciation.some(a => lowerInput.includes(a))) {
-            await this.sendMessage(fromNumber, "You're very welcome! Happy to help. 😊");
-            await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
-            await this.sendMainMenu(fromNumber, user.name);
-            return;
-        }
-
-        if (acknowledgement.includes(lowerInput)) {
-            // Exception: If we are in location confirmation or delete confirmation, 'yes' implies we want to proceed.
-            // We pass it through to the state machine handler.
-            if ((state.current_step === 'awaiting_report_location' || state.current_step === 'awaiting_delete_confirmation') && (lowerInput === 'yes')) {
-                logger.log('webhook', `Passing "yes" to ${state.current_step} handler`);
-            } else {
-                await this.sendMessage(fromNumber, "Great! Let me know if you need anything else.");
-                await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
-                await this.sendMainMenu(fromNumber, user.name);
+        // --- SMALL TALK -------------------------------------------------------
+        //
+        // Whole-message matching only. The version this replaces asked whether
+        // the input *contained* "thanks", which meant a citizen describing "the
+        // road by Thanksgiving Ground is washed away" had their description
+        // discarded and replaced with "You're very welcome!".
+        //
+        // "Yes" and "no" are not small talk and never reach here -- they are
+        // answers, and the state machine below owns them.
+        const chat = smallTalk.classify(input);
+        if (chat) {
+            // Mid-flow, small talk is company, not an instruction. Acknowledge
+            // it and put the citizen back on the question they were answering,
+            // with their progress intact.
+            if (ANSWER_EXPECTED_STEPS.has(state.current_step)) {
+                const reminder = STEP_REMINDERS[state.current_step]
+                    || REPORT_STEP_PROMPTS[state.current_step]
+                    || 'Please answer the question above, or type *9* to cancel.';
+                await this.sendMessage(fromNumber, `${smallTalk.replyFor(chat.type)}\n\n${reminder}`);
                 return;
             }
+
+            if (chat.type === 'greeting') {
+                await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
+                await this.sendMainMenu(fromNumber, this.firstNameOf(user));
+                return;
+            }
+
+            // "Bye" ends the conversation. Following it with the full menu
+            // would be the bot refusing to take the hint.
+            if (chat.type === 'farewell') {
+                await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
+                await this.sendMessage(fromNumber, smallTalk.replyFor('farewell'));
+                return;
+            }
+
+            await this.sendMessage(fromNumber, smallTalk.replyFor(chat.type));
+            if (smallTalk.showsMenu(chat.type)) {
+                await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category', data: {} });
+                await this.sendMainMenu(fromNumber, this.firstNameOf(user));
+            }
+            return;
         }
-        // --- GLOBAL NATIVE LOGIC END ---
+        // --- END SMALL TALK ---------------------------------------------------
 
         // 3. State Machine
         switch (state.current_step) {
             case 'awaiting_category':
                 // 1. Try AI Intent Analysis First
                 let analysis = null;
+                // People open with a greeting and then say what they want:
+                // "hello, there is a burst pipe at Congo Cross". The greeting
+                // carries no intent and drags the classifier towards small talk,
+                // so the request is analysed without it. A message that is only
+                // a greeting never reaches here -- it was answered above.
+                const intentInput = smallTalk.stripGreetingPrefix(input) || input;
                 // Only use AI if input is long enough to be a sentence, otherwise it might just be a menu number or keyword
-                if (input.length > 2) { 
+                if (intentInput.length > 2) {
                     try {
-                        analysis = await analyzeIntent(input);
+                        analysis = await analyzeIntent(intentInput);
                     } catch (e) {
                          logger.logError('ai_debug', 'Intent analysis failed', e);
                     }
@@ -1007,7 +1125,7 @@ class FixamHandler {
                 if (keepMatch) {
                     // An address is short; cap what is stored so a paste of a
                     // long document cannot become the report's location text.
-                    currentData.address = keepMatch[1].trim().substring(0, MAX_ADDRESS_LENGTH);
+                    currentData.address = sanitizer.sanitizeIdentifier(keepMatch[1], MAX_ADDRESS_LENGTH).text;
                     currentData.lat = null;
                     currentData.lng = null;
                     currentData.location_source = 'unresolved';
@@ -1033,7 +1151,7 @@ class FixamHandler {
                     // that address" would be a lie and would trap the citizen in
                     // a loop, so keep what they typed and let the report through
                     // for admins to place manually.
-                    currentData.address = input.trim().substring(0, MAX_ADDRESS_LENGTH);
+                    currentData.address = sanitizer.sanitizeIdentifier(input, MAX_ADDRESS_LENGTH).text;
                     currentData.lat = null;
                     currentData.lng = null;
                     currentData.location_source = 'unresolved';
@@ -1975,7 +2093,11 @@ class FixamHandler {
                 `audio.${extension}`,
                 downloadResult.mimeType || 'audio/ogg'
             );
-            transcribedText = transcription.text;
+            // A transcript is untrusted text too. It is machine output, but the
+            // machine is repeating whatever the citizen said, and it reaches the
+            // same places typed text does -- the classifier, the database, the
+            // admin timeline.
+            transcribedText = sanitizer.sanitizeText(transcription.text, { maxLength: MAX_MESSAGE_LENGTH });
             transcriptionConfidence = transcription.confidence;
 
             // A voice note is already capped at five minutes, but a fast talker
@@ -2055,7 +2177,9 @@ class FixamHandler {
                         `audio.${extension}`,
                         downloadResult.mimeType || 'audio/ogg'
                     );
-                    if (tx.text) transcribedText = tx.text.substring(0, MAX_DESCRIPTION_LENGTH);
+                    if (tx.text) {
+                        transcribedText = sanitizer.sanitizeText(tx.text, { maxLength: MAX_DESCRIPTION_LENGTH });
+                    }
                 } catch (writeError) {
                     logger.logError('media_handler', 'Failed to save feedback audio', writeError);
                 }
@@ -2070,7 +2194,18 @@ class FixamHandler {
         }
     }
 
-    async sendMainMenu(fromNumber, name) {
+    /**
+     * @param {string|object} who a first name, a full name, or a user row.
+     *
+     * Normalised here rather than at each of the two dozen call sites: a
+     * greeting reads as a greeting when it uses one name ("Hello Aminata!"),
+     * and callers holding a full user row should not each have to remember
+     * that.
+     */
+    async sendMainMenu(fromNumber, who) {
+    const name = typeof who === 'object' && who !== null
+        ? this.firstNameOf(who)
+        : (String(who || '').trim().split(/\s+/)[0] || 'there');
     await this.sendMessage(fromNumber, `Hello ${name}! 👋\n\nHow can I help you today? (Reply with a number [1-8] or text keywords!)\n\n1️⃣ *Report an Issue*\n2️⃣ *Vote on an Issue*\n3️⃣ *Track/Endorse Issue* 🔍\n4️⃣ *Trending Issues* 🔥\n5️⃣ *My Points* 🏆\n6️⃣ *Feedback* 💬\n7️⃣ *Help & Info* ℹ️\n8️⃣ *My Data* 📊`);
     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_category' });
     }
@@ -2495,38 +2630,39 @@ class FixamHandler {
             messageBody: body
         });
     }
-    extractName(input) {
-        // 1. Remove common greetings/punctuation from start
-        let clean = input.replace(/^(hi|hello|hey|good\s+(morning|afternoon|evening))\s*[!,.]*\s*/i, '');
-        
-        // 2. Remove trailing punctuation
-        clean = clean.replace(/[.!]+$/, '');
-        
-        // 3. Check for Intro Patterns
-        const patterns = [
-            /^my name is\s+(.+)/i,
-            /^name is\s+(.+)/i,
-            /^i am\s+(.+)/i,
-            /^i'm\s+(.+)/i,
-            /^im\s+(.+)/i,
-            /^call me\s+(.+)/i,
-            /^this is\s+(.+)/i,
-            /^names\s+(.+)/i,
-            /^it's\s+(.+)/i,
-            /^its\s+(.+)/i
-        ];
-
-        for (const pattern of patterns) {
-            const match = clean.match(pattern);
-            if (match && match[1]) {
-                // Return the captured name, trimmed
-                // Also capitalize first letter of each word for good measure
-                return match[1].trim().replace(/\w\S*/g, (w) => (w.replace(/^\w/, (c) => c.toUpperCase())));
-            }
+    /**
+     * The blacklist the name parser should apply: the built-in list plus
+     * whatever an administrator has added in platform settings.
+     *
+     * Cached briefly. Registration is the busiest moment in a citizen's first
+     * conversation and the list changes about once a month, so re-reading it on
+     * every keystroke buys nothing; a minute is short enough that an
+     * administrator adding an entry sees it take effect while they are still
+     * looking at the screen.
+     */
+    async getNameBlacklist() {
+        const now = Date.now();
+        if (this._nameBlacklist && this._nameBlacklistAt && (now - this._nameBlacklistAt) < 60000) {
+            return this._nameBlacklist;
         }
-        
-        // 4. Fallback: Return formatted original input
-        return clean.trim().replace(/\w\S*/g, (w) => (w.replace(/^\w/, (c) => c.toUpperCase())));
+        const configured = await this.fixamDb.getPlatformSetting('blacklisted_names');
+        this._nameBlacklist = nameValidator.mergeBlacklist(configured);
+        this._nameBlacklistAt = now;
+        return this._nameBlacklist;
+    }
+
+    /**
+     * What to call somebody in a greeting.
+     *
+     * Prefers the validated first name, falls back to the first word of the
+     * legacy free-text name for accounts registered before it was split, and
+     * ends on "there" rather than printing "undefined" at anybody.
+     */
+    firstNameOf(user) {
+        if (!user) return 'there';
+        if (user.first_name) return user.first_name;
+        const firstWord = String(user.name || '').trim().split(/\s+/)[0];
+        return firstWord || 'there';
     }
 }
 
