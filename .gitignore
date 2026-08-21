@@ -42,3 +42,8 @@ coverage/
 
 # Media received from WhatsApp (and the simulator) — user data, served at /uploads
 frontend/uploads/
+
+# Deployment runbook — local reference only
+docs/DEPLOYMENT.html
+docs/DEPLOYMENT.md
+backend/db/demo_db.sql
