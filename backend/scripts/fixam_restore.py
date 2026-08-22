@@ -160,6 +160,83 @@ def sha256(path, chunk=1 << 20):
     return h.hexdigest()
 
 
+def safe_members(tar):
+    """Refuse absolute or parent-traversing paths — this archive came back
+    from storage we may not fully control."""
+    for member in tar.getmembers():
+        if member.name.startswith("/") or ".." in Path(member.name).parts:
+            die(f"refusing unsafe path in archive: {member.name}")
+    return None
+
+
+def unpack_uploads(tar_path: Path, explicit, expected_count):
+    """Put the uploads back, and be loud if it does not work.
+
+    Extracting into a Docker named volume means writing under
+    /var/lib/docker/volumes, which only root may even stat. An earlier version
+    probed that path with Path.is_dir() -- which returns False on a permission
+    error rather than raising -- so a non-root run silently concluded there was
+    nowhere to put the files and carried on with a warning nobody saw.
+
+    So: unpack *through a container* by default. It needs no host filesystem
+    access, works whoever runs it, and lands the files with the ownership the
+    frontend expects.
+    """
+    if explicit:
+        dest = Path(explicit).expanduser()
+        log(f"Unpacking uploads into {dest} ...")
+        try:
+            dest.mkdir(parents=True, exist_ok=True)
+            with tarfile.open(tar_path) as tar:
+                safe_members(tar)
+                tar.extractall(dest)
+        except PermissionError:
+            log(f"ERROR: no permission to write {dest}. Re-run with sudo, "
+                f"or omit --uploads to unpack through a container.")
+            return False
+        count = sum(1 for p in dest.rglob("*") if p.is_file())
+        log(f"  {count} files now in place")
+        return True
+
+    volume = None
+    for candidate in ("app_uploads-data", "fixam_uploads-data", "uploads-data"):
+        probe = subprocess.run(["docker", "volume", "inspect", candidate],
+                               capture_output=True, text=True)
+        if probe.returncode == 0:
+            volume = candidate
+            break
+    if volume is None:
+        log("ERROR: uploads archive present but no uploads volume found.")
+        log("       Re-run with --uploads /path/to/uploads")
+        return False
+
+    log(f"Unpacking uploads into volume {volume} ...")
+    with tarfile.open(tar_path) as tar:
+        safe_members(tar)
+
+    # Stream the archive to tar inside a throwaway container mounting the
+    # volume. No sudo, no host paths, correct ownership.
+    cmd = ["docker", "run", "--rm", "-i",
+           "-v", f"{volume}:/dest", "alpine:3",
+           "tar", "-xzf", "-", "-C", "/dest"]
+    with open(tar_path, "rb") as fh:
+        r = subprocess.run(cmd, stdin=fh, capture_output=True, text=True)
+    if r.returncode != 0:
+        log(f"ERROR: unpacking failed:\n{(r.stderr or '').strip()}")
+        return False
+
+    count_cmd = ["docker", "run", "--rm", "-v", f"{volume}:/dest", "alpine:3",
+                 "sh", "-c", "find /dest -type f | wc -l"]
+    out = subprocess.run(count_cmd, capture_output=True, text=True).stdout.strip()
+    log(f"  {out} files now in place"
+        + (f" (expected {expected_count})" if expected_count else ""))
+
+    if expected_count and out.isdigit() and int(out) < expected_count:
+        log(f"  WARNING: fewer files than the manifest recorded")
+        return False
+    return True
+
+
 def verify_snapshot(snapshot: Path):
     manifest_path = snapshot / "manifest.json"
     if not manifest_path.exists():
@@ -316,32 +393,10 @@ def main():
 
     # 6. Uploads.
     tar_path = snapshot / "uploads.tar.gz"
+    uploads_ok = None                      # None = nothing to do
     if tar_path.exists():
-        dest = Path(args.uploads).expanduser() if args.uploads else None
-        if dest is None:
-            for vol in ("app_uploads-data", "fixam_uploads-data"):
-                try:
-                    mount = subprocess.run(
-                        ["docker", "volume", "inspect", "-f", "{{ .Mountpoint }}", vol],
-                        capture_output=True, text=True, timeout=15).stdout.strip()
-                    if mount and Path(mount).is_dir():
-                        dest = Path(mount)
-                        break
-                except Exception:
-                    continue
-        if dest is None:
-            log("WARNING: uploads archive present but no destination found. "
-                "Re-run with --uploads /path/to/uploads")
-        else:
-            log(f"Unpacking uploads into {dest} ...")
-            dest.mkdir(parents=True, exist_ok=True)
-            with tarfile.open(tar_path) as tar:
-                for member in tar.getmembers():
-                    if member.name.startswith("/") or ".." in Path(member.name).parts:
-                        die(f"refusing unsafe path in archive: {member.name}")
-                tar.extractall(dest)
-            count = sum(1 for _ in dest.rglob("*") if _.is_file())
-            log(f"  {count} files now in place")
+        expected = (meta.get("uploads") or {}).get("file_count")
+        uploads_ok = unpack_uploads(tar_path, args.uploads, expected)
 
     # 7. Did it all arrive?
     log("")
@@ -355,11 +410,19 @@ def main():
             ok = False
         log(f"  {table:20} {expected:>7} -> {actual_n:>7}{flag}")
 
+    if uploads_ok is False:
+        ok = False
+        log("")
+        log("  uploads              NOT RESTORED  <-- see the error above")
+        log("  The archive is still in the snapshot. Unpack it with:")
+        log(f"    python3 {Path(__file__).name} --snapshot {snapshot} --uploads <path>")
+
     log("")
     if ok:
-        log("Restore complete. All row counts match.")
+        log("Restore complete. All row counts match"
+            + (", uploads in place." if uploads_ok else "."))
     else:
-        log("Restore finished with mismatches above. Investigate before going live.")
+        log("Restore finished with problems above. Investigate before going live.")
     log(f"Safety copy retained as '{safety}'. Drop it once you are satisfied:")
     log(f"  DROP DATABASE {safety};")
     log("")
