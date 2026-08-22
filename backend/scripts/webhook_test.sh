@@ -6,6 +6,8 @@
 #   ./webhook_test.sh unsigned            a forged POST must be refused
 #   ./webhook_test.sh send 232XXXXXXXX login
 #                                         a correctly signed message, end to end
+#   ./webhook_test.sh watch               live: is Meta reaching this server?
+#   ./webhook_test.sh recent              what has arrived lately
 #
 # Credentials are read from the running backend container, so there is nothing
 # to paste and no secret ends up in your shell history.
@@ -145,9 +147,79 @@ EOF
     echo
 }
 
+# ── watch: is a real message from Meta arriving? ─────────────────────────────
+#
+# Three layers, because a message can stop at any of them and each has a
+# different cause. Watching only the backend log cannot tell you whether Meta
+# never called or whether nginx refused it.
+#
+#   nginx   did an HTTP request reach the server at all
+#   backend did the app receive and accept it
+#   db      was it recorded
+#
+# Leave this running, send a message from a real phone, and see how far it gets.
+
+cmd_watch() {
+    local c
+    c=$(backend_container) || true
+
+    echo
+    info "Watching for real deliveries. Send a WhatsApp message to the bot now."
+    info "Ctrl-C to stop."
+    echo
+    printf '%s  nginx  %s= an HTTP request reached the server\n' "$DIM" "$NC"
+    printf '%s  app    %s= the backend accepted and processed it\n' "$DIM" "$NC"
+    echo
+
+    # Everything that touches /webhook, whatever the outcome.
+    ( sudo tail -F /var/log/nginx/access.log 2>/dev/null \
+        | grep --line-buffered webhook \
+        | sed -u "s/^/${GRN}nginx${NC}  /" ) &
+    local nginx_pid=$!
+
+    # The handler's own trace, plus the early returns that silently drop a
+    # delivery: a phone-number-id mismatch, the country gate, DEV_MODE, and a
+    # rejected signature.
+    ( docker logs -f --since 1s "$c" 2>&1 \
+        | grep --line-buffered -Ei 'webhook|Message from|Rejected|Blocked|unsigned|Use configured Phone ID|Mock WhatsApp' \
+        | sed -u "s/^/${YEL}app${NC}    /" ) &
+    local app_pid=$!
+
+    trap 'kill $nginx_pid $app_pid 2>/dev/null; echo; info "stopped"; exit 0' INT TERM
+    wait
+}
+
+# ── recent: what has actually arrived lately ─────────────────────────────────
+
+cmd_recent() {
+    local pg
+    pg=$(docker ps --format '{{.Names}}' | grep -v nominatim | grep postgres | head -1)
+    [ -n "$pg" ] || die "no running postgres container found"
+
+    echo
+    info "Inbound messages recorded in the last hour:"
+    docker exec -i "$pg" psql -U "${DB_USER:-fixam_db_admin}" -d "${DB_NAME:-fixam_db}" -c \
+        "SELECT id, phone_number, message_type, left(message_body, 40) AS body, created_at
+         FROM message_logs
+         WHERE direction = 'incoming' AND created_at > NOW() - INTERVAL '1 hour'
+         ORDER BY id DESC LIMIT 15;"
+
+    echo
+    info "Most recent inbound overall (any age):"
+    docker exec -i "$pg" psql -U "${DB_USER:-fixam_db_admin}" -d "${DB_NAME:-fixam_db}" -c \
+        "SELECT phone_number, left(message_body, 30) AS body, created_at
+         FROM message_logs WHERE direction = 'incoming'
+         ORDER BY id DESC LIMIT 3;"
+    echo
+    info "If the newest row predates the cutover, Meta is still delivering elsewhere."
+    echo
+}
+
 case "${1:-}" in
     verify)   cmd_verify ;;
     unsigned) cmd_unsigned ;;
     send)     shift; cmd_send "$@" ;;
+    watch)    cmd_watch ;;
+    recent)   cmd_recent ;;
     *)        sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
