@@ -45,15 +45,27 @@ function generateCode() {
  * decide whether a WhatsApp request for a code should be answered.
  */
 async function findPortalUser(phoneNumber) {
+    // Compared on digits alone, both sides.
+    //
+    // An exact string match is one stray character away from failing, and the
+    // failure is indistinguishable from "you are not an administrator": a
+    // leading underscore, a "+", a space from a copy-paste, or a number stored
+    // during an earlier import in a slightly different shape all produce the
+    // same unhelpful "not set up for portal access". Neither the operator nor
+    // the administrator can see why.
+    //
+    // Ninety-odd users, so the lost index is irrelevant. Being unable to sign
+    // in is not.
     const result = await db.query(
         `SELECT u.id, u.name, u.phone_number, u.is_disabled,
                 ARRAY_REMOVE(ARRAY_AGG(r.name), NULL) AS roles
          FROM users u
          LEFT JOIN user_roles ur ON ur.user_id = u.id
          LEFT JOIN roles r ON r.id = ur.role_id
-         WHERE u.phone_number = $1
+         WHERE regexp_replace(u.phone_number, '[^0-9]', '', 'g')
+             = regexp_replace($1, '[^0-9]', '', 'g')
          GROUP BY u.id`,
-        [phoneNumber]
+        [String(phoneNumber || '')]
     );
     if (result.rows.length === 0) return null;
 
