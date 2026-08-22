@@ -150,6 +150,38 @@ const REPORT_STEP_PROMPTS = {
 
 const BACK_WORDS = ['back', 'previous', 'prev', 'go back', '0'];
 
+/**
+ * Ways an administrator asks for a sign-in code.
+ *
+ * Matched on a normalised form rather than exactly, because the exact list was
+ * missing the obvious ones: "log in" with a space, and anything with trailing
+ * punctuation. Somebody who types "login." and is told "I'm not sure what you
+ * mean" has no way to discover that the space or the full stop was the problem.
+ */
+const LOGIN_PHRASES = new Set([
+    'login', 'log in', 'logon', 'log on',
+    'signin', 'sign in', 'sign me in',
+    'otp', 'login code', 'log in code', 'sign in code',
+    'admin login', 'admin log in', 'admin code', 'admin otp',
+    'portal login', 'portal code', 'get code', 'send code', 'my code',
+]);
+
+/**
+ * Is this a request for an administrator sign-in code?
+ *
+ * Punctuation and repeated whitespace are stripped before comparing. Bare
+ * "code" is deliberately absent: a citizen chasing a report is far more likely
+ * to mean their ticket code than a portal password.
+ */
+function isLoginRequest(text) {
+    const normalised = String(text || '')
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return LOGIN_PHRASES.has(normalised);
+}
+
 // Steps that ask the citizen to choose what to do about a problem with the
 // stage they are on. They are branches, not stages: "back" from one means "back
 // from the stage that raised it", so they resolve to their owner first.
@@ -407,7 +439,7 @@ class FixamHandler {
         // The administrator asks; the bot answers. Doing it this way keeps the
         // exchange inside WhatsApp's customer service window, so no approved
         // template is needed and nothing depends on Meta's review queue.
-        if (['login', 'login code', 'otp', 'sign in', 'signin'].includes(lowerInput)) {
+        if (isLoginRequest(lowerInput)) {
             const result = await adminOtp.issue(fromNumber);
 
             if (!result.ok && result.reason === 'not_portal_user') {
