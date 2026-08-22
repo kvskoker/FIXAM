@@ -151,6 +151,14 @@ services:
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
       WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      # Authenticates inbound webhook deliveries. Meta signs every POST with an
+      # HMAC of the raw body; without this the endpoint accepts anything shaped
+      # like a WhatsApp payload from anyone who finds the URL.
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      # Proxies in front of the backend, counted outwards: Cloudflare, the host
+      # nginx, and the frontend container. A wrong value makes express-rate-limit
+      # treat all traffic as one client. Verify via /healthz -> client_ip.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-2}
       HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
       PARAKEET_MODEL: ${PARAKEET_MODEL:-nvidia/parakeet-tdt-0.6b-v3}
       MINOR_DETECTION_ENABLED: ${MINOR_DETECTION_ENABLED:-true}
