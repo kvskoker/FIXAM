@@ -305,6 +305,15 @@ app.listen(PORT, async () => {
     // the migration files ran, so the toggle works without a manual step.
     await slaService.ensureSchema(db);
 
+    // 2FA on with no administrator who can receive a code locks everyone out,
+    // and does it silently. Say so at boot, while somebody is still watching
+    // the logs, rather than at the moment they need to sign in.
+    const adminReadiness = require('./services/adminReadiness');
+    await adminReadiness.warnIfLockedOut(
+        db,
+        String(process.env.ADMIN_2FA_ENABLED ?? 'true').toLowerCase() !== 'false'
+    );
+
     // The privacy policy states retention periods; this is what enforces them.
     retention.schedule(db);
 
