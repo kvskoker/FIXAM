@@ -1,4 +1,5 @@
 const logger = require('./logger');
+const dataMode = require('./dataMode');
 
 /**
  * SLA tracking, plus the platform settings it reads.
@@ -15,6 +16,10 @@ const logger = require('./logger');
 
 const DEFAULTS = {
     pilot_mode: 'false',
+    // Which phase the platform is in: test (shown as "Demo"), pilot or live.
+    // Decides the tag new records get and which tags the portal displays.
+    // See services/dataMode.js.
+    data_mode: 'pilot',
     sla_acknowledge_hours: '24',
     sla_progress_hours: '72',
     sla_resolution_days: '30',
@@ -49,6 +54,7 @@ async function ensureSchema(db) {
     await db.query(`
         INSERT INTO platform_settings (key, value) VALUES
             ('pilot_mode', 'false'),
+            ('data_mode', 'pilot'),
             ('sla_acknowledge_hours', '24'),
             ('sla_progress_hours', '72'),
             ('sla_resolution_days', '30'),
@@ -72,6 +78,18 @@ async function getSettings(db) {
 async function saveSettings(db, updates, adminId) {
     for (const [key, value] of Object.entries(updates || {})) {
         if (!ALLOWED_SETTINGS.includes(key)) continue;
+
+        // data_mode is the one setting where a typo does lasting damage: it is
+        // written into every record created afterwards, and the CHECK
+        // constraint on the tables would reject those inserts. Refuse the value
+        // here, where the operator finds out immediately.
+        if (key === 'data_mode' && !dataMode.isValid(value)) {
+            const err = new Error(
+                `Invalid data_mode "${value}". Expected one of: ${dataMode.MODES.join(', ')}`);
+            err.statusCode = 400;
+            throw err;
+        }
+
         await db.query(
             `INSERT INTO platform_settings (key, value, updated_by, updated_at)
              VALUES ($1, $2, $3, CURRENT_TIMESTAMP)

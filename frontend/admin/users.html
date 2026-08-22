@@ -287,9 +287,56 @@
                         <div style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); border-radius: 8px; padding: 1rem 1.25rem; display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
                             <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-weight: 600;">
                                 <input type="checkbox" id="pilot-mode-toggle" style="width: 18px; height: 18px; cursor: pointer;">
-                                <span>Pilot mode is active</span>
+                                <span>Restrict reporting to pilot champions</span>
                             </label>
                             <span id="pilot-mode-status" style="font-size: 0.85rem; color: var(--admin-text-muted);"></span>
+                        </div>
+
+                        <h2 style="font-size: 1.25rem; margin-top: 2rem;">Data Mode</h2>
+                        <p style="color: var(--admin-text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+                            Which phase the platform is in. This tags every new report, and decides
+                            which reports the portal and the public map show. It is separate from
+                            pilot mode above &mdash; that controls <em>who may report</em>, this records
+                            <em>what the data is</em>.
+                        </p>
+
+                        <div style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem;">
+                            <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                                <label for="data-mode-select" style="font-weight: 600;">Current mode</label>
+                                <select id="data-mode-select" style="padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid var(--admin-border); background: var(--admin-bg); color: inherit; min-width: 160px;">
+                                    <option value="test">Demo</option>
+                                    <option value="pilot">Pilot</option>
+                                    <option value="live">Live</option>
+                                </select>
+                            </div>
+                            <p id="data-mode-description" style="font-size: 0.85rem; color: var(--admin-text-muted); margin: 0.75rem 0 0;"></p>
+
+                            <table style="width: 100%; margin-top: 1rem; font-size: 0.85rem; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="text-align: left; color: var(--admin-text-muted);">
+                                        <th style="padding: 0.35rem 0;">Tag</th>
+                                        <th style="padding: 0.35rem 0;">Issues</th>
+                                        <th style="padding: 0.35rem 0;">Users</th>
+                                        <th style="padding: 0.35rem 0;">Votes</th>
+                                        <th style="padding: 0.35rem 0;">Feedback</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="data-mode-counts"></tbody>
+                            </table>
+                        </div>
+
+                        <div id="demo-purge-block" style="border: 1px solid var(--admin-danger, #b42318); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem;">
+                            <strong style="color: var(--admin-danger, #b42318);">Remove demo data</strong>
+                            <p style="font-size: 0.85rem; color: var(--admin-text-muted); margin: 0.5rem 0 0.75rem;">
+                                Permanently deletes every report, vote and piece of feedback tagged
+                                <strong>Demo</strong>, and any demo user who has nothing real attached.
+                                Pilot and live records are never touched. This cannot be undone &mdash;
+                                take a backup first.
+                            </p>
+                            <button id="purge-demo-btn" class="btn" style="background: var(--admin-danger, #b42318); color: #fff;">
+                                Delete demo data
+                            </button>
+                            <span id="purge-demo-result" style="font-size: 0.85rem; margin-left: 0.75rem;"></span>
                         </div>
 
                         <h2 style="font-size: 1.25rem; margin-top: 2rem;">SLA Targets</h2>
@@ -323,14 +370,20 @@
                         </p>
 
                         <div class="form-group">
-                            <label>Emergency categories <span style="font-weight: 400; color: var(--admin-text-muted);">(comma-separated)</span></label>
-                            <input type="text" id="emergency-categories" class="form-control"
-                                   placeholder="Fire Services, Natural Disaster Response">
+                            <label for="emergency-categories">Emergency categories</label>
+                            <p style="font-size: 0.8rem; color: var(--admin-text-muted); margin: 0 0 0.4rem;">
+                                Picked from your existing categories &mdash; a category that does not exist
+                                can never match a report, so free text is not accepted here.
+                            </p>
+                            <select id="emergency-categories" multiple placeholder="Select categories..."></select>
                         </div>
                         <div class="form-group">
-                            <label>Emergency keywords <span style="font-weight: 400; color: var(--admin-text-muted);">(comma-separated)</span></label>
-                            <input type="text" id="emergency-keywords" class="form-control"
-                                   placeholder="emergency, fire, collapse, flooding, injury">
+                            <label for="emergency-keywords">Emergency keywords</label>
+                            <p style="font-size: 0.8rem; color: var(--admin-text-muted); margin: 0 0 0.4rem;">
+                                Matched anywhere in a report's description, case-insensitively.
+                                Type a word and press Enter or comma to add it.
+                            </p>
+                            <select id="emergency-keywords" multiple placeholder="Type a keyword and press Enter..."></select>
                         </div>
 
                         <div style="display: flex; align-items: center; gap: 1rem;">

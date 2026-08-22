@@ -222,7 +222,7 @@ class FixamDatabase {
         try {
             const [userResult, issuesResult, votesResult, pointsResult, logsResult] = await Promise.all([
                 this.db.query('SELECT id, phone_number, name, consent_given, consent_timestamp, points, created_at FROM users WHERE phone_number = $1', [phoneNumber]),
-                this.db.query('SELECT ticket_id, title, category, description, status, urgency, address, created_at FROM issues WHERE reported_by = (SELECT id FROM users WHERE phone_number = $1)', [phoneNumber]),
+                this.db.query('SELECT ticket_id, title, category, description, status, urgency, address, created_at FROM visible_issues WHERE reported_by = (SELECT id FROM users WHERE phone_number = $1)', [phoneNumber]),
                 this.db.query('SELECT i.ticket_id, v.vote_type, v.created_at FROM votes v JOIN issues i ON v.issue_id = i.id WHERE v.user_id = (SELECT id FROM users WHERE phone_number = $1)', [phoneNumber]),
                 this.db.query('SELECT amount, action_type, created_at FROM user_point_logs WHERE user_id = (SELECT id FROM users WHERE phone_number = $1)', [phoneNumber]),
                 this.db.query('SELECT direction, message_type, message_body, created_at FROM message_logs WHERE phone_number = $1 ORDER BY created_at DESC LIMIT 100', [phoneNumber]),
@@ -393,7 +393,7 @@ class FixamDatabase {
 
         const sql = `
             SELECT i.id, i.ticket_id, i.title, i.created_at, i.reported_by, u.phone_number
-            FROM issues i
+            FROM visible_issues i
             LEFT JOIN users u ON i.reported_by = u.id
             WHERE i.image_sha256 = $1
               AND i.status != 'spam'
@@ -419,7 +419,7 @@ class FixamDatabase {
             normalizedId = `FIX-${normalizedId}`;
         }
 
-        const sql = "SELECT * FROM issues WHERE ticket_id = $1";
+        const sql = "SELECT * FROM visible_issues WHERE ticket_id = $1";
         try {
             const result = await this.db.query(sql, [normalizedId]);
             return result.rows.length > 0 ? result.rows[0] : null;
@@ -431,7 +431,7 @@ class FixamDatabase {
 
     // Get Issue by ID
     async getIssueById(id) {
-        const sql = "SELECT * FROM issues WHERE id = $1";
+        const sql = "SELECT * FROM visible_issues WHERE id = $1";
         try {
             const result = await this.db.query(sql, [id]);
             return result.rows.length > 0 ? result.rows[0] : null;
@@ -466,7 +466,7 @@ class FixamDatabase {
         // raises "input is out of range", losing the very match we are after.
         const sql = `
             SELECT i.*, ${distanceExpr} AS distance
-            FROM issues i
+            FROM visible_issues i
             WHERE i.created_at >= CURRENT_TIMESTAMP - ($3 || ' days')::interval
               AND i.status NOT IN ('fixed', 'spam')
               AND i.duplicate_of IS NULL
@@ -491,7 +491,7 @@ class FixamDatabase {
             SELECT i.*, 
                    (6371000 * acos(cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2)) + sin(radians($1)) * sin(radians(lat)))) AS distance,
                    COALESCE(vote_counts.upvotes, 0) as upvote_count
-            FROM issues i
+            FROM visible_issues i
             LEFT JOIN (
                 SELECT issue_id, COUNT(*) as upvotes 
                 FROM votes 
@@ -513,7 +513,7 @@ class FixamDatabase {
                 const globalSql = `
                     SELECT i.*, 
                            COALESCE(vote_counts.upvotes, 0) as upvote_count
-                    FROM issues i
+                    FROM visible_issues i
                     LEFT JOIN (
                         SELECT issue_id, COUNT(*) as upvotes 
                         FROM votes 
@@ -588,7 +588,7 @@ class FixamDatabase {
 
     // Get daily issue count for a user
     async getDailyIssueCount(userId) {
-        const sql = "SELECT COUNT(*) FROM issues WHERE reported_by = $1 AND created_at >= CURRENT_DATE";
+        const sql = "SELECT COUNT(*) FROM visible_issues WHERE reported_by = $1 AND created_at >= CURRENT_DATE";
         try {
             const result = await this.db.query(sql, [userId]);
             return parseInt(result.rows[0].count);

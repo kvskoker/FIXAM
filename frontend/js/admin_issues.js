@@ -819,6 +819,32 @@ function formatLifecycleFlags(issue) {
  * Showing urgency in its own column is what makes the two readable as separate
  * facts. The wording matches what the citizen sees over WhatsApp.
  */
+/**
+ * Which phase of the platform produced this report.
+ *
+ * Shown on every row rather than only on the exceptions: in Live mode the list
+ * holds both live and pilot reports, and "which of these were pilot" is a
+ * question the badge should answer at a glance rather than by elimination.
+ *
+ * Colour carries meaning here — grey for demo data that is not real, blue for
+ * pilot, green for live — so the eye can pick out the demo rows that still need
+ * clearing without reading a word.
+ */
+function formatDataMode(mode) {
+    const styles = {
+        test:  { label: 'Demo',  bg: 'rgba(115,124,138,0.12)', fg: '#737c8a', border: 'rgba(115,124,138,0.35)' },
+        pilot: { label: 'Pilot', bg: 'rgba(37,99,235,0.10)',   fg: 'var(--admin-primary)', border: 'rgba(37,99,235,0.30)' },
+        live:  { label: 'Live',  bg: 'rgba(21,128,61,0.10)',   fg: '#15803d', border: 'rgba(21,128,61,0.30)' },
+    };
+    const s = styles[mode];
+    if (!s) return '';
+    return `<span title="Reported during the ${s.label.toLowerCase()} phase"
+        style="display:inline-block; font-size:0.68rem; font-weight:600; letter-spacing:0.04em;
+               text-transform:uppercase; padding:1px 6px; border-radius:3px;
+               background:${s.bg}; color:${s.fg}; border:1px solid ${s.border};
+               vertical-align:middle;">${s.label}</span>`;
+}
+
 function formatUrgency(urgency) {
     const badges = {
         critical: { label: 'Critical', color: 'var(--admin-danger)' },
@@ -843,7 +869,9 @@ function renderIssuesTable(issues) {
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid var(--admin-border)';
         tr.innerHTML = `
-            <td data-label="Issue ID" style="padding: 1rem; font-family: monospace;">${escapeHtml(issue.ticket_id) || 'N/A'}</td>
+            <td data-label="Issue ID" style="padding: 1rem; font-family: monospace; white-space: nowrap;">
+                ${escapeHtml(issue.ticket_id) || 'N/A'} ${formatDataMode(issue.data_mode)}
+            </td>
             <td data-label="Category" style="padding: 1rem;">${escapeHtml(issue.category)}</td>
             <td data-label="Title" style="padding: 1rem; font-weight: 500;">${escapeHtml(issue.title)} ${formatEvidenceFlags(issue)}</td>
             <td data-label="Location" style="padding: 1rem; color: var(--admin-text-muted);">${formatIssueLocation(issue)}</td>
@@ -1153,7 +1181,11 @@ function setDetailPageHeading(issue) {
         const reported = new Date(issue.created_at).toLocaleDateString('en-GB', {
             day: 'numeric', month: 'long', year: 'numeric'
         });
-        sub.textContent = `${escapeHtml(issue.category)} · reported ${reported}`;
+        const phase = { test: 'demo', pilot: 'pilot', live: 'live' }[issue.data_mode];
+        // Appended rather than badged: on the detail page this is context for
+        // the report, not something to scan a list for.
+        sub.textContent = `${escapeHtml(issue.category)} · reported ${reported}`
+            + (phase ? ` · ${phase} phase` : '');
     }
     document.title = `FIXAM - ${escapeHtml(issue.ticket_id)}`;
 }

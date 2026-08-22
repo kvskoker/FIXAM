@@ -16,6 +16,7 @@ const adminOtp = require('../services/adminOtp');
 const botFlow = require('../services/botFlow');
 const logger = require('../services/logger');
 const slaService = require('../services/slaService');
+const dataMode = require('../services/dataMode');
 
 // Conversation state lives in PostgreSQL (conversation_state), and ticket IDs
 // come from fixamHelpers in the FIX-XXXXXX format. An in-memory session object
@@ -127,13 +128,14 @@ router.get('/issues', async (req, res) => {
             SELECT 
                 i.*,
                 i.resolution_note,
+                i.data_mode,
                 u.name as reported_by_name,
                 u.phone_number as reported_by_phone,
                 COALESCE(v.upvotes, 0) as upvotes,
                 COALESCE(v.downvotes, 0) as downvotes,
                 COALESCE(v.net_votes, 0) as votes,
                 COALESCE(e.count, 0) as endorsements
-            FROM issues i
+            FROM visible_issues i
             LEFT JOIN users u ON i.reported_by = u.id
             LEFT JOIN (
                 SELECT 
@@ -225,7 +227,7 @@ router.get('/issues', async (req, res) => {
         // Counted before the page is sliced, and off the same clause, so the
         // page count always matches what the caller is actually allowed to see.
         const countResult = await db.query(
-            `SELECT COUNT(*) as total FROM issues i WHERE 1=1${where}`,
+            `SELECT COUNT(*) as total FROM visible_issues i WHERE 1=1${where}`,
             params
         );
         const totalItems = parseInt(countResult.rows[0].total);
@@ -504,7 +506,7 @@ router.delete('/admin/categories/:id', requireFullAdmin, attachScope, async (req
         // Reports keep the category as text, so deleting one in use would leave
         // them pointing at something that no longer exists -- unfilterable and
         // unroutable. Refuse and say how many are affected.
-        const inUse = await db.query('SELECT COUNT(*) AS count FROM issues WHERE category = $1', [categoryName]);
+        const inUse = await db.query('SELECT COUNT(*) AS count FROM visible_issues WHERE category = $1', [categoryName]);
         const count = parseInt(inUse.rows[0].count, 10);
         if (count > 0) {
             return res.status(400).json({
@@ -532,7 +534,7 @@ router.get('/stats/trends', async (req, res) => {
 
         let reportsQuery = `
             SELECT (created_at AT TIME ZONE 'UTC')::date::text as date, COUNT(*) as count
-            FROM issues
+            FROM visible_issues
             WHERE 1=1
         `;
         let resolutionsQuery = `
@@ -616,9 +618,9 @@ router.get('/stats', async (req, res) => {
             }
 
             const [totalRes, resolvedRes, criticalRes] = await Promise.all([
-                db.query(`SELECT COUNT(*) as count FROM issues ${whereClause}`, params),
+                db.query(`SELECT COUNT(*) as count FROM visible_issues ${whereClause}`, params),
                 db.query(`SELECT COUNT(*) as count FROM issue_tracker it JOIN issues i ON it.issue_id = i.id WHERE it.action = 'resolved' ${whereClause.replace(/created_at/g, 'it.created_at').replace(/category/g, 'i.category').replace('WHERE', 'AND')}`, params),
-                db.query(`SELECT COUNT(*) as count FROM issues ${whereClause} AND urgency = 'critical' AND status NOT IN ('fixed', 'spam')`, params)
+                db.query(`SELECT COUNT(*) as count FROM visible_issues ${whereClause} AND urgency = 'critical' AND status NOT IN ('fixed', 'spam')`, params)
             ]);
 
             const total = parseInt(totalRes.rows[0].count);
@@ -642,7 +644,7 @@ router.get('/stats', async (req, res) => {
         // 1. Total Reports (This Week)
         const totalReportsResult = await db.query(`
             SELECT COUNT(*) as count 
-            FROM issues 
+            FROM visible_issues 
             WHERE created_at >= date_trunc('week', CURRENT_DATE)
             ${category ? `AND category = $1` : ''}
         `, currentParams);
@@ -651,7 +653,7 @@ router.get('/stats', async (req, res) => {
         // 2. Total Reports (Last Week) - for comparison
         const lastWeekReportsResult = await db.query(`
             SELECT COUNT(*) as count 
-            FROM issues 
+            FROM visible_issues 
             WHERE created_at >= date_trunc('week', CURRENT_DATE - INTERVAL '1 week')
             AND created_at < date_trunc('week', CURRENT_DATE)
             ${category ? `AND category = $1` : ''}
@@ -668,18 +670,18 @@ router.get('/stats', async (req, res) => {
 
         // 3. Resolved Issues
         const resolvedResult = await db.query(`
-            SELECT COUNT(*) as count FROM issues WHERE status = 'fixed' ${category ? `AND category = $1` : ''}
+            SELECT COUNT(*) as count FROM visible_issues WHERE status = 'fixed' ${category ? `AND category = $1` : ''}
         `, currentParams);
         const resolvedCount = parseInt(resolvedResult.rows[0].count);
 
         // 4. Total Issues (All time) for resolution rate
-        const allTimeResult = await db.query(`SELECT COUNT(*) as count FROM issues ${category ? `WHERE category = $1` : ''}`, currentParams);
+        const allTimeResult = await db.query(`SELECT COUNT(*) as count FROM visible_issues ${category ? `WHERE category = $1` : ''}`, currentParams);
         const allTimeCount = parseInt(allTimeResult.rows[0].count);
         const resolutionRate = allTimeCount > 0 ? Math.round((resolvedCount / allTimeCount) * 100) : 0;
 
         // 5. Critical Pending
         const criticalPendingResult = await db.query(`
-            SELECT COUNT(*) as count FROM issues WHERE urgency = 'critical' AND status NOT IN ('fixed', 'spam') ${category ? `AND category = $1` : ''}
+            SELECT COUNT(*) as count FROM visible_issues WHERE urgency = 'critical' AND status NOT IN ('fixed', 'spam') ${category ? `AND category = $1` : ''}
         `, currentParams);
         const criticalPendingCount = parseInt(criticalPendingResult.rows[0].count);
 
@@ -851,7 +853,7 @@ router.get('/admin/stats', requireAdmin, attachScope, async (req, res) => {
         // 1. Total Reports (This Week)
         const totalReportsResult = await db.query(`
             SELECT COUNT(*) as count 
-            FROM issues 
+            FROM visible_issues 
             WHERE created_at >= date_trunc('week', CURRENT_DATE)
             ${catFilter}
         `);
@@ -860,7 +862,7 @@ router.get('/admin/stats', requireAdmin, attachScope, async (req, res) => {
         // 2. Last Week
         const lastWeekReportsResult = await db.query(`
             SELECT COUNT(*) as count 
-            FROM issues 
+            FROM visible_issues 
             WHERE created_at >= date_trunc('week', CURRENT_DATE - INTERVAL '1 week')
             AND created_at < date_trunc('week', CURRENT_DATE)
             ${catFilter}
@@ -875,16 +877,16 @@ router.get('/admin/stats', requireAdmin, attachScope, async (req, res) => {
         }
 
         // 3. Resolved
-        const resolvedResult = await db.query(`SELECT COUNT(*) as count FROM issues WHERE status = 'fixed' ${catFilter}`);
+        const resolvedResult = await db.query(`SELECT COUNT(*) as count FROM visible_issues WHERE status = 'fixed' ${catFilter}`);
         const resolvedCount = parseInt(resolvedResult.rows[0].count);
 
         // 4. Resolution Rate
-        const allTimeResult = await db.query(`SELECT COUNT(*) as count FROM issues WHERE 1=1 ${catFilter}`);
+        const allTimeResult = await db.query(`SELECT COUNT(*) as count FROM visible_issues WHERE 1=1 ${catFilter}`);
         const allTimeCount = parseInt(allTimeResult.rows[0].count);
         const resolutionRate = allTimeCount > 0 ? Math.round((resolvedCount / allTimeCount) * 100) : 0;
 
         // 5. Critical Pending
-        const criticalPendingResult = await db.query(`SELECT COUNT(*) as count FROM issues WHERE urgency = 'critical' AND status NOT IN ('fixed', 'spam') ${catFilter}`);
+        const criticalPendingResult = await db.query(`SELECT COUNT(*) as count FROM visible_issues WHERE urgency = 'critical' AND status NOT IN ('fixed', 'spam') ${catFilter}`);
         const criticalPendingCount = parseInt(criticalPendingResult.rows[0].count);
 
         // 6. Sentiment (Mocked for now)
@@ -934,7 +936,7 @@ router.get('/admin/insights', requireAdmin, attachScope, async (req, res) => {
         // This is a bit complex for a single query without more data, so we'll do a simple check
         const emergingResult = await db.query(`
             SELECT category, COUNT(*) as count 
-            FROM issues 
+            FROM visible_issues 
             WHERE created_at >= CURRENT_DATE 
             GROUP BY category 
             HAVING COUNT(*) > 5
@@ -1004,7 +1006,7 @@ router.put('/admin/issues/:id/location', requireAdmin, attachScope, async (req, 
             });
         }
 
-        const existing = await db.query('SELECT id, address FROM issues WHERE id = $1', [id]);
+        const existing = await db.query('SELECT id, address FROM visible_issues WHERE id = $1', [id]);
         if (existing.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Issue not found' });
         }
@@ -1057,7 +1059,7 @@ router.put('/admin/issues/:id/status', requireAdmin, attachScope, async (req, re
         }
 
         // 0. Check if this is a duplicate issue or already has the same status
-        const checkIssue = await db.query('SELECT duplicate_of, status, closed_at FROM issues WHERE id = $1', [id]);
+        const checkIssue = await db.query('SELECT duplicate_of, status, closed_at FROM visible_issues WHERE id = $1', [id]);
         if (checkIssue.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Issue not found' });
         }
@@ -1152,7 +1154,7 @@ router.put('/admin/issues/:id/status', requireAdmin, attachScope, async (req, re
         `, [id, action, description, req.admin.id]);
 
         // Log for duplicates too
-        const duplicates = await db.query('SELECT id FROM issues WHERE duplicate_of = $1', [id]);
+        const duplicates = await db.query('SELECT id FROM visible_issues WHERE duplicate_of = $1', [id]);
         for (const dup of duplicates.rows) {
             await db.query(`
                 INSERT INTO issue_tracker (issue_id, action, description, performed_by)
@@ -1164,7 +1166,7 @@ router.put('/admin/issues/:id/status', requireAdmin, attachScope, async (req, re
         try {
             const reportersResult = await db.query(`
                 SELECT i.ticket_id, i.title, u.phone_number
-                FROM issues i
+                FROM visible_issues i
                 JOIN users u ON i.reported_by = u.id
                 WHERE (i.id = $1 OR i.duplicate_of = $1) 
                 AND u.phone_number IS NOT NULL
@@ -1198,7 +1200,7 @@ router.put('/admin/issues/:id/status', requireAdmin, attachScope, async (req, re
                 
                 // Gamification: Award 50 points to reporter for resolution (if not already awarded)
                 if (status === 'fixed') {
-                     const reporterRes = await db.query('SELECT reported_by FROM issues WHERE id = $1', [id]);
+                     const reporterRes = await db.query('SELECT reported_by FROM visible_issues WHERE id = $1', [id]);
                      if (reporterRes.rows.length > 0 && reporterRes.rows[0].reported_by) {
                          const userId = reporterRes.rows[0].reported_by;
                          
@@ -1257,7 +1259,7 @@ async function triggerFollowUpQuestionnaire(issueId) {
     const result = await db.query(
         `SELECT i.id, i.ticket_id, i.title, i.category, i.reported_by, i.duplicate_of, i.status,
                 u.phone_number
-         FROM issues i
+         FROM visible_issues i
          LEFT JOIN users u ON u.id = i.reported_by
          WHERE i.id = $1`,
         [issueId]
@@ -1349,7 +1351,7 @@ router.post('/admin/issues/:id/close', requireAdmin, attachScope, async (req, re
             });
         }
 
-        const check = await db.query('SELECT status, closed_at, duplicate_of FROM issues WHERE id = $1', [id]);
+        const check = await db.query('SELECT status, closed_at, duplicate_of FROM visible_issues WHERE id = $1', [id]);
         if (check.rows.length === 0) return res.status(404).json({ success: false, message: 'Issue not found' });
         if (check.rows[0].closed_at) {
             return res.status(409).json({ success: false, message: 'This report is already closed.' });
@@ -1382,7 +1384,7 @@ router.post('/admin/issues/:id/close', requireAdmin, attachScope, async (req, re
         try {
             const reporters = await db.query(`
                 SELECT i.ticket_id, i.title, u.phone_number
-                FROM issues i
+                FROM visible_issues i
                 JOIN users u ON i.reported_by = u.id
                 WHERE (i.id = $1 OR i.duplicate_of = $1) AND u.phone_number IS NOT NULL
             `, [id]);
@@ -1429,7 +1431,7 @@ router.post('/admin/issues/:id/reopen', requireAdmin, attachScope, async (req, r
             });
         }
 
-        const check = await db.query('SELECT closed_at, status FROM issues WHERE id = $1', [id]);
+        const check = await db.query('SELECT closed_at, status FROM visible_issues WHERE id = $1', [id]);
         if (check.rows.length === 0) return res.status(404).json({ success: false, message: 'Issue not found' });
         if (!check.rows[0].closed_at) {
             return res.status(409).json({ success: false, message: 'This report is already open.' });
@@ -1457,7 +1459,7 @@ router.post('/admin/issues/:id/reopen', requireAdmin, attachScope, async (req, r
         try {
             const reporters = await db.query(`
                 SELECT i.ticket_id, i.title, u.phone_number
-                FROM issues i
+                FROM visible_issues i
                 JOIN users u ON i.reported_by = u.id
                 WHERE (i.id = $1 OR i.duplicate_of = $1) AND u.phone_number IS NOT NULL
             `, [id]);
@@ -1515,13 +1517,13 @@ router.post('/admin/issues/:id/mark-duplicate', requireAdmin, attachScope, async
         }
 
         // Check if target issue is spam
-        const targetIssue = await db.query('SELECT status FROM issues WHERE id = $1', [id]);
+        const targetIssue = await db.query('SELECT status FROM visible_issues WHERE id = $1', [id]);
         if (targetIssue.rows.length > 0 && targetIssue.rows[0].status === 'spam') {
              return res.status(403).json({ success: false, message: 'Cannot mark a SPAM issue as duplicate.' });
         }
 
         // 0. Get original issue status
-        const originalIssue = await db.query('SELECT ticket_id, status FROM issues WHERE id = $1', [original_issue_id]);
+        const originalIssue = await db.query('SELECT ticket_id, status FROM visible_issues WHERE id = $1', [original_issue_id]);
         if (originalIssue.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Original issue not found' });
         }
@@ -1577,7 +1579,7 @@ router.put('/admin/issues/:id/details', requireAdmin, attachScope, async (req, r
         const newUrgency = URGENCIES.includes(urgency) ? urgency : null;
 
         // Check if issue is spam
-        const check = await db.query('SELECT status, category, urgency FROM issues WHERE id = $1', [id]);
+        const check = await db.query('SELECT status, category, urgency FROM visible_issues WHERE id = $1', [id]);
         if (check.rows.length === 0) return res.status(404).json({ success: false, message: 'Issue not found' });
         if (check.rows[0].status === 'spam') {
              return res.status(403).json({ success: false, message: 'Cannot edit details of a SPAM issue.' });
@@ -1610,7 +1612,7 @@ router.put('/admin/issues/:id/details', requireAdmin, attachScope, async (req, r
         // appeared in their list, with nobody told it had arrived.
         if (reassigned) {
             try {
-                const moved = await db.query('SELECT id, ticket_id, title, category, address, lat, lng FROM issues WHERE id = $1', [id]);
+                const moved = await db.query('SELECT id, ticket_id, title, category, address, lat, lng FROM visible_issues WHERE id = $1', [id]);
                 if (moved.rows.length > 0) {
                     const issue = moved.rows[0];
                     await fixamHandler.notifyResponsibleTeam(issue,
@@ -1674,7 +1676,7 @@ router.put('/admin/issues/:id/spam', requireAdmin, attachScope, async (req, res)
          try {
             const reporterRes = await db.query(`
                 SELECT i.ticket_id, i.title, u.phone_number, u.id as user_id
-                FROM issues i
+                FROM visible_issues i
                 JOIN users u ON i.reported_by = u.id
                 WHERE i.id = $1
             `, [id]);
@@ -1749,8 +1751,100 @@ router.put('/admin/settings', requireFullAdmin, attachScope, async (req, res) =>
         const settings = await slaService.saveSettings(db, req.body, req.admin.id);
         res.json({ success: true, settings });
     } catch (err) {
+        // A rejected value is the operator's mistake, not a server fault, and
+        // saying which value and what was expected is the difference between a
+        // one-second fix and a support ticket.
+        if (err.statusCode === 400) {
+            return res.status(400).json({ error: err.message });
+        }
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// ── Data mode ────────────────────────────────────────────────────────────────
+//
+// Which phase the platform is in, what that means, and how much data sits under
+// each tag. The counts matter at exactly one moment: deciding whether it is
+// safe to move to Live, and how much demo data is still cluttering the database.
+
+// GET /api/admin/data-mode - current mode plus per-mode record counts
+router.get('/admin/data-mode', requireAdmin, attachScope, async (req, res) => {
+    try {
+        const settings = await slaService.getSettings(db);
+        const current = dataMode.normalise(settings.data_mode);
+
+        // Reads `issues` directly, not the mode-filtered view -- the whole
+        // point is to show what is hidden as well as what is visible.
+        const counts = await db.query('SELECT * FROM data_mode_summary ORDER BY data_mode');
+
+        res.json({
+            current,
+            label: dataMode.label(current),
+            description: dataMode.describe(current),
+            visible_tags: dataMode.visibleTags(current),
+            modes: dataMode.MODES.map((m) => ({ value: m, label: dataMode.LABELS[m] })),
+            counts: counts.rows,
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// DELETE /api/admin/data-mode/demo-data - permanently remove everything tagged test
+//
+// Deliberately limited to the demo tag. Pilot and live records are real
+// citizens' reports and must never be one mis-click from deletion; if they ever
+// genuinely need removing, that is a deliberate database operation with a
+// backup taken first, not a button in a web page.
+router.delete('/admin/data-mode/demo-data', requireFullAdmin, attachScope, async (req, res) => {
+    // A second, explicit confirmation in the request body. The method alone is
+    // not enough for something this irreversible.
+    if (req.body?.confirm !== 'DELETE DEMO DATA') {
+        return res.status(400).json({
+            error: 'Confirmation required. Send {"confirm":"DELETE DEMO DATA"}.',
+        });
+    }
+
+    const client = await db.connect();
+    try {
+        await client.query('BEGIN');
+
+        // votes, endorsements and issue_tracker cascade from issues; duplicate_of
+        // and user_point_logs.related_issue_id are ON DELETE SET NULL, so nothing
+        // is orphaned and no real report loses its history.
+        const issues = await client.query(
+            "DELETE FROM issues WHERE data_mode = 'test' RETURNING id");
+        const feedback = await client.query(
+            "DELETE FROM feedback WHERE data_mode = 'test' RETURNING id");
+
+        // Demo users go only if they have nothing real attached. Somebody who
+        // registered during the demo and then filed a genuine pilot report is a
+        // real citizen, and deleting them would take their report with them.
+        const users = await client.query(`
+            DELETE FROM users u
+            WHERE u.data_mode = 'test'
+              AND NOT EXISTS (SELECT 1 FROM issues i WHERE i.reported_by = u.id)
+              AND NOT EXISTS (SELECT 1 FROM votes v WHERE v.user_id = u.id)
+              AND u.password IS NULL          -- never remove a portal account
+            RETURNING id`);
+
+        await client.query('COMMIT');
+
+        const removed = {
+            issues: issues.rowCount,
+            feedback: feedback.rowCount,
+            users: users.rowCount,
+        };
+        console.log(`Demo data purged by admin ${req.admin.id}:`, removed);
+        res.json({ success: true, removed });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Demo data purge failed:', err);
+        res.status(500).json({ error: 'Purge failed. Nothing was deleted.' });
+    } finally {
+        client.release();
     }
 });
 
@@ -1804,7 +1898,7 @@ router.get('/admin/emergency/issues', requireFullAdmin, attachScope, async (req,
         const order = sort === 'oldest' ? 'i.created_at ASC' : 'i.created_at DESC';
 
         const countResult = await db.query(
-            `SELECT COUNT(*) AS total FROM issues i WHERE ${base}${clause}`,
+            `SELECT COUNT(*) AS total FROM visible_issues i WHERE ${base}${clause}`,
             params
         );
         const total = parseInt(countResult.rows[0].total);
@@ -1812,9 +1906,9 @@ router.get('/admin/emergency/issues', requireFullAdmin, attachScope, async (req,
         const result = await db.query(`
             SELECT i.id, i.ticket_id, i.title, i.description, i.category, i.status,
                    i.urgency, i.address, i.district, i.city, i.ward, i.lat, i.lng,
-                   i.created_at, i.acknowledged_at, i.progress_at,
+                   i.created_at, i.acknowledged_at, i.progress_at, i.data_mode,
                    u.name AS reported_by_name, u.phone_number AS reported_by_phone
-            FROM issues i
+            FROM visible_issues i
             LEFT JOIN users u ON i.reported_by = u.id
             WHERE ${base}${clause}
             ORDER BY ${order}
@@ -2541,7 +2635,7 @@ router.get('/admin/export/issues.csv', requireAdmin, attachScope, async (req, re
                    i.created_at, i.updated_at, i.closed_at, i.closure_reason,
                    i.closure_note, i.resolution_note, i.dispute_count,
                    u.name AS reporter_name, u.phone_number AS reporter_phone
-            FROM issues i
+            FROM visible_issues i
             LEFT JOIN users u ON i.reported_by = u.id
             WHERE 1=1${where}
             ORDER BY i.created_at DESC

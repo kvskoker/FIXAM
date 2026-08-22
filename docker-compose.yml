@@ -38,6 +38,8 @@ services:
       - ./backend/db/migration_name_quality.sql:/docker-entrypoint-initdb.d/14-name-quality.sql
       # Labels every record test/pilot/live. Also needs platform_settings.
       - ./backend/db/migration_data_mode.sql:/docker-entrypoint-initdb.d/15-data-mode.sql
+      # Mode-aware views. After 15: they depend on current_data_mode().
+      - ./backend/db/migration_data_mode_views.sql:/docker-entrypoint-initdb.d/16-data-mode-views.sql
     ports:
       - "${DB_PORT:-5432}:5432"
     healthcheck:

@@ -372,6 +372,185 @@ function resetUserForm() {
 // GROUP FUNCTIONS
 // ==========================================
 
+// ── Emergency tag inputs ─────────────────────────────────────────────────────
+//
+// Both settings are stored as one comma-separated string, which is fine for the
+// database and miserable to edit: to remove one item from a long line you have
+// to find it, delete it, and repair the commas around it -- and a stray comma
+// or a trailing space silently creates an entry that can never match anything.
+//
+// TomSelect is already loaded for the group pickers, so these use it rather
+// than pulling in a second tag library. The two behave differently on purpose:
+//
+//   categories  chosen from the real category list. A category name that does
+//               not exist cannot match a report, so inventing one is always a
+//               mistake and free text is refused.
+//   keywords    free text. They are matched against a citizen's own words, so
+//               the useful set is not knowable in advance.
+
+let emergencyCategoriesSelect = null;
+let emergencyKeywordsSelect = null;
+
+/** Split a stored setting into trimmed, de-duplicated values. */
+function splitSetting(value) {
+    return String(value || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .filter((item, index, all) => all.indexOf(item) === index);
+}
+
+async function initEmergencyTagInputs(settings) {
+    const categoryEl = document.getElementById('emergency-categories');
+    const keywordEl = document.getElementById('emergency-keywords');
+    if (!categoryEl || !keywordEl) return;
+
+    const selectedCategories = splitSetting(settings.emergency_categories);
+    const selectedKeywords = splitSetting(settings.emergency_keywords);
+
+    // ── Categories ──
+    let categories = [];
+    try {
+        const res = await fetch(`${API_BASE_URL}/categories`);
+        if (res.ok) categories = await res.json();
+    } catch (err) {
+        console.error('Error loading categories for emergency picker:', err);
+    }
+
+    categoryEl.innerHTML = '';
+    // The stored value is the category *name*, not its id, because that is what
+    // the bot compares against on an incoming report.
+    const names = categories.map((c) => c.name);
+    // A configured category that has since been renamed or deleted would
+    // otherwise vanish from the picker on load and be silently dropped on the
+    // next save. Keep it, so the operator sees it and decides.
+    const orphans = selectedCategories.filter((name) => !names.includes(name));
+    [...names, ...orphans].forEach((name) => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = orphans.includes(name) ? `${name} (no longer a category)` : name;
+        categoryEl.appendChild(opt);
+    });
+
+    if (emergencyCategoriesSelect) emergencyCategoriesSelect.destroy();
+    emergencyCategoriesSelect = new TomSelect('#emergency-categories', {
+        plugins: ['remove_button'],
+        create: false,
+        maxItems: null,
+        items: selectedCategories,
+        onInitialize: function () { this.wrapper.style.width = '100%'; },
+    });
+
+    // ── Keywords ──
+    keywordEl.innerHTML = '';
+    selectedKeywords.forEach((word) => {
+        const opt = document.createElement('option');
+        opt.value = word;
+        opt.textContent = word;
+        opt.selected = true;
+        keywordEl.appendChild(opt);
+    });
+
+    if (emergencyKeywordsSelect) emergencyKeywordsSelect.destroy();
+    emergencyKeywordsSelect = new TomSelect('#emergency-keywords', {
+        plugins: ['remove_button'],
+        persist: false,
+        maxItems: null,
+        items: selectedKeywords,
+        // Comma as well as Enter, so pasting a list still works.
+        delimiter: ',',
+        create: (input) => {
+            const word = input.trim().toLowerCase();
+            return word ? { value: word, text: word } : false;
+        },
+        // Lower-cased for consistency only -- isEmergencyReport() lower-cases
+        // both sides before comparing, so "Fire" and "fire" match identically.
+        // Two characters minimum: a one-letter keyword appears inside almost
+        // every description and would make every report an emergency.
+        createFilter: (input) => input.trim().length > 1,
+        onInitialize: function () { this.wrapper.style.width = '100%'; },
+    });
+}
+
+// ── Data mode ────────────────────────────────────────────────────────────────
+//
+// Shows what the current mode means and how many records sit under each tag.
+// The counts come from the unfiltered tables on purpose: an operator deciding
+// whether to switch to Live needs to see the demo data that Live would hide.
+
+async function loadDataModeSummary() {
+    const body = document.getElementById('data-mode-counts');
+    const description = document.getElementById('data-mode-description');
+    if (!body) return;
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/data-mode`);
+        if (!res.ok) return;
+        const info = await res.json();
+
+        if (description) description.textContent = info.description || '';
+
+        const labels = { test: 'Demo', pilot: 'Pilot', live: 'Live' };
+        body.innerHTML = (info.counts || []).map((row) => {
+            const shown = (info.visible_tags || []).includes(row.data_mode);
+            // The visible tags are the point of the table, so mark them rather
+            // than leaving the reader to apply the rule in their head.
+            const marker = shown
+                ? '<span title="Visible in the current mode"> &#9679;</span>'
+                : '<span style="opacity:0.4" title="Hidden in the current mode"> &#9675;</span>';
+            return `<tr style="${shown ? '' : 'opacity:0.55;'}">
+                <td style="padding: 0.35rem 0;">${escapeHtml(labels[row.data_mode] || row.data_mode)}${marker}</td>
+                <td style="padding: 0.35rem 0;">${row.issues}</td>
+                <td style="padding: 0.35rem 0;">${row.users}</td>
+                <td style="padding: 0.35rem 0;">${row.votes}</td>
+                <td style="padding: 0.35rem 0;">${row.feedback}</td>
+            </tr>`;
+        }).join('');
+    } catch (err) {
+        console.error('Error loading data mode summary:', err);
+    }
+}
+
+async function purgeDemoData() {
+    const result = document.getElementById('purge-demo-result');
+    const confirmed = window.prompt(
+        'This permanently deletes every report, vote and piece of feedback tagged Demo.\n'
+        + 'Pilot and live data are not touched. This cannot be undone.\n\n'
+        + 'Type DELETE DEMO DATA to confirm:');
+
+    if (confirmed !== 'DELETE DEMO DATA') {
+        if (confirmed !== null && result) {
+            result.textContent = 'Cancelled — confirmation did not match.';
+            result.style.color = 'var(--admin-text-muted)';
+        }
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/admin/data-mode/demo-data`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirm: 'DELETE DEMO DATA' }),
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+            const r = data.removed || {};
+            result.textContent =
+                `Removed ${r.issues} issue(s), ${r.feedback} feedback item(s), ${r.users} user(s).`;
+            result.style.color = 'var(--admin-success, #15803d)';
+            loadDataModeSummary();
+        } else {
+            result.textContent = data.error || 'Purge failed.';
+            result.style.color = 'var(--admin-danger, #b42318)';
+        }
+    } catch (err) {
+        console.error('Error purging demo data:', err);
+        result.textContent = 'Purge failed — see the console.';
+        result.style.color = 'var(--admin-danger, #b42318)';
+    }
+}
+
 // ── Pilot & SLA settings ─────────────────────────────────────────────────────
 // Full admin only (the tab is hidden for MDA users). The numbers are read from
 // and written to /api/admin/settings, so a change here takes effect in the bot
@@ -387,16 +566,21 @@ async function loadPilotSettings() {
         const status = document.getElementById('pilot-mode-status');
         if (toggle) toggle.checked = s.pilot_mode === 'true';
         if (status) {
+            // Reads alongside the checkbox label, so it states the consequence
+            // of the current setting rather than repeating the setting's name.
             status.textContent = s.pilot_mode === 'true'
-                ? 'Only pilot champions may report.'
-                : 'Anyone may report.';
+                ? 'On — only the champions flagged below may submit reports.'
+                : 'Off — anyone may report.';
         }
+
+        const modeSelect = document.getElementById('data-mode-select');
+        if (modeSelect) modeSelect.value = s.data_mode || 'pilot';
+        loadDataModeSummary();
 
         document.getElementById('sla-acknowledge-hours').value = s.sla_acknowledge_hours || 24;
         document.getElementById('sla-progress-hours').value = s.sla_progress_hours || 72;
         document.getElementById('sla-resolution-days').value = s.sla_resolution_days || 30;
-        document.getElementById('emergency-categories').value = s.emergency_categories || '';
-        document.getElementById('emergency-keywords').value = s.emergency_keywords || '';
+        await initEmergencyTagInputs(s);
     } catch (err) {
         console.error('Error loading settings:', err);
     }
@@ -405,11 +589,19 @@ async function loadPilotSettings() {
 async function savePilotSettings() {
     const payload = {
         pilot_mode: document.getElementById('pilot-mode-toggle').checked ? 'true' : 'false',
+        data_mode: document.getElementById('data-mode-select').value,
         sla_acknowledge_hours: document.getElementById('sla-acknowledge-hours').value,
         sla_progress_hours: document.getElementById('sla-progress-hours').value,
         sla_resolution_days: document.getElementById('sla-resolution-days').value,
-        emergency_categories: document.getElementById('emergency-categories').value,
-        emergency_keywords: document.getElementById('emergency-keywords').value,
+        // Back to the comma-separated string the backend and bot expect. The
+        // tag inputs are a better editor for the same stored value, not a
+        // change to how it is stored.
+        emergency_categories: emergencyCategoriesSelect
+            ? emergencyCategoriesSelect.getValue().join(',')
+            : '',
+        emergency_keywords: emergencyKeywordsSelect
+            ? emergencyKeywordsSelect.getValue().join(',')
+            : '',
     };
 
     const saved = document.getElementById('settings-saved');
@@ -1031,6 +1223,9 @@ async function deleteCategory(id, name, count) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    const purgeBtn = document.getElementById('purge-demo-btn');
+    if (purgeBtn) purgeBtn.addEventListener('click', purgeDemoData);
+
     const addBtn = document.getElementById('btn-add-category');
     if (addBtn) addBtn.addEventListener('click', openCategoryModal);
 
