@@ -6,6 +6,7 @@
 #   ./webhook_test.sh unsigned            a forged POST must be refused
 #   ./webhook_test.sh send 232XXXXXXXX login
 #                                         a correctly signed message, end to end
+#   ./webhook_test.sh token [TOKEN]       can we authenticate to Meta?
 #   ./webhook_test.sh watch               live: is Meta reaching this server?
 #   ./webhook_test.sh recent              what has arrived lately
 #
@@ -147,6 +148,56 @@ EOF
     echo
 }
 
+# ── token: can we authenticate to Meta at all? ───────────────────────────────
+#
+# Asks the Graph API to describe the configured phone number. It is the
+# cheapest call that exercises the token, and it fails the same way a send
+# does -- so a green result here means outbound will work.
+#
+# Pass a token to test one before deploying it:
+#   ./webhook_test.sh token EAAG...
+
+cmd_token() {
+    local token="${1:-}" phone_id resp
+    phone_id=$(env_from_backend WHATSAPP_PHONE_NUMBER_ID)
+    [ -n "$token" ] || token=$(env_from_backend WHATSAPP_ACCESS_TOKEN)
+
+    echo
+    if [ -z "$token" ]; then
+        bad "no access token to test"
+        info "WHATSAPP_ACCESS_TOKEN is empty in the backend container."
+        echo; return 1
+    fi
+    info "Token length: ${#token} characters"
+    [ "${#token}" -lt 100 ] && warn "Short for a Meta token — likely truncated or temporary."
+    info "Phone number ID: ${phone_id:-<unset>}"
+
+    resp=$(curl -sS -m 20 \
+        "https://graph.facebook.com/v17.0/${phone_id}?fields=display_phone_number,verified_name,quality_rating" \
+        -H "Authorization: Bearer ${token}")
+
+    if printf '%s' "$resp" | grep -q '"display_phone_number"'; then
+        ok "token is valid and can read the phone number"
+        printf '       %s\n' "$resp"
+        info "Outbound sending will work with this token."
+    elif printf '%s' "$resp" | grep -q '"code":190'; then
+        bad "190 OAuthException — the token is invalid or expired"
+        info "Temporary tokens from the API Setup page last 24 hours."
+        info "Generate a System User token that never expires:"
+        info "  business.facebook.com > Business Settings > Users > System Users"
+        info "  > Add Assets (your WABA, Full control) > Generate New Token"
+        info "  > permissions: whatsapp_business_messaging + whatsapp_business_management"
+        info "  > Token expiration: Never"
+    elif printf '%s' "$resp" | grep -q '"code":100'; then
+        bad "100 — the phone number ID is wrong"
+        info "Use the 'Phone number ID' from WhatsApp > API Setup, not the number itself."
+    else
+        bad "unexpected response"
+        printf '       %s\n' "$resp"
+    fi
+    echo
+}
+
 # ── watch: is a real message from Meta arriving? ─────────────────────────────
 #
 # Three layers, because a message can stop at any of them and each has a
@@ -181,7 +232,7 @@ cmd_watch() {
     # delivery: a phone-number-id mismatch, the country gate, DEV_MODE, and a
     # rejected signature.
     ( docker logs -f --since 1s "$c" 2>&1 \
-        | grep --line-buffered -Ei 'webhook|Message from|Rejected|Blocked|unsigned|Use configured Phone ID|Mock WhatsApp' \
+        | grep --line-buffered -Ei 'webhook|Message from|Handling|Rejected|Blocked|unsigned|Use configured Phone ID|Mock WhatsApp|Send Error|error|OAuth|token' \
         | sed -u "s/^/${YEL}app${NC}    /" ) &
     local app_pid=$!
 
@@ -219,6 +270,7 @@ case "${1:-}" in
     verify)   cmd_verify ;;
     unsigned) cmd_unsigned ;;
     send)     shift; cmd_send "$@" ;;
+    token)    shift; cmd_token "${1:-}" ;;
     watch)    cmd_watch ;;
     recent)   cmd_recent ;;
     *)        sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
