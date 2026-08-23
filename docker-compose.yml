@@ -160,7 +160,7 @@ services:
       # Proxies in front of the backend, counted outwards: Cloudflare, the host
       # nginx, and the frontend container. A wrong value makes express-rate-limit
       # treat all traffic as one client. Verify via /healthz -> client_ip.
-      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-2}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-3}
       HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
       PARAKEET_MODEL: ${PARAKEET_MODEL:-nvidia/parakeet-tdt-0.6b-v3}
       MINOR_DETECTION_ENABLED: ${MINOR_DETECTION_ENABLED:-true}
