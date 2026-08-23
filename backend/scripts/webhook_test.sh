@@ -179,6 +179,40 @@ cmd_token() {
     if printf '%s' "$resp" | grep -q '"display_phone_number"'; then
         ok "token is valid and can read the phone number"
         printf '       %s\n' "$resp"
+
+        # Validity is not lifetime. A 60-day user token passes the check above
+        # exactly as a permanent System User token does, and then stops working
+        # one quiet afternoon: webhooks still arrive, replies are still composed,
+        # and every send fails with 190. Citizens see a bot that went silent.
+        # So ask Meta the question that actually matters.
+        #
+        # input_token has to travel in the query string -- the endpoint accepts
+        # it nowhere else -- but the authenticating token goes in the header.
+        dbg=$(curl -sS -m 20 \
+            "https://graph.facebook.com/v17.0/debug_token?input_token=${token}" \
+            -H "Authorization: Bearer ${token}")
+
+        if printf '%s' "$dbg" | grep -q '"expires_at"'; then
+            expires_at=$(printf '%s' "$dbg" | grep -o '"expires_at":[0-9]*' | head -1 | cut -d: -f2)
+            token_type=$(printf '%s' "$dbg" | grep -o '"type":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+            # Meta reports a non-expiring token as expires_at 0, not a far date.
+            if [ "$expires_at" = "0" ]; then
+                ok "expiry: never  (type: ${token_type:-unknown})"
+            else
+                bad "expires $(date -u -d "@${expires_at}" '+%Y-%m-%d %H:%M UTC')  (type: ${token_type:-unknown})"
+                info "This token WILL lapse, and the bot will go silent without erroring."
+                info "Replace it with a System User token:"
+                info "  business.facebook.com > Business Settings > Users > System Users"
+                info "  > Add Assets (your app + WABA, Full control) > Generate New Token"
+                info "  > Token expiration: Never"
+            fi
+        else
+            warn "could not read token expiry from Meta"
+            info "Check by hand -- type must be System User, expiry Never:"
+            info "  https://developers.facebook.com/tools/debug/accesstoken"
+        fi
+
         info "Outbound sending will work with this token."
     elif printf '%s' "$resp" | grep -q '"code":190'; then
         bad "190 OAuthException — the token is invalid or expired"
