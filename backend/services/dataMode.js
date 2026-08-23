@@ -118,6 +118,66 @@ function describe(mode) {
     }
 }
 
+/**
+ * What the public should be told, on the map.
+ *
+ * Returns null in live mode: a banner on every page of normal operation is
+ * furniture, and furniture stops being read. It appears only when the truth is
+ * something a visitor would otherwise get wrong.
+ *
+ * @returns {{level: 'warning'|'info', title: string, message: string} | null}
+ */
+function publicBanner(mode) {
+    switch (normalise(mode)) {
+        case 'test':
+            return {
+                level: 'warning',
+                title: 'Demonstration mode',
+                message: 'The reports shown here are test data created while building and '
+                    + 'demonstrating the platform. They are not real problems, nobody is '
+                    + 'acting on them, and they will be deleted before the service goes live.',
+            };
+        case 'pilot':
+            return {
+                level: 'info',
+                title: 'Pilot phase',
+                message: 'These are real problems reported by community champions during the '
+                    + 'pilot. They are shared with the responsible institutions and tracked '
+                    + 'like any other report.',
+            };
+        default:
+            return null;
+    }
+}
+
+/**
+ * What a citizen should be told before they file a report.
+ *
+ * Placed at the start of the flow rather than the end, because somebody who has
+ * just described a burst pipe and photographed it deserves to have known before
+ * doing the work that nobody would act on it.
+ *
+ * Live returns null: the ordinary case needs no preamble, and a warning shown
+ * every time teaches people to skip the first paragraph of everything the bot
+ * says.
+ */
+function reportNotice(mode) {
+    switch (normalise(mode)) {
+        case 'test':
+            return '⚠️ *This platform is in demonstration mode.*\n\n'
+                + 'Anything you report now is treated as test data. It will *not* be sent to '
+                + 'any institution, nobody will act on it, and it will be deleted when the '
+                + 'service goes live.\n\n'
+                + 'If you have a real problem to report, please come back once we are live.';
+        case 'pilot':
+            return '📋 *Pilot phase*\n\n'
+                + 'This is a real report. It goes to the institution responsible and is '
+                + 'tracked until it is resolved, so please report only genuine problems.';
+        default:
+            return null;
+    }
+}
+
 module.exports = {
     MODES,
     LABELS,
@@ -129,4 +189,6 @@ module.exports = {
     sqlFilter,
     label,
     describe,
+    publicBanner,
+    reportNotice,
 };

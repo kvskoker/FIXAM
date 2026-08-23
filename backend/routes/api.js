@@ -29,12 +29,27 @@ const dataMode = require('../services/dataMode');
 router.use(auditLog.auditAdminMutations);
 
 // GET /api/config - Public configuration
-router.get('/config', (req, res) => {
+router.get('/config', async (req, res) => {
     // Base URL: use explicit env var or derive from the request
     const baseUrl = process.env.FIXAM_BASE_URL ||
         `${req.protocol}://${req.get('host')}`;
 
-    res.json({ 
+    // Which phase the platform is in, and what a visitor should be told about
+    // it. Public because the map is public: somebody looking at demonstration
+    // data has a right to know that is what they are looking at, without
+    // signing in to find out.
+    let mode = dataMode.FALLBACK;
+    try {
+        const settings = await slaService.getSettings(db);
+        mode = dataMode.normalise(settings.data_mode);
+    } catch (err) {
+        // A settings read failure must not take the map down with it.
+        console.error('Could not read data_mode for /config:', err.message);
+    }
+
+    res.json({
+        data_mode: mode,
+        data_mode_banner: dataMode.publicBanner(mode),
         dev_mode: process.env.DEV_MODE === 'true',
         maintenance_message: "The application has been closed to public use for now until the final Hackathon event day. Only admins are allowed to access the platform.",
         // ── DPG: Dynamic privacy / instance configuration ─────────────────

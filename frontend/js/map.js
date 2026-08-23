@@ -915,5 +915,63 @@ window.fullScreenMedia = function(url, isVideoMedia) {
 }
 
 
+/**
+ * Tell visitors what they are looking at, when it is not the obvious thing.
+ *
+ * Somebody who lands on a map full of pins reasonably assumes they are real
+ * problems that somebody is dealing with. During demonstration and pilot
+ * phases that is either false or true-with-a-caveat, and the map is the only
+ * place they would find out.
+ *
+ * The banner's content comes from the server rather than being duplicated
+ * here: what each mode means is decided once, in services/dataMode.js.
+ * Nothing is rendered in live mode.
+ */
+async function renderModeBanner() {
+    const el = document.getElementById('mode-banner');
+    if (!el) return;
+
+    let banner = null;
+    try {
+        const res = await fetch(`${API_BASE_URL}/config`);
+        if (res.ok) banner = (await res.json()).data_mode_banner;
+    } catch (err) {
+        // A banner is not worth failing the page for. If the backend is
+        // unreachable the map has larger problems and says so elsewhere.
+        console.warn('Could not read platform mode:', err);
+        return;
+    }
+    if (!banner) return;
+
+    const palette = banner.level === 'warning'
+        ? { bg: '#B45309', fg: '#FFFFFF', icon: '&#9888;' }   // amber, for "not real"
+        : { bg: '#1D4ED8', fg: '#FFFFFF', icon: '&#9432;' };  // blue, for "real, with context"
+
+    el.style.cssText = `
+        background: ${palette.bg};
+        color: ${palette.fg};
+        padding: 0.6rem 1rem;
+        font-size: 0.88rem;
+        line-height: 1.45;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.6rem;
+        position: relative;
+        z-index: 1200;
+    `;
+    el.innerHTML = `
+        <span style="font-size: 1.05rem; line-height: 1.2;">${palette.icon}</span>
+        <span><strong>${escapeHtml(banner.title)}</strong> &mdash; ${escapeHtml(banner.message)}</span>
+        <button type="button" aria-label="Dismiss"
+            style="margin-left:auto; background:none; border:0; color:inherit; opacity:.7;
+                   font-size:1.1rem; line-height:1; cursor:pointer; padding:0 .25rem;">&times;</button>
+    `;
+    // Dismissible, but not remembered: reload and it returns. The point is
+    // that nobody browses the map for long without knowing which phase it is.
+    el.querySelector('button').onclick = () => { el.style.display = 'none'; };
+    el.style.display = 'flex';
+}
+
 // Initial Fetch
+renderModeBanner();
 fetchIssues();

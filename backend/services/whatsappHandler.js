@@ -11,6 +11,7 @@ const botFlow = require('./botFlow');
 const sanitizer = require('./inputSanitizer');
 const smallTalk = require('./smallTalk');
 const nameValidator = require('./nameValidator');
+const dataMode = require('./dataMode');
 
 // Replies that decline a follow-up questionnaire before it starts.
 const STOP_REPLIES = ['stop', 'no', 'no thanks', 'cancel', 'later'];
@@ -778,7 +779,9 @@ class FixamHandler {
                             }
 
                             await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_report_evidence', data: newData });
-                            
+
+                            await this.sendModeNotice(fromNumber);
+
                             let msg = "Great! Let's report an issue.";
                             if(newData.description) msg += `\n\n📝 I noted the description: "${newData.description}"`;
                             if(newData.address) msg += `\n📍 I noted the location: "${newData.address}"`;
@@ -947,6 +950,10 @@ class FixamHandler {
                     if (!(await this.pilotReportGate(fromNumber, user))) return;
 
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_report_evidence', data: {} });
+                    // Said before any work is asked of them. Somebody who has
+                    // photographed a burst pipe deserves to have known first
+                    // that nobody would act on it.
+                    await this.sendModeNotice(fromNumber);
                     await this.sendMessage(fromNumber, withNav("Great! Let's report an issue.\n\nPlease send a *Photo* or *Video* of the issue as evidence.", { back: false }));
                 } else if (input === '2' || lowerInput.includes('vote')) {
                     await this.fixamDb.updateConversationState(fromNumber, { current_step: 'awaiting_vote_ticket_id', data: {} });
@@ -2662,6 +2669,24 @@ class FixamHandler {
             messageBody: body
         });
     }
+    /**
+     * Tell the citizen what phase the platform is in, before they file.
+     *
+     * Silent in live mode. A warning shown on every single report teaches
+     * people to skip the bot's first message, which is exactly the message
+     * that matters when the platform is *not* live.
+     */
+    async sendModeNotice(fromNumber) {
+        try {
+            const mode = await this.fixamDb.getPlatformSetting('data_mode');
+            const notice = dataMode.reportNotice(mode);
+            if (notice) await this.sendMessage(fromNumber, notice);
+        } catch (err) {
+            // Never block a report on the notice failing to send.
+            logger.logError('webhook', 'Could not send data mode notice', err);
+        }
+    }
+
     /**
      * The blacklist the name parser should apply: the built-in list plus
      * whatever an administrator has added in platform settings.
