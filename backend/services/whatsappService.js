@@ -17,7 +17,7 @@ const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
 // ({{customer_name}} rather than {{1}}). Older versions do not understand the
 // parameter_name field, and reject the send as a parameter-count mismatch --
 // an error that says nothing about the version being the cause.
-const API_VERSION = process.env.WHATSAPP_API_VERSION || 'v23.0';
+const API_VERSION = process.env.WHATSAPP_API_VERSION || 'v24.0';
 const GRAPH_BASE = `https://graph.facebook.com/${API_VERSION}`;
 
 

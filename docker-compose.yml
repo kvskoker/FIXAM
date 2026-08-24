@@ -161,7 +161,7 @@ services:
       # nginx, and the frontend container. A wrong value makes express-rate-limit
       # treat all traffic as one client. Verify via /healthz -> client_ip.
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-3}
-      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v23.0}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v24.0}
       WHATSAPP_BROADCAST_TEMPLATE: ${WHATSAPP_BROADCAST_TEMPLATE:-fixam_broadcast_message}
       WHATSAPP_TEMPLATE_LANGUAGE: ${WHATSAPP_TEMPLATE_LANGUAGE:-en}
       WHATSAPP_TEMPLATE_PARAM_GREETING: ${WHATSAPP_TEMPLATE_PARAM_GREETING:-customer_name}
