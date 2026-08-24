@@ -663,7 +663,7 @@ class FixamDatabase {
      */
     async getEmergencyTeamMembers() {
         const sql = `
-            SELECT DISTINCT u.id, u.phone_number, u.name
+            SELECT DISTINCT u.id, u.phone_number, u.name, u.first_name, u.last_inbound_at
             FROM users u
             LEFT JOIN user_roles ur ON u.id = ur.user_id
             LEFT JOIN roles r ON ur.role_id = r.id
@@ -682,7 +682,7 @@ class FixamDatabase {
     // Get group members by group name
     async getGroupMembers(groupName) {
         const sql = `
-            SELECT u.phone_number, u.name 
+            SELECT u.id, u.phone_number, u.name, u.first_name, u.last_inbound_at
             FROM users u 
             JOIN user_groups ug ON u.id = ug.user_id 
             JOIN groups g ON ug.group_id = g.id 

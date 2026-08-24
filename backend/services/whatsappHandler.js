@@ -12,6 +12,7 @@ const sanitizer = require('./inputSanitizer');
 const smallTalk = require('./smallTalk');
 const nameValidator = require('./nameValidator');
 const dataMode = require('./dataMode');
+const broadcast = require('./officialBroadcast');
 
 // Replies that decline a follow-up questionnaire before it starts.
 const STOP_REPLIES = ['stop', 'no', 'no thanks', 'cancel', 'later'];
@@ -80,6 +81,8 @@ const ANSWER_EXPECTED_STEPS = new Set([
     'awaiting_report_evidence',
     'awaiting_report_location',
     'awaiting_report_description',
+    'awaiting_transcription_review',
+    'awaiting_transcription_retry',
     'awaiting_report_confirmation',
     'awaiting_address_selection',
     'awaiting_unresolved_location_choice',
@@ -102,6 +105,8 @@ const STEP_REMINDERS = {
     awaiting_feedback: 'Please type your feedback, or send a voice note.',
     awaiting_vote_ticket_id: 'Please send the Issue ID (for example *FIX-A1B2C3*), or *9* to cancel.',
     awaiting_track_ticket_id: 'Please send the Issue ID (for example *FIX-A1B2C3*), or *9* to cancel.',
+    awaiting_transcription_review: 'Reply *1* to use the transcript, *2* to type it yourself, or send another voice note.',
+    awaiting_transcription_retry: 'Reply *1* to type the description, *2* to record again, or *3* to submit without one.',
 };
 
 /**
@@ -115,7 +120,7 @@ const STEP_REMINDERS = {
 const REPORT_STEPS = [
     { step: 'awaiting_report_evidence', clears: ['image_url', 'image_sha256', 'image_mime_type', 'image_forwarded', 'image_reused_from'] },
     { step: 'awaiting_report_location', clears: ['lat', 'lng', 'address', 'district', 'city', 'ward', 'location_source', 'pending_addresses', 'address_attempts'] },
-    { step: 'awaiting_report_description', clears: ['description', 'title', 'category', 'urgency'] },
+    { step: 'awaiting_report_description', clears: ['description', 'title', 'category', 'urgency', 'pending_transcript', 'audio_url', 'transcription_confidence'] },
     { step: 'awaiting_report_confirmation', clears: ['potential_duplicates'] },
 ];
 
@@ -150,6 +155,19 @@ const REPORT_STEP_PROMPTS = {
 };
 
 const BACK_WORDS = ['back', 'previous', 'prev', 'go back', '0'];
+
+/**
+ * Steps at which a voice note is a description of the issue.
+ *
+ * The two review steps are in here because both offer to take another
+ * recording. Without them the bot answers a re-recording with "I'm not
+ * expecting a voice note right now" -- immediately after inviting one.
+ */
+const VOICE_DESCRIPTION_STEPS = new Set([
+    'awaiting_report_description',
+    'awaiting_transcription_review',
+    'awaiting_transcription_retry',
+]);
 
 /**
  * Ways an administrator asks for a sign-in code.
@@ -192,6 +210,9 @@ const BACK_STEP_ALIASES = {
     // Picking between several geocoder matches is still the location stage.
     awaiting_address_selection: 'awaiting_report_location',
     // The duplicate prompts follow the description, so back returns to it.
+    // Reviewing or retrying a transcript is still the description stage.
+    awaiting_transcription_review: 'awaiting_report_description',
+    awaiting_transcription_retry: 'awaiting_report_description',
     awaiting_duplicate_action: 'awaiting_report_confirmation',
     awaiting_duplicate_selection_for_vote: 'awaiting_report_confirmation',
 };
@@ -1327,38 +1348,106 @@ class FixamHandler {
                     }
                 }
 
+                // "use" keeps the description already captured -- the
+                // citizen is confirming, not rewriting.
                 let descriptionToUse = input;
                 if (input.toLowerCase() === 'use' && currentData.description) {
-                     descriptionToUse = currentData.description;
-                } else {
-                     currentData.description = input;
-                     descriptionToUse = input;
+                    descriptionToUse = currentData.description;
                 }
-                
-                // Analyze with AI
-                await this.sendMessage(fromNumber, "Analyzing your report");
-                let category = 'Uncategorized';
-                let title = descriptionToUse.substring(0, 30) + (descriptionToUse.length > 30 ? '...' : '');
-                let urgency = 'medium';
-                
-                try {
-                    const analysis = await analyzeIssue(descriptionToUse);
-                    logger.logObject('ai_debug', 'AI Analysis Result (Handler)', analysis);
-                    if (analysis) {
-                        category = analysis.category || 'Uncategorized';
-                        title = analysis.summary || title;
-                        urgency = analysis.urgency || 'medium';
-                    }
-                } catch (err) {
-                    logger.logError('ai_debug', 'Error analyzing issue (Handler)', err);
-                }
-                
-                currentData.category = category;
-                currentData.title = title;
-                currentData.urgency = urgency;
 
-                await this.promptDuplicatesOrConfirm(fromNumber, currentData);
+                await this.analyseAndConfirm(fromNumber, currentData, descriptionToUse);
                 break;
+
+            // The citizen has been shown a transcript and is telling us whether
+            // it is right. Anything that is not one of the two menu answers is
+            // read as the correction itself: somebody who spots the error is far
+            // more likely to type what they meant than to press 2 first.
+            case 'awaiting_transcription_review': {
+                const reviewData = state.data || {};
+                const transcript = reviewData.pending_transcript || '';
+
+                if (input === '1' || /^(yes|yeah|yep|correct|right)$/i.test(input.trim())) {
+                    delete reviewData.pending_transcript;
+                    await this.analyseAndConfirm(fromNumber, reviewData, transcript);
+                    break;
+                }
+
+                if (input === '2' || /^(no|nope|wrong)$/i.test(input.trim())) {
+                    delete reviewData.pending_transcript;
+                    await this.fixamDb.updateConversationState(fromNumber, {
+                        current_step: 'awaiting_report_description',
+                        data: reviewData
+                    });
+                    await this.sendMessage(fromNumber, withNav(
+                        `📝 Go ahead — type the description of the issue.`));
+                    break;
+                }
+
+                if (input.length > MAX_DESCRIPTION_LENGTH) {
+                    await this.sendMessage(fromNumber,
+                        `⚠️ That description is very long (${input.length} characters). `
+                        + `Please describe the issue in a few short sentences and send again.`);
+                    break;
+                }
+
+                delete reviewData.pending_transcript;
+                await this.analyseAndConfirm(fromNumber, reviewData, input);
+                break;
+            }
+
+            // Transcription produced nothing and the citizen is choosing what
+            // to do about it.
+            case 'awaiting_transcription_retry': {
+                const retryData = state.data || {};
+
+                if (input === '1') {
+                    await this.fixamDb.updateConversationState(fromNumber, {
+                        current_step: 'awaiting_report_description',
+                        data: retryData
+                    });
+                    await this.sendMessage(fromNumber, withNav(
+                        `📝 Go ahead — type the description of the issue.`));
+                    break;
+                }
+
+                if (input === '2') {
+                    // Back to the description step, which is where a voice note
+                    // is accepted. The old recording is dropped: keeping it
+                    // would leave two audio files against one report and no way
+                    // for the citizen to tell which one was used.
+                    delete retryData.audio_url;
+                    delete retryData.transcription_confidence;
+                    await this.fixamDb.updateConversationState(fromNumber, {
+                        current_step: 'awaiting_report_description',
+                        data: retryData
+                    });
+                    await this.sendMessage(fromNumber, withNav(
+                        `🎙️ Send the voice note whenever you are ready.`));
+                    break;
+                }
+
+                if (input === '3') {
+                    // Deliberately not run through the classifier: there is
+                    // nothing to classify, and asking the model to categorise a
+                    // placeholder invents a category out of noise.
+                    retryData.description = '[Voice note — transcription unavailable]';
+                    retryData.category = 'Uncategorized';
+                    retryData.title = 'Voice Report';
+                    retryData.urgency = 'medium';
+                    await this.promptDuplicatesOrConfirm(fromNumber, retryData);
+                    break;
+                }
+
+                if (input.length > MAX_DESCRIPTION_LENGTH) {
+                    await this.sendMessage(fromNumber,
+                        `⚠️ That description is very long (${input.length} characters). `
+                        + `Please describe the issue in a few short sentences and send again.`);
+                    break;
+                }
+
+                await this.analyseAndConfirm(fromNumber, retryData, input);
+                break;
+            }
 
             case 'awaiting_duplicate_action':
                 if (input === '1') {
@@ -2086,9 +2175,45 @@ class FixamHandler {
         logger.log('media_handler', '========== handleMediaMessage complete ==========');
     }
 
+    /**
+     * Classify a finished description and move on to confirmation.
+     *
+     * Shared by every route a description can arrive by -- typed, transcribed
+     * and accepted, or typed as a correction to a transcript -- so all of them
+     * classify identically. While the voice path had its own copy, a corrected
+     * transcript kept the category derived from the words the citizen had just
+     * told us were wrong.
+     */
+    async analyseAndConfirm(fromNumber, currentData, descriptionText) {
+        await this.sendMessage(fromNumber, "Analyzing your report");
+
+        let category = 'Uncategorized';
+        let title = descriptionText.substring(0, 30) + (descriptionText.length > 30 ? '...' : '');
+        let urgency = 'medium';
+
+        try {
+            const analysis = await analyzeIssue(descriptionText);
+            logger.logObject('ai_debug', 'AI Analysis Result (Handler)', analysis);
+            if (analysis) {
+                category = analysis.category || 'Uncategorized';
+                title = analysis.summary || title;
+                urgency = analysis.urgency || 'medium';
+            }
+        } catch (err) {
+            logger.logError('ai_debug', 'Error analyzing issue (Handler)', err);
+        }
+
+        currentData.description = descriptionText;
+        currentData.category = category;
+        currentData.title = title;
+        currentData.urgency = urgency;
+
+        await this.promptDuplicatesOrConfirm(fromNumber, currentData);
+    }
+
     async handleVoiceMessage(fromNumber, message) {
         const state = await this.fixamDb.getConversationState(fromNumber);
-        if (state && state.current_step === 'awaiting_report_description') {
+        if (state && VOICE_DESCRIPTION_STEPS.has(state.current_step)) {
             const mediaId = message.voice ? message.voice.id : message.audio.id;
             
             // Download Voice Note
@@ -2160,35 +2285,57 @@ class FixamHandler {
         }
 
             const currentData = state.data || {};
-            // Use transcribed text if available, otherwise fallback to a user-friendly message
-            currentData.description = transcribedText ? transcribedText : "[Voice Note - Transcription unavailable]";
-            currentData.audio_url = mediaUrl; // Capture for saving
+            currentData.audio_url = mediaUrl;
             currentData.transcription_confidence = transcriptionConfidence;
 
-            // Analyze with AI using the transcribed text if available
-            let category = 'Uncategorized';
-            let title = transcribedText ? (transcribedText.substring(0, 30) + (transcribedText.length > 30 ? '...' : '')) : "Voice Report";
-            let urgency = 'medium';
-            
+            // A transcript is a machine guess at what somebody said, and the
+            // citizen is the only person who can say whether it got it right.
+            // Previously the guess went straight to the classifier and into the
+            // database, so a misheard word became the report -- and the citizen
+            // only found out at the confirmation screen, by which point their
+            // only option was to cancel and start the whole flow again.
+            //
+            // Typed descriptions are not confirmed this way. The citizen has
+            // already seen exactly what they wrote; asking again is friction
+            // that teaches people to tap through prompts without reading them.
             if (transcribedText) {
-                await this.sendMessage(fromNumber, "Analyzing your report");
-                try {
-                    const analysis = await analyzeIssue(transcribedText);
-                    if (analysis) {
-                        category = analysis.category || 'Uncategorized';
-                        title = analysis.summary || title;
-                        urgency = analysis.urgency || 'medium';
-                    }
-                } catch (err) {
-                    logger.logError('ai_debug', 'Error analyzing issue (Handler)', err);
-                }
-            }
-            
-            currentData.category = category;
-            currentData.title = title;
-            currentData.urgency = urgency;
+                currentData.pending_transcript = transcribedText;
 
-            await this.promptDuplicatesOrConfirm(fromNumber, currentData);
+                await this.fixamDb.updateConversationState(fromNumber, {
+                    current_step: 'awaiting_transcription_review',
+                    data: currentData
+                });
+
+                await this.sendMessage(fromNumber, withNav(
+                    `🎙️ *This is what I heard:*\n\n`
+                    + `"${transcribedText}"\n\n`
+                    + `Is that right?\n\n`
+                    + `1️⃣ *Yes* — use it\n`
+                    + `2️⃣ *No* — I will type it instead\n\n`
+                    + `_Or just type the corrected wording, or send another voice note._`));
+                return;
+            }
+
+            // Nothing came back. The old behaviour filed the report right here
+            // as "[Voice Note - Transcription unavailable]" and Uncategorized,
+            // which routes to no MDA and reads to an officer as an empty
+            // report. A citizen who was in a noisy market and would happily
+            // have spoken again never got the chance to.
+            //
+            // Filing it undescribed is still allowed -- but as something the
+            // citizen chose, not something that happened to them.
+            await this.fixamDb.updateConversationState(fromNumber, {
+                current_step: 'awaiting_transcription_retry',
+                data: currentData
+            });
+
+            await this.sendMessage(fromNumber, withNav(
+                `⚠️ I could not make out that voice note.\n\n`
+                + `1️⃣ *Type* the description instead\n`
+                + `2️⃣ *Record again* — somewhere quieter helps\n`
+                + `3️⃣ *Submit without a description* — your recording stays attached\n\n`
+                + `_Or just type the description now._`));
+            return;
         } else if (state && state.current_step === 'awaiting_feedback') {
             const mediaId = message.voice ? message.voice.id : message.audio.id;
             const downloadResult = await this.whatsAppService.downloadMedia(mediaId);
@@ -2501,6 +2648,50 @@ class FixamHandler {
     }
 
     /**
+     * Send an alert to an official by whichever route WhatsApp allows.
+     *
+     * Inside the 24-hour service window the ordinary message goes out, with its
+     * line breaks and its link intact. Outside it, only an approved template can
+     * open the conversation, so the same content is flattened into the
+     * fixam_broadcast body parameter.
+     *
+     * Officials sit outside that window far more often than citizens do -- an
+     * MDA officer may not have written in for weeks -- and a plain send to them
+     * fails at Meta with 131047 and is logged and forgotten. The report is
+     * filed, the dashboard shows it routed to their team, and nobody is told.
+     *
+     * @returns {'session'|'template'|'failed'} how it went, for the caller's log
+     */
+    async sendOfficialAlert(member, body) {
+        const phone = member.phone_number;
+
+        if (broadcast.withinServiceWindow(member.last_inbound_at)) {
+            await this.sendMessage(phone, body);
+            return 'session';
+        }
+
+        const delivered = await this.whatsAppService.sendTemplate(
+            phone,
+            broadcast.TEMPLATE_NAME,
+            broadcast.buildParams(member, body),
+            { language: broadcast.TEMPLATE_LANGUAGE }
+        );
+
+        // Logged as what was actually sent, not as the message we started from.
+        // An operator reading the message log after a missed alert needs to see
+        // the template attempt, otherwise the log shows a message that appears
+        // to have been delivered as text.
+        await this.fixamDb.logMessage({
+            conversationId: phone,
+            direction: 'outgoing',
+            messageType: 'template',
+            messageBody: `[${broadcast.TEMPLATE_NAME}${delivered ? '' : ' FAILED'}] ${body}`
+        });
+
+        return delivered ? 'template' : 'failed';
+    }
+
+    /**
      * Send one message to everyone responsible for an issue's category.
      *
      * Used for the events that are not a new report -- a citizen following up,
@@ -2520,8 +2711,12 @@ class FixamHandler {
             const members = await this.fixamDb.getGroupMembers(group.name);
             for (const member of members || []) {
                 try {
-                    await this.sendMessage(member.phone_number, message);
-                    sent++;
+                    const route = await this.sendOfficialAlert(member, message);
+                    if (route === 'failed') {
+                        logger.log('alert_system', `Template send failed for ${member.phone_number}`);
+                    } else {
+                        sent++;
+                    }
                 } catch (err) {
                     logger.logError('alert_system', `Failed to notify ${member.phone_number}`, err);
                 }
@@ -2573,8 +2768,9 @@ class FixamHandler {
 
             for (const member of members) {
                 try {
-                    await this.sendMessage(member.phone_number, alertMessage);
-                    logger.log('alert_system', `Alert sent to ${member.name} (${member.phone_number}) in group ${group.name}`);
+                    const route = await this.sendOfficialAlert(member, alertMessage);
+                    logger.log('alert_system',
+                        `Alert to ${member.name} (${member.phone_number}) in group ${group.name}: ${route}`);
                 } catch (err) {
                     logger.logError('alert_system', `Failed to send alert to ${member.phone_number}`, err);
                 }
@@ -2605,8 +2801,9 @@ class FixamHandler {
 
         for (const member of members) {
             try {
-                await this.sendMessage(member.phone_number, message);
-                logger.log('alert_system', `Emergency alert sent to ${member.name} (${member.phone_number})`);
+                const route = await this.sendOfficialAlert(member, message);
+                logger.log('alert_system',
+                    `Emergency alert to ${member.name} (${member.phone_number}): ${route}`);
             } catch (err) {
                 logger.logError('alert_system', `Failed to send emergency alert to ${member.phone_number}`, err);
             }
