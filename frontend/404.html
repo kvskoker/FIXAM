@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Page not found — FIXAM</title>
+
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+
+    <!--
+        Deliberately self-contained: no Google Fonts, no Font Awesome, no
+        stylesheet of our own. An error page that depends on other resources
+        fails in exactly the situations it exists to handle -- a bad deploy, a
+        missing asset directory, a CDN the visitor's network blocks -- and the
+        visitor is then shown a broken page about a broken page.
+    -->
+    <style>
+        :root {
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --text: #1e293b;
+            --muted: #64748b;
+            --primary: #2563eb;
+            --border: #e2e8f0;
+        }
+
+        /* Matches the rest of the site, which stores the choice under "theme"
+           and applies it as a class. Read directly here because this page
+           deliberately loads no scripts. */
+        body.dark-mode {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --text: #f1f5f9;
+            --muted: #94a3b8;
+            --primary: #60a5fa;
+            --border: #334155;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+            line-height: 1.6;
+        }
+
+        .card {
+            width: 100%;
+            max-width: 480px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2.5rem 2rem;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        }
+
+        .logo { height: 44px; margin-bottom: 1.75rem; }
+
+        .code {
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin: 0 0 0.5rem;
+        }
+
+        h1 { margin: 0 0 0.75rem; font-size: 1.5rem; font-weight: 600; }
+
+        p { margin: 0 0 1.5rem; color: var(--muted); }
+
+        /* Wraps rather than overflowing: a mistyped URL can be long, and a
+           horizontal scrollbar on an error page is its own small insult. */
+        .path {
+            display: block;
+            margin: 0 0 1.5rem;
+            padding: 0.6rem 0.75rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+            font-size: 0.85rem;
+            color: var(--muted);
+            word-break: break-all;
+        }
+
+        .links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            justify-content: center;
+        }
+
+        a {
+            padding: 0.6rem 1.1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            color: var(--text);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: border-color 0.15s, color 0.15s;
+        }
+
+        a:hover { border-color: var(--primary); color: var(--primary); }
+
+        a.primary {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: #ffffff;
+        }
+
+        a.primary:hover { opacity: 0.9; color: #ffffff; }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <img src="/fixam-logo-blue.svg" alt="FIXAM" class="logo"
+             onerror="this.style.display='none'">
+
+        <p class="code">Error 404</p>
+        <h1>We could not find that page</h1>
+        <p>The link may be out of date, or the address may have a typo in it.</p>
+
+        <code class="path" id="path"></code>
+
+        <div class="links">
+            <a class="primary" href="/">Civic Map</a>
+            <a href="/dashboard">Dashboard</a>
+            <a href="/admin/overview">Admin</a>
+        </div>
+    </main>
+
+    <script>
+        // localStorage throws outright in some privacy modes, so a failure here
+        // must leave the page rendered in its default light palette rather than
+        // stopping the script before the path is filled in.
+        try {
+            if (localStorage.getItem('theme') === 'dark') {
+                document.body.classList.add('dark-mode');
+            }
+        } catch (e) { /* default palette is fine */ }
+
+        // Written as text, never as HTML: the path comes from the URL bar and
+        // is attacker-controlled on any link somebody can be sent.
+        document.getElementById('path').textContent =
+            window.location.pathname + window.location.search;
+    </script>
+</body>
+</html>
