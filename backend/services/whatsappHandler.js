@@ -226,6 +226,7 @@ class FixamHandler {
 
         this.fixamDb = new FixamDatabase(db, this.debugLog);
         this.helpers = new FixamHelpers(this.debugLog);
+        this.transcribingNumbers = new Set();
     }
 
     /**
@@ -2214,6 +2215,13 @@ class FixamHandler {
     async handleVoiceMessage(fromNumber, message) {
         const state = await this.fixamDb.getConversationState(fromNumber);
         if (state && VOICE_DESCRIPTION_STEPS.has(state.current_step)) {
+            if (this.transcribingNumbers.has(fromNumber)) {
+                await this.sendMessage(fromNumber, "Your previous voice note is still being processed. Please wait a moment before sending another one.");
+                return;
+            }
+
+            this.transcribingNumbers.add(fromNumber);
+            try {
             const mediaId = message.voice ? message.voice.id : message.audio.id;
             
             // Download Voice Note
@@ -2336,6 +2344,9 @@ class FixamHandler {
                 + `3️⃣ *Submit without a description* — your recording stays attached\n\n`
                 + `_Or just type the description now._`));
             return;
+            } finally {
+                this.transcribingNumbers.delete(fromNumber);
+            }
         } else if (state && state.current_step === 'awaiting_feedback') {
             const mediaId = message.voice ? message.voice.id : message.audio.id;
             const downloadResult = await this.whatsAppService.downloadMedia(mediaId);
