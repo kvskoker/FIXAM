@@ -220,6 +220,46 @@ const statusFilter = document.getElementById('status-filter');
 const sortFilter = document.getElementById('sort-filter');
 const startDateInput = document.getElementById('start-date');
 const endDateInput = document.getElementById('end-date');
+const activeFilters = document.getElementById('active-filters');
+
+function restoreFilters() {
+    const params = new URLSearchParams(window.location.search);
+    const controls = [['search', searchInput], ['category', categoryFilter], ['status', statusFilter], ['sort', sortFilter], ['start_date', startDateInput], ['end_date', endDateInput]];
+    controls.forEach(([name, control]) => {
+        if (control && params.has(name)) control.value = params.get(name);
+    });
+}
+
+function syncFilterUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const controls = [['search', searchInput], ['category', categoryFilter], ['status', statusFilter], ['sort', sortFilter], ['start_date', startDateInput], ['end_date', endDateInput]];
+    const labels = [];
+    controls.forEach(([name, control]) => {
+        if (!control) return;
+        if (control.value) {
+            params.set(name, control.value);
+            if (name !== 'sort' || control.value !== 'newest') labels.push(control.options?.[control.selectedIndex]?.text || control.value);
+        } else params.delete(name);
+    });
+    history.replaceState({}, '', `${window.location.pathname}${params.toString() ? `?${params}` : ''}`);
+    if (activeFilters) activeFilters.innerHTML = labels.map(label => `<span>${escapeHtml(label)}</span>`).join('');
+}
+
+async function loadCategories() {
+    if (!categoryFilter) return;
+    const selected = categoryFilter.value;
+    const response = await fetch(`${API_BASE_URL}/categories`);
+    if (!response.ok) return;
+    const data = await response.json();
+    const categories = Array.isArray(data) ? data : (data.data || []);
+    categoryFilter.innerHTML = '<option value="">All Categories</option>' + categories.map(category => {
+        const name = typeof category === 'string' ? category : category.name;
+        return `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`;
+    }).join('');
+    categoryFilter.value = selected;
+}
+
+restoreFilters();
 
 // Set default date range: last 6 months and restrict future dates
 if (startDateInput && endDateInput) {
@@ -262,6 +302,7 @@ if (endDateInput) endDateInput.addEventListener('change', () => fetchIssues());
 // Fetch Data from API
 async function fetchIssues() {
     try {
+        syncFilterUrl();
         const params = new URLSearchParams();
         if (searchInput && searchInput.value) params.append('search', searchInput.value);
         if (categoryFilter && categoryFilter.value) params.append('category', categoryFilter.value);
@@ -555,7 +596,7 @@ function renderIssues(issues) {
                     <div class="issue-status status-${statusDot(issue.status)}"></div>
                 </div>
                 <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.25rem;">#${escapeHtml(issue.ticket_id)}</div>
-                <div class="issue-title" style="font-weight: 600;">${escapeHtml(issue.title)}</div>
+                <a class="issue-title" href="/?ticket=${encodeURIComponent(issue.ticket_id)}">${escapeHtml(issue.title)}</a>
                 <div class="issue-location">
                     <i class="fa-solid fa-location-dot"></i> ${formatAddress(issue.address) || 'Freetown, SL'}
                 </div>            
@@ -974,4 +1015,4 @@ async function renderModeBanner() {
 
 // Initial Fetch
 renderModeBanner();
-fetchIssues();
+loadCategories().finally(fetchIssues);
