@@ -40,6 +40,7 @@ services:
       - ./backend/db/migration_data_mode.sql:/docker-entrypoint-initdb.d/15-data-mode.sql
       # Mode-aware views. After 15: they depend on current_data_mode().
       - ./backend/db/migration_data_mode_views.sql:/docker-entrypoint-initdb.d/16-data-mode-views.sql
+      - ./backend/db/migration_login_lockout.sql:/docker-entrypoint-initdb.d/17-login-lockout.sql
     ports:
       - "${DB_PORT:-5432}:5432"
     healthcheck:
@@ -173,10 +174,9 @@ services:
       # generates a new key and logs every admin out.
       SECRET: ${SECRET:-}
       ADMIN_SESSION_HOURS: ${ADMIN_SESSION_HOURS:-12}
-      # Second factor for portal sign-in. The administrator requests a code
-      # from the bot over WhatsApp; set to false only to recover from a
-      # lock-out, and set it back afterwards.
-      ADMIN_2FA_ENABLED: ${ADMIN_2FA_ENABLED:-true}
+      # Second factor for portal sign-in: the administrator requests a code
+      # from the bot over WhatsApp. Always on -- see fixam_admin.py for
+      # recovering a lock-out rather than turning it off.
       ADMIN_OTP_TTL_MINUTES: ${ADMIN_OTP_TTL_MINUTES:-10}
       ADMIN_OTP_MAX_PER_HOUR: ${ADMIN_OTP_MAX_PER_HOUR:-10}
       SUPER_ADMIN_PHONE: ${SUPER_ADMIN_PHONE:-23200000000}
@@ -275,10 +275,9 @@ services:
       # generates a new key and logs every admin out.
       SECRET: ${SECRET:-}
       ADMIN_SESSION_HOURS: ${ADMIN_SESSION_HOURS:-12}
-      # Second factor for portal sign-in. The administrator requests a code
-      # from the bot over WhatsApp; set to false only to recover from a
-      # lock-out, and set it back afterwards.
-      ADMIN_2FA_ENABLED: ${ADMIN_2FA_ENABLED:-true}
+      # Second factor for portal sign-in: the administrator requests a code
+      # from the bot over WhatsApp. Always on -- see fixam_admin.py for
+      # recovering a lock-out rather than turning it off.
       ADMIN_OTP_TTL_MINUTES: ${ADMIN_OTP_TTL_MINUTES:-10}
       ADMIN_OTP_MAX_PER_HOUR: ${ADMIN_OTP_MAX_PER_HOUR:-10}
       SUPER_ADMIN_PHONE: ${SUPER_ADMIN_PHONE:-23200000000}
