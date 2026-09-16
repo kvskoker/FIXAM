@@ -181,10 +181,7 @@ function renderUsers(users) {
                         <i class="fa-solid fa-pen"></i>
                     </button>
                     ${!isSelf ? `
-                    <button class="action-btn ${user.points > 0 ? 'disabled' : 'delete'}" 
-                            onclick="${user.points > 0 ? '' : `deleteUser(${user.id})`}" 
-                            title="${user.points > 0 ? 'Cannot delete active user' : 'Delete User'}"
-                            ${user.points > 0 ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
+                    <button class="action-btn delete" onclick="deleteUser(${user.id})" title="Delete User">
                         <i class="fa-solid fa-trash"></i>
                     </button>
                     <button class="action-btn" onclick="penalizeUser(${JSON.stringify(user).replace(/"/g, '&quot;')})" title="Penalize User" style="color: var(--admin-danger); border-color: var(--admin-danger);">
