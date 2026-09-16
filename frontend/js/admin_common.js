@@ -368,6 +368,10 @@ function getURLParams() {
 async function refreshEmergencyBadge() {
     const badge = document.getElementById('nav-emergency-badge');
     if (!badge) return;
+    // Without a token this is a guaranteed 401, and the global fetch wrapper
+    // above turns any 401 into "Your session has expired" -- wrongly, for
+    // someone standing on the login screen who never had a session at all.
+    if (!getAdminToken()) return;
     try {
         const res = await fetch(`${API_BASE_URL}/admin/emergency/issues`);
         if (!res.ok) return;
