@@ -275,45 +275,45 @@ const REPLIES = {
     // Only used when a greeting arrives part-way through a flow: at the menu the
     // greeting IS the main menu, and the handler sends that instead.
     greeting: [
-        'Hello again! 👋',
-        'Kushe! 👋',
-        'Hello! 👋',
+        'Hello again!',
+        'Kushe!',
+        'Hello!',
     ],
     thanks: [
-        "You're very welcome! 😊",
-        'Happy to help! 🙏',
-        'Any time — that is what we are here for. 😊',
-        'Tenki ya! Glad to help. 🙏',
+        "You're very welcome!",
+        'Happy to help!',
+        'Any time - that is what we are here for.',
+        'Tenki ya! Glad to help.',
     ],
     praise: [
-        'Thank you! That means a lot to the team. 🙏',
-        'We appreciate that! 😊',
-        'Thank you — we are working to make it even better. 💪',
+        'Thank you! That means a lot to the team.',
+        'We appreciate that!',
+        'Thank you - we are working to make it even better.',
     ],
     ack: [
-        '👍 Let me know if you need anything else.',
+        'Let me know if you need anything else.',
         'Great! What would you like to do next?',
-        '👍 I am here whenever you are ready.',
+        'I am here whenever you are ready.',
     ],
     laugh: [
-        '😄 Glad that landed! What can I help you with?',
-        '😊 Let me know how I can help.',
+        'Glad that landed! What can I help you with?',
+        'Let me know how I can help.',
     ],
     apology: [
-        'No need to apologise at all! 😊 How can I help?',
-        'No vex — no problem at all. How can I help?',
+        'No need to apologise at all! How can I help?',
+        'No vex - no problem at all. How can I help?',
     ],
     wellbeing: [
-        "I'm doing well, thank you for asking! 😊 How can I help you today?",
-        'All good on my side, tenki ya! 🙏 What can I do for you?',
+        "I'm doing well, thank you for asking! How can I help you today?",
+        'All good on my side, tenki ya! What can I do for you?',
     ],
     farewell: [
-        'Goodbye! 👋 Thank you for helping improve our community. Say *Hi* any time.',
-        'Take care! 👋 Say *Hi* whenever you need me.',
-        'See you soon! 👋 Your reports make a real difference.',
+        'Goodbye! Thank you for helping improve our community. Say *Hi* any time.',
+        'Take care! Say *Hi* whenever you need me.',
+        'See you soon! Your reports make a real difference.',
     ],
     identity: [
-        "I'm *FIXAM* 🤖 — an automated assistant that helps you report and track "
+        "I'm *FIXAM* - an automated assistant that helps you report and track "
         + 'community infrastructure problems (roads, water, electricity, waste and more) '
         + 'so the right institution can act on them.\n\nI am a bot, not a person, '
         + 'but real people at the responsible institutions see every report.',
