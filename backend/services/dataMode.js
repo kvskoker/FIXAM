@@ -164,13 +164,13 @@ function publicBanner(mode) {
 function reportNotice(mode) {
     switch (normalise(mode)) {
         case 'test':
-            return '⚠️ *This platform is in demonstration mode.*\n\n'
+            return '*This platform is in demonstration mode.*\n\n'
                 + 'Anything you report now is treated as test data. It will *not* be sent to '
                 + 'any institution, nobody will act on it, and it will be deleted when the '
                 + 'service goes live.\n\n'
                 + 'If you have a real problem to report, please come back once we are live.';
         case 'pilot':
-            return '📋 *Pilot phase*\n\n'
+            return '*Pilot phase*\n\n'
                 + 'This is a real report. It goes to the institution responsible and is '
                 + 'tracked until it is resolved, so please report only genuine problems.';
         default:

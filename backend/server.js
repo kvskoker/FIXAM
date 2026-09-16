@@ -7,6 +7,7 @@ require('./loadEnv');
 const apiRoutes = require('./routes/api');
 const db = require('./db');
 const fixamHandler = require('./services/bot');
+const { requireAdmin } = require('./middleware/requireAdmin');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -108,9 +109,13 @@ app.use('/api', apiRoutes);
 // ── DPG FIX: Data deletion endpoint (Right to Erasure) ───────────────────────
 // DELETE /api/user/data — deletes the authenticated user's account and all data
 // Called by admin dashboard; WhatsApp-triggered deletion is handled in whatsappHandler.js
+//
+// Admin-gated: phone_number is just a body field with nothing behind it proving
+// who's asking, so without requireAdmin anyone who knew or guessed a citizen's
+// number could delete their account with one request.
 const fixamDb = fixamHandler.fixamDb;
 
-app.delete('/api/user/data', async (req, res) => {
+app.delete('/api/user/data', requireAdmin, async (req, res) => {
     // Expect phone_number in request body (admin tool) or from auth token
     const phoneNumber = req.body.phone_number;
     if (!phoneNumber) {
@@ -129,8 +134,9 @@ app.delete('/api/user/data', async (req, res) => {
 });
 
 // ── DPG FIX: Data export endpoint (Data Portability) ─────────────────────────
-// GET /api/user/data?phone_number=232XXXXXXX
-app.get('/api/user/data', async (req, res) => {
+// GET /api/user/data?phone_number=232XXXXXXX — same reasoning as the delete
+// above.
+app.get('/api/user/data', requireAdmin, async (req, res) => {
     const phoneNumber = req.query.phone_number;
     if (!phoneNumber) {
         return res.status(400).json({ error: 'phone_number is required' });
@@ -305,14 +311,11 @@ app.listen(PORT, async () => {
     // the migration files ran, so the toggle works without a manual step.
     await slaService.ensureSchema(db);
 
-    // 2FA on with no administrator who can receive a code locks everyone out,
-    // and does it silently. Say so at boot, while somebody is still watching
-    // the logs, rather than at the moment they need to sign in.
+    // No administrator who can receive a code locks everyone out, and does it
+    // silently. Say so at boot, while somebody is still watching the logs,
+    // rather than at the moment they need to sign in.
     const adminReadiness = require('./services/adminReadiness');
-    await adminReadiness.warnIfLockedOut(
-        db,
-        String(process.env.ADMIN_2FA_ENABLED ?? 'true').toLowerCase() !== 'false'
-    );
+    await adminReadiness.warnIfLockedOut(db);
 
     // The privacy policy states retention periods; this is what enforces them.
     retention.schedule(db);

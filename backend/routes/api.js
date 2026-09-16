@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const db = require('../db');
 const authService = require('../services/authService');
@@ -13,6 +14,7 @@ const { requireAdmin, requireFullAdmin } = require('../middleware/requireAdmin')
 const { getScope, attachScope, canAccessIssue } = require('../middleware/mdaScope');
 const auditLog = require('../services/auditLog');
 const adminOtp = require('../services/adminOtp');
+const loginThrottle = require('../services/loginThrottle');
 const botFlow = require('../services/botFlow');
 const logger = require('../services/logger');
 const slaService = require('../services/slaService');
@@ -65,7 +67,7 @@ router.get('/config', async (req, res) => {
             // Shown on the sign-in page so an administrator knows where to send
             // LOGIN for their code, rather than having to be told separately.
             bot_number: process.env.BOT_PHONE_NUMBER || null,
-            admin_2fa: String(process.env.ADMIN_2FA_ENABLED ?? 'true').toLowerCase() !== 'false',
+            admin_2fa: true,
         }
     });
 });
@@ -89,13 +91,13 @@ router.use((req, res, next) => {
         }
 
         // Return 503 Service Unavailable
-        return res.status(503).json({ 
-            error: 'Maintenance Mode', 
+        return res.status(503).json({
+            error: 'Maintenance Mode',
             message: "The application has been closed to public use for now until the final Hackathon event day. Only admins are allowed to access the platform."
         });
     }
     next();
-}); 
+});
 
 
 /**
@@ -140,7 +142,7 @@ router.get('/issues', async (req, res) => {
         const offset = (pageNum - 1) * limitNum;
 
         let query = `
-            SELECT 
+            SELECT
                 i.*,
                 i.resolution_note,
                 i.data_mode,
@@ -153,7 +155,7 @@ router.get('/issues', async (req, res) => {
             FROM visible_issues i
             LEFT JOIN users u ON i.reported_by = u.id
             LEFT JOIN (
-                SELECT 
+                SELECT
                     COALESCE(i2.duplicate_of, i2.id) as effective_issue_id,
                     SUM(CASE WHEN vote_type = 'upvote' THEN 1 ELSE 0 END) as upvotes,
                     SUM(CASE WHEN vote_type = 'downvote' THEN 1 ELSE 0 END) as downvotes,
@@ -163,8 +165,8 @@ router.get('/issues', async (req, res) => {
                 GROUP BY COALESCE(i2.duplicate_of, i2.id)
             ) v ON i.id = v.effective_issue_id
             LEFT JOIN (
-                SELECT issue_id, COUNT(*) as count 
-                FROM endorsements 
+                SELECT issue_id, COUNT(*) as count
+                FROM endorsements
                 GROUP BY issue_id
             ) e ON i.id = e.issue_id
             WHERE 1=1
@@ -189,10 +191,22 @@ router.get('/issues', async (req, res) => {
 
         if (category) add(' AND i.category = $?', category);
 
-        if (status) {
+        // MDA scoping. Only applies to a signed-in Operations user: anonymous
+        // callers get the public view and full Admins see everything. Without
+        // this an MDA officer could read every report on the platform through
+        // the same endpoint the portal uses.
+        //
+        // Also decides whether spam can be requested at all: an anonymous
+        // caller gets the filtered view regardless of status/include_spam, so
+        // neither parameter is a way to see spam without signing in.
+        const scope = await resolveRequestScope(req);
+
+        if (status === 'spam' && !scope) {
+            where += " AND i.status != 'spam'";
+        } else if (status) {
             add(' AND i.status = $?', status);
-        } else if (req.query.include_spam !== 'true') {
-            // Default: hide spam unless explicitly requested.
+        } else if (!scope || req.query.include_spam !== 'true') {
+            // Default: hide spam unless explicitly requested by a signed-in session.
             where += " AND i.status != 'spam'";
         }
 
@@ -200,11 +214,6 @@ router.get('/issues', async (req, res) => {
         // how far the work has got. Filtering on one must not filter the other.
         if (urgency) add(' AND i.urgency = $?', urgency);
 
-        // MDA scoping. Only applies to a signed-in Operations user: anonymous
-        // callers get the public view and full Admins see everything. Without
-        // this an MDA officer could read every report on the platform through
-        // the same endpoint the portal uses.
-        const scope = await resolveRequestScope(req);
         if (scope && !scope.unrestricted) {
             if (scope.categories.length === 0) {
                 // In no group, or a group with no categories: show nothing
@@ -658,8 +667,8 @@ router.get('/stats', async (req, res) => {
         
         // 1. Total Reports (This Week)
         const totalReportsResult = await db.query(`
-            SELECT COUNT(*) as count 
-            FROM visible_issues 
+            SELECT COUNT(*) as count
+            FROM visible_issues
             WHERE created_at >= date_trunc('week', CURRENT_DATE)
             ${category ? `AND category = $1` : ''}
         `, currentParams);
@@ -667,8 +676,8 @@ router.get('/stats', async (req, res) => {
 
         // 2. Total Reports (Last Week) - for comparison
         const lastWeekReportsResult = await db.query(`
-            SELECT COUNT(*) as count 
-            FROM visible_issues 
+            SELECT COUNT(*) as count
+            FROM visible_issues
             WHERE created_at >= date_trunc('week', CURRENT_DATE - INTERVAL '1 week')
             AND created_at < date_trunc('week', CURRENT_DATE)
             ${category ? `AND category = $1` : ''}
@@ -720,8 +729,30 @@ router.get('/stats', async (req, res) => {
 
 // --- DEV MODE TESTING ENDPOINTS REMOVED ---
 
+/** Record a failed sign-in and, if it just locked the account, tell its owner. */
+async function failLogin(user, ip) {
+    const result = await loginThrottle.recordFailure(user.phone_number, ip);
+    if (result.locked) {
+        await whatsappService.sendMessage(user.phone_number,
+            `*Account Locked*\n\nYour FIXAM admin account was locked for ${loginThrottle.LOCK_MINUTES} minutes `
+            + `after ${loginThrottle.MAX_FAILURES} failed sign-in attempts. If this wasn't you, your password may `
+            + `be known to someone else - change it once you're back in.`);
+    }
+}
+
+// Coarse, per-IP first line of defense: stops one source from hammering the
+// route at all, whatever phone numbers it tries. The per-phone lockout below
+// is what actually stops an account being brute-forced.
+const loginIpLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, message: 'Too many sign-in attempts from this address. Try again shortly.' }
+});
+
 // POST /api/admin/login - Admin Login
-router.post('/admin/login', async (req, res) => {
+router.post('/admin/login', loginIpLimiter, async (req, res) => {
     try {
         const { phone, password } = req.body;
 
@@ -729,9 +760,20 @@ router.post('/admin/login', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Phone and password required' });
         }
 
+        const throttle = await loginThrottle.check(phone);
+        if (!throttle.allowed) {
+            res.set('Retry-After', String(throttle.retryAfterSeconds));
+            return res.status(429).json({
+                success: false,
+                message: throttle.reason === 'locked'
+                    ? `Too many failed attempts. Try again in ${Math.ceil(throttle.retryAfterSeconds / 60)} minute(s).`
+                    : `Too many attempts. Try again in ${throttle.retryAfterSeconds} second(s).`
+            });
+        }
+
         // Check if user exists and has roles
         const query = `
-            SELECT u.*, ARRAY_AGG(r.name) as roles 
+            SELECT u.*, ARRAY_AGG(r.name) as roles
             FROM users u
             JOIN user_roles ur ON u.id = ur.user_id
             JOIN roles r ON ur.role_id = r.id
@@ -739,8 +781,9 @@ router.post('/admin/login', async (req, res) => {
             GROUP BY u.id
         `;
         const userResult = await db.query(query, [phone]);
-        
+
         if (userResult.rows.length === 0) {
+            await loginThrottle.recordFailure(phone, req.ip);
             return res.status(401).json({ success: false, message: 'Invalid credentials or access denied' });
         }
 
@@ -779,6 +822,7 @@ router.post('/admin/login', async (req, res) => {
         }
 
         if (!isValid) {
+            await failLogin(user, req.ip);
             return res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
 
@@ -799,6 +843,7 @@ router.post('/admin/login', async (req, res) => {
 
             const check = await adminOtp.verify(user.id, supplied);
             if (!check.ok) {
+                await failLogin(user, req.ip);
                 const messages = {
                     malformed: 'That code does not look right. Enter the 6-digit code from WhatsApp.',
                     no_code: 'No sign-in code is waiting. Send LOGIN to the FIXAM WhatsApp number to get one.',
@@ -814,6 +859,8 @@ router.post('/admin/login', async (req, res) => {
                 });
             }
         }
+
+        await loginThrottle.clear(user.phone_number);
 
         // Update last login
         await db.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
@@ -867,8 +914,8 @@ router.get('/admin/stats', requireAdmin, attachScope, async (req, res) => {
         // Reuse basic stats logic or call internal function if refactored
         // 1. Total Reports (This Week)
         const totalReportsResult = await db.query(`
-            SELECT COUNT(*) as count 
-            FROM visible_issues 
+            SELECT COUNT(*) as count
+            FROM visible_issues
             WHERE created_at >= date_trunc('week', CURRENT_DATE)
             ${catFilter}
         `);
@@ -876,8 +923,8 @@ router.get('/admin/stats', requireAdmin, attachScope, async (req, res) => {
 
         // 2. Last Week
         const lastWeekReportsResult = await db.query(`
-            SELECT COUNT(*) as count 
-            FROM visible_issues 
+            SELECT COUNT(*) as count
+            FROM visible_issues
             WHERE created_at >= date_trunc('week', CURRENT_DATE - INTERVAL '1 week')
             AND created_at < date_trunc('week', CURRENT_DATE)
             ${catFilter}
@@ -930,8 +977,8 @@ router.get('/admin/insights', requireAdmin, attachScope, async (req, res) => {
 
         // 1. Hotspots (High Upvotes)
         const hotspotsResult = await db.query(`
-            SELECT i.category, i.title, v.upvotes 
-            FROM issues_with_votes i 
+            SELECT i.category, i.title, v.upvotes
+            FROM issues_with_votes i
             JOIN (
                 SELECT issue_id, upvotes FROM issues_with_votes WHERE upvotes > 10
             ) v ON i.id = v.issue_id
@@ -950,10 +997,10 @@ router.get('/admin/insights', requireAdmin, attachScope, async (req, res) => {
         // 2. Emerging Issues (Spike in specific category today)
         // This is a bit complex for a single query without more data, so we'll do a simple check
         const emergingResult = await db.query(`
-            SELECT category, COUNT(*) as count 
-            FROM visible_issues 
-            WHERE created_at >= CURRENT_DATE 
-            GROUP BY category 
+            SELECT category, COUNT(*) as count
+            FROM visible_issues
+            WHERE created_at >= CURRENT_DATE
+            GROUP BY category
             HAVING COUNT(*) > 5
             ORDER BY count DESC
             LIMIT 1
@@ -1183,32 +1230,32 @@ router.put('/admin/issues/:id/status', requireAdmin, attachScope, async (req, re
                 SELECT i.ticket_id, i.title, u.phone_number
                 FROM visible_issues i
                 JOIN users u ON i.reported_by = u.id
-                WHERE (i.id = $1 OR i.duplicate_of = $1) 
+                WHERE (i.id = $1 OR i.duplicate_of = $1)
                 AND u.phone_number IS NOT NULL
             `, [id]);
 
             const statusMap = {
-                'acknowledged': 'Acknowledged 📝',
-                'progress': 'In Progress 🏗️',
-                'fixed': 'Resolved ✅',
-                'reported': 'Received 📥'
+                'acknowledged': 'Acknowledged',
+                'progress': 'In Progress',
+                'fixed': 'Resolved',
+                'reported': 'Received'
             };
             const friendlyStatus = (statusMap[status] || status).toUpperCase();
 
             for (const row of reportersResult.rows) {
-                let message = `🔔 *Issue Update*\n\nThe status of your report *${row.title}* (#${row.ticket_id}) has been updated to: *${friendlyStatus}*.`;
+                let message = `*Issue Update*\n\nThe status of your report *${row.title}* (#${row.ticket_id}) has been updated to: *${friendlyStatus}*.`;
 
                 if (status === 'fixed') {
                     // The resolution note is the substance of the update -- it
                     // is what the institution says it did. Sending "Resolved"
                     // without it tells the citizen an outcome they cannot check.
-                    if (note) message += `\n\n📝 *What was done:*\n${note}`;
+                    if (note) message += `\n\n*What was done:*\n${note}`;
 
                     // And ask them, rather than waiting for them to come back:
                     // a resolution nobody verified is only a claim.
-                    message += `\n\nIs it actually fixed? Reply *3*, then send *${row.ticket_id}* to confirm the repair — or to tell us it is not fixed.`;
+                    message += `\n\nIs it actually fixed? Reply *3*, then send *${row.ticket_id}* to confirm the repair - or to tell us it is not fixed.`;
                 } else {
-                    message += `\n\nThank you for helping us make our community better! 🌟`;
+                    message += `\n\nThank you for helping us make our community better!`;
                 }
 
                 await whatsappService.sendMessage(row.phone_number, message);
@@ -1232,7 +1279,7 @@ router.put('/admin/issues/:id/status', requireAdmin, attachScope, async (req, re
                              await db.query(`INSERT INTO user_point_logs (user_id, amount, action_type, related_issue_id) VALUES ($1, 50, 'issue_resolved', $2)`, [userId, id]);
                              
                              // Notify user about points
-                             await whatsappService.sendMessage(row.phone_number, `🎉 *Bonus Points Earned!* 🎉\n\nYou received *50 points* because your reported issue was RESOLVED! Keep up the great work citizen! 👏`);
+                             await whatsappService.sendMessage(row.phone_number, `*Bonus Points Earned!*\n\nYou received *50 points* because your reported issue was RESOLVED! Keep up the great work citizen!`);
                          }
                      }
                 }
@@ -1290,7 +1337,7 @@ async function triggerFollowUpQuestionnaire(issueId) {
     if (issue.status === 'spam') return;
 
     const started = await botFlow.startRun(issue, issue.reported_by, { category: issue.category });
-    if (!started) return;  // No questionnaire for this category.
+    if (!started) return; // No questionnaire for this category.
 
     const { flow, windowOpen } = started;
     const institution = flow.group_name || 'the responsible team';
@@ -1313,7 +1360,7 @@ async function triggerFollowUpQuestionnaire(issueId) {
     // window so the questions can follow normally.
     await whatsappService.sendMessage(
         issue.phone_number,
-        `🔔 *Your report has been picked up*\n\n`
+        `*Your report has been picked up*\n\n`
         + `*${issue.title}* (#${issue.ticket_id}) has been acknowledged by *${institution}*.\n\n`
         + `They need ${questionCount} more detail${questionCount === 1 ? '' : 's'} before they can act on it.\n\n`
         + `Reply *CONTINUE* to answer, or *STOP* if you would rather not.`
@@ -1406,9 +1453,9 @@ router.post('/admin/issues/:id/close', requireAdmin, attachScope, async (req, re
 
             for (const row of reporters.rows) {
                 await whatsappService.sendMessage(row.phone_number,
-                    `📁 *Report Closed*\n\nYour report *${row.title}* (#${row.ticket_id}) has been closed without a repair.\n\n`
+                    `*Report Closed*\n\nYour report *${row.title}* (#${row.ticket_id}) has been closed without a repair.\n\n`
                     + `*Reason:* ${CLOSURE_REASONS[reason]}\n\n`
-                    + `📝 *Explanation:*\n${explanation}\n\n`
+                    + `*Explanation:*\n${explanation}\n\n`
                     + `If the problem is still there, please send a new report and we will look again.`);
             }
         } catch (notifyErr) {
@@ -1481,8 +1528,8 @@ router.post('/admin/issues/:id/reopen', requireAdmin, attachScope, async (req, r
 
             for (const row of reporters.rows) {
                 await whatsappService.sendMessage(row.phone_number,
-                    `🔄 *Report Reopened*\n\nYour report *${row.title}* (#${row.ticket_id}) has been reopened and is being looked at again.\n\n`
-                    + `📝 *Reason:*\n${reason}`);
+                    `*Report Reopened*\n\nYour report *${row.title}* (#${row.ticket_id}) has been reopened and is being looked at again.\n\n`
+                    + `*Reason:*\n${reason}`);
             }
         } catch (notifyErr) {
             console.error('Error notifying reporters of reopening:', notifyErr);
@@ -1631,7 +1678,7 @@ router.put('/admin/issues/:id/details', requireAdmin, attachScope, async (req, r
                 if (moved.rows.length > 0) {
                     const issue = moved.rows[0];
                     await fixamHandler.notifyResponsibleTeam(issue,
-                        `📌 *Report Reassigned To You*\n\n`
+                        `*Report Reassigned To You*\n\n`
                         + `*${issue.title}* (${issue.ticket_id})\n`
                         + `*Category:* ${issue.category} (was ${previousCategory})\n`
                         + `*Loc:* ${issue.address || `${issue.lat}, ${issue.lng}`}\n\n`
@@ -1699,7 +1746,7 @@ router.put('/admin/issues/:id/spam', requireAdmin, attachScope, async (req, res)
             if (reporterRes.rows.length > 0) {
                  const { ticket_id, title, phone_number, user_id } = reporterRes.rows[0];
                  if (phone_number) {
-                     const msg = `⚠️ *Issue Flagged*\n\nYour reported issue *${title}* (#${ticket_id}) has been flagged as *SPAM* or violating our community guidelines.\n\nIt has been removed from public view. If you believe this is a mistake, please contact support.`;
+                     const msg = `*Issue Flagged*\n\nYour reported issue *${title}* (#${ticket_id}) has been flagged as *SPAM* or violating our community guidelines.\n\nIt has been removed from public view. If you believe this is a mistake, please contact support.`;
                      await whatsappService.sendMessage(phone_number, msg);
                  }
                  
@@ -1842,7 +1889,7 @@ router.delete('/admin/data-mode/demo-data', requireFullAdmin, attachScope, async
             WHERE u.data_mode = 'test'
               AND NOT EXISTS (SELECT 1 FROM issues i WHERE i.reported_by = u.id)
               AND NOT EXISTS (SELECT 1 FROM votes v WHERE v.user_id = u.id)
-              AND u.password IS NULL          -- never remove a portal account
+              AND u.password IS NULL -- never remove a portal account
             RETURNING id`);
 
         await client.query('COMMIT');
@@ -1995,10 +2042,10 @@ router.get('/admin/users', requireAdmin, attachScope, async (req, res) => {
         // 2. Main query with pagination
         // Using subqueries to aggregate roles and groups to avoid row explosion
         let sql = `
-            SELECT 
-                u.id, 
-                u.name, 
-                u.phone_number, 
+            SELECT
+                u.id,
+                u.name,
+                u.phone_number,
                 u.last_login,
                 u.created_at,
                 u.is_disabled,
@@ -2080,7 +2127,7 @@ router.post('/admin/users/:id/penalize', requireFullAdmin, attachScope, async (r
             const userRes = await client.query('SELECT phone_number FROM users WHERE id = $1', [id]);
             if (userRes.rows.length > 0) {
                 const phone = userRes.rows[0].phone_number;
-                const msg = `⚠️ *Account Alert*\n\nYou have been penalized *${amount} points* by an administrator.\nReason: ${reason || 'Violation of community guidelines'}.\n\nPlease adhere to our terms to avoid further penalties.`;
+                const msg = `*Account Alert*\n\nYou have been penalized *${amount} points* by an administrator.\nReason: ${reason || 'Violation of community guidelines'}.\n\nPlease adhere to our terms to avoid further penalties.`;
                 await whatsappService.sendMessage(phone, msg);
             }
             
@@ -2263,8 +2310,8 @@ router.get('/admin/groups', requireAdmin, attachScope, async (req, res) => {
             ? [req.scope.groupIds] : [];
 
         const result = await db.query(`
-            SELECT 
-                g.*, 
+            SELECT
+                g.*,
                 COUNT(DISTINCT ug.user_id) as member_count,
                 COALESCE(
                     JSON_AGG(json_build_object('id', c.id, 'name', c.name, 'role', cg.role))
