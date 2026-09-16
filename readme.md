@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-**Live Demo:** <a href="https://fixam.maxcit.com/" target="_blank">https://fixam.maxcit.com/</a>
+**Live Demo:** <a href="https://reports.fixam.sl/" target="_blank">https://reports.fixam.sl/</a>
 
 A comprehensive civic engagement ecosystem that empowers citizens to report municipal issues via WhatsApp and enables authorities to manage, analyze, and resolve them efficiently through advanced AI and automation. This project is proudly designed as a **Digital Public Good (DPG)**, adhering to open-source principles to ensure accessibility, transparency, and community-driven improvement.
 
@@ -235,7 +235,9 @@ keeps every message inside WhatsApp's 24-hour service window and avoids needing
 an approved message template. On a simulator-only deployment, send `LOGIN` from
 the simulator and read the code from its reply.
 
-Set `ADMIN_2FA_ENABLED=false` to turn this off — recovery only, and put it back.
+This step cannot be turned off. Locked out because no administrator can
+receive a code? Run `backend/scripts/fixam_admin.py grant --phone ...` to
+grant one rather than disabling 2FA.
 
 Confirm the account exists with `docker compose logs backend | grep "Super admin"`.
 Later restarts will **not** overwrite the password, so a change made in the
