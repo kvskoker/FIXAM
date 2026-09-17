@@ -13,10 +13,19 @@ jest.mock('../services/authService', () => ({
     hashPassword: jest.fn(),
     verifyPassword: jest.fn(),
     verifyLegacyPassword: jest.fn(),
+    verifyToken: jest.fn(),
 }));
 
 jest.mock('../services/whatsappService', () => ({
     sendMessage: jest.fn().mockResolvedValue(true),
+}));
+
+jest.mock('../services/loginThrottle', () => ({
+    check: jest.fn().mockResolvedValue({ allowed: true }),
+    recordFailure: jest.fn().mockResolvedValue({ locked: false }),
+    clear: jest.fn().mockResolvedValue(undefined),
+    MAX_FAILURES: 5,
+    LOCK_MINUTES: 15,
 }));
 
 jest.mock('../services/whatsappHandler', () => {
@@ -41,6 +50,8 @@ jest.mock('../services/fixamDatabase', () => {
 
 const db = require('../db');
 const FixamDatabase = require('../services/fixamDatabase');
+const authService = require('../services/authService');
+const loginThrottle = require('../services/loginThrottle');
 
 describe('API Routes — DPG Compliance', () => {
     let app;
@@ -65,9 +76,82 @@ describe('API Routes — DPG Compliance', () => {
         });
     });
 
+    describe('POST /api/admin/login — throttling (S7)', () => {
+        const userRow = {
+            id: 1, phone_number: '23276123456', password: 'hashed', is_disabled: false,
+            roles: ['Admin'], name: 'Test Admin',
+        };
+
+        test('refuses before touching the database when throttled', async () => {
+            loginThrottle.check.mockResolvedValueOnce({ allowed: false, reason: 'locked', retryAfterSeconds: 300 });
+
+            const res = await request(app)
+                .post('/api/admin/login')
+                .send({ phone: '23276123456', password: 'whatever' });
+
+            expect(res.status).toBe(429);
+            expect(db.query).not.toHaveBeenCalled();
+        });
+
+        test('records a failure on a wrong password', async () => {
+            db.query.mockResolvedValueOnce({ rows: [userRow] });
+            authService.verifyPassword.mockResolvedValueOnce(false);
+            authService.verifyLegacyPassword.mockReturnValueOnce(false);
+
+            const res = await request(app)
+                .post('/api/admin/login')
+                .send({ phone: '23276123456', password: 'wrong' });
+
+            expect(res.status).toBe(401);
+            expect(loginThrottle.recordFailure).toHaveBeenCalledWith('23276123456', expect.any(String));
+        });
+
+        test('records a failure when the phone number does not exist', async () => {
+            db.query.mockResolvedValueOnce({ rows: [] });
+
+            const res = await request(app)
+                .post('/api/admin/login')
+                .send({ phone: '23299999999', password: 'whatever' });
+
+            expect(res.status).toBe(401);
+            expect(loginThrottle.recordFailure).toHaveBeenCalledWith('23299999999', expect.any(String));
+        });
+
+        test('clears the throttle on a successful sign-in', async () => {
+            db.query
+                .mockResolvedValueOnce({ rows: [userRow] })  // user lookup
+                .mockResolvedValueOnce({});                  // last_login update
+            authService.verifyPassword.mockResolvedValueOnce(true);
+
+            const res = await request(app)
+                .post('/api/admin/login')
+                .send({ phone: '23276123456', password: 'correct' });
+
+            expect(res.status).toBe(200);
+            expect(loginThrottle.clear).toHaveBeenCalledWith('23276123456');
+        });
+    });
+
     describe('GET /api/user/data — Data Export', () => {
+        function mockAsAdmin() {
+            authService.verifyToken.mockReturnValue({ uid: 1 });
+            db.query.mockResolvedValueOnce({
+                rows: [{ id: 1, name: 'Admin', phone_number: '23276000000', is_disabled: false, roles: ['Admin'] }],
+            });
+        }
+
+        test('returns 401 with no admin token (S5)', async () => {
+            const res = await request(app)
+                .get('/api/user/data')
+                .query({ phone_number: '23276123456' });
+            expect(res.status).toBe(401);
+        });
+
         test('returns 400 when phone_number is missing', async () => {
-            const res = await request(app).get('/api/user/data');
+            mockAsAdmin();
+            const res = await request(app)
+                .get('/api/user/data')
+                .set('Authorization', 'Bearer test-token');
             expect(res.status).toBe(400);
             expect(res.body.error).toBe('phone_number is required');
         });
@@ -85,8 +169,10 @@ describe('API Routes — DPG Compliance', () => {
             const fixamDbInstance = new FixamDatabase();
             fixamDbInstance.getUserData.mockResolvedValue(mockData);
 
+            mockAsAdmin();
             const res = await request(app)
                 .get('/api/user/data')
+                .set('Authorization', 'Bearer test-token')
                 .query({ phone_number: '23276123456' });
 
             expect(res.status).toBe(200);
@@ -100,8 +186,10 @@ describe('API Routes — DPG Compliance', () => {
             const fixamDbInstance = new FixamDatabase();
             fixamDbInstance.getUserData.mockResolvedValue({ profile: null });
 
+            mockAsAdmin();
             const res = await request(app)
                 .get('/api/user/data')
+                .set('Authorization', 'Bearer test-token')
                 .query({ phone_number: '99999999' });
 
             expect(res.status).toBe(404);
@@ -109,8 +197,25 @@ describe('API Routes — DPG Compliance', () => {
     });
 
     describe('DELETE /api/user/data — Data Deletion', () => {
+        function mockAsAdmin() {
+            authService.verifyToken.mockReturnValue({ uid: 1 });
+            db.query.mockResolvedValueOnce({
+                rows: [{ id: 1, name: 'Admin', phone_number: '23276000000', is_disabled: false, roles: ['Admin'] }],
+            });
+        }
+
+        test('returns 401 with no admin token (S5)', async () => {
+            const res = await request(app)
+                .delete('/api/user/data')
+                .send({ phone_number: '23276123456' });
+            expect(res.status).toBe(401);
+        });
+
         test('returns 400 when phone_number is missing', async () => {
-            const res = await request(app).delete('/api/user/data');
+            mockAsAdmin();
+            const res = await request(app)
+                .delete('/api/user/data')
+                .set('Authorization', 'Bearer test-token');
             expect(res.status).toBe(400);
             expect(res.body.error).toBe('phone_number is required');
         });
@@ -119,8 +224,10 @@ describe('API Routes — DPG Compliance', () => {
             const fixamDbInstance = new FixamDatabase();
             fixamDbInstance.deleteUser.mockResolvedValue(true);
 
+            mockAsAdmin();
             const res = await request(app)
                 .delete('/api/user/data')
+                .set('Authorization', 'Bearer test-token')
                 .send({ phone_number: '23276123456' });
 
             expect(res.status).toBe(200);
@@ -132,8 +239,10 @@ describe('API Routes — DPG Compliance', () => {
             const fixamDbInstance = new FixamDatabase();
             fixamDbInstance.deleteUser.mockResolvedValue(false);
 
+            mockAsAdmin();
             const res = await request(app)
                 .delete('/api/user/data')
+                .set('Authorization', 'Bearer test-token')
                 .send({ phone_number: '99999999' });
 
             expect(res.status).toBe(404);

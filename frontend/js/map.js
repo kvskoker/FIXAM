@@ -843,8 +843,8 @@ async function viewTracker(issueId) {
                                     return `
                                         <div style="position: relative; padding-bottom: 1.5rem; padding-left: 1rem;">
                                             <div style="position: absolute; left: -1.9rem; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--admin-primary); border: 2px solid var(--surface-color);"></div>
-                                            <div style="font-weight: 600; color: var(--text-primary); font-size: 0.9rem; text-transform: capitalize;">${log.action.replace('_', ' ')}</div>
-                                            <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 2px;">${log.description || 'No description'}</div>
+                                            <div style="font-weight: 600; color: var(--text-primary); font-size: 0.9rem; text-transform: capitalize;">${escapeHtml(log.action.replace('_', ' '))}</div>
+                                            <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 2px;">${escapeHtml(log.description) || 'No description'}</div>
                                             <div style="font-size: 0.75rem; color: var(--text-secondary); opacity: 0.6; margin-top: 4px; font-weight: 500;">
                                                 <i class="fa-regular fa-clock" style="margin-right: 4px;"></i> ${new Date(log.created_at).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}
                                             </div>

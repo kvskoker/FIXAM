@@ -109,9 +109,7 @@ async function check2FAReadiness(db) {
  * because a check failed would be a worse outcome than an operator reading a
  * warning -- and the fix, granting a real administrator, takes a minute.
  */
-async function warnIfLockedOut(db, twoFactorEnabled, log = console.warn) {
-    if (!twoFactorEnabled) return true;
-
+async function warnIfLockedOut(db, log = console.warn) {
     try {
         const status = await check2FAReadiness(db);
         if (status.ready) return true;
@@ -122,14 +120,12 @@ async function warnIfLockedOut(db, twoFactorEnabled, log = console.warn) {
         log('  ****************************************************************');
         log(`  ${status.message}`);
         log('');
-        log('  Two-factor authentication is ON and no administrator can receive');
-        log('  a sign-in code, so the portal cannot be reached by anybody.');
+        log('  Two-factor authentication cannot be turned off, so the portal');
+        log('  cannot be reached by anybody until an administrator can receive');
+        log('  a sign-in code.');
         log('');
         log('  Fix it with:');
         log('    python3 backend/scripts/fixam_admin.py grant --phone 232XXXXXXXX');
-        log('');
-        log('  Or, to get in right now, set ADMIN_2FA_ENABLED=false, sign in,');
-        log('  grant a real administrator, and switch it back on.');
         log('  ****************************************************************');
         log('');
         return false;

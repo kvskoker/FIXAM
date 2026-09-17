@@ -33,4 +33,17 @@ if (fs.existsSync(LEGACY_ENV)) {
     }
 }
 
+// A malformed FIXAM_BASE_URL (e.g. "https//..." missing the colon) doesn't
+// fail here otherwise — it just ships broken ticket links to citizens.
+if (process.env.FIXAM_BASE_URL) {
+    try {
+        new URL(process.env.FIXAM_BASE_URL);
+    } catch (err) {
+        throw new Error(
+            `FIXAM_BASE_URL is not a valid URL: "${process.env.FIXAM_BASE_URL}". `
+            + 'Check it includes "://" after the scheme, e.g. https://reports.fixam.sl'
+        );
+    }
+}
+
 module.exports = { ROOT_ENV, LEGACY_ENV };

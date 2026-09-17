@@ -4,9 +4,9 @@ Grant, inspect and repair administrator access from the server.
 
 The problem this exists for: two-factor authentication delivers a sign-in code
 over WhatsApp, and the bootstrap account (SUPER_ADMIN_PHONE, default
-23200000000) is not a real number. Nobody can receive its code. So with 2FA on
-and no other administrator, the portal is unreachable and there is no way in
-through the portal to fix it.
+23200000000) is not a real number. Nobody can receive its code. With no other
+administrator, the portal is unreachable and there is no way in through the
+portal to fix it.
 
     python3 fixam_admin.py list
     python3 fixam_admin.py check-2fa
@@ -187,11 +187,9 @@ def cmd_check_2fa(args, pg, be):
     print("  Two-factor authentication:")
     if status["ready"]:
         ok(status["message"])
-        ok("Safe to set ADMIN_2FA_ENABLED=true")
     else:
         bad(status["message"])
-        warn("Do NOT enable 2FA yet. Have the person register with the bot on")
-        warn("WhatsApp, then grant them admin:")
+        warn("Have the person register with the bot on WhatsApp, then grant them admin:")
         warn("  python3 fixam_admin.py grant --phone 232XXXXXXXX")
         sys.exit(2)
 
@@ -283,7 +281,7 @@ def cmd_grant(args, pg, be):
     status = be.readiness()
     render_admins(status)
     if status["ready"]:
-        ok("2FA can now be enabled safely.")
+        ok("The portal will not be locked out at next restart.")
     else:
         warn(status["message"])
 
@@ -313,7 +311,7 @@ def main():
 
     sub = ap.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="show administrators and whether each can sign in")
-    sub.add_parser("check-2fa", help="report whether 2FA can be enabled safely")
+    sub.add_parser("check-2fa", help="report whether an administrator can receive a sign-in code")
 
     p = sub.add_parser("grant",
                        help="make an already-registered user a full administrator")

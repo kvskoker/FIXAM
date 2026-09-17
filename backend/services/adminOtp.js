@@ -18,9 +18,9 @@ const CODE_TTL_MINUTES = parseInt(process.env.ADMIN_OTP_TTL_MINUTES, 10) || 10;
 const MAX_ATTEMPTS = 5;
 const MAX_PER_HOUR = parseInt(process.env.ADMIN_OTP_MAX_PER_HOUR, 10) || 10;
 
-/** Enabled unless explicitly switched off, so the secure path is the default. */
+/** Always required. There is no environment variable to turn this off. */
 function isEnabled() {
-    return String(process.env.ADMIN_2FA_ENABLED ?? 'true').toLowerCase() !== 'false';
+    return true;
 }
 
 /**
