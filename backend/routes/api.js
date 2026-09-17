@@ -732,11 +732,20 @@ router.get('/stats', async (req, res) => {
 /** Record a failed sign-in and, if it just locked the account, tell its owner. */
 async function failLogin(user, ip) {
     const result = await loginThrottle.recordFailure(user.phone_number, ip);
-    if (result.locked) {
+    if (!result.locked) return;
+
+    // Best-effort. The lock is already recorded in the database and the caller
+    // is about to return 401; WhatsApp being unreachable must not turn a wrong
+    // password into a 500, which would read as a server fault and hide the real
+    // outcome from whoever is trying to sign in.
+    try {
         await whatsappService.sendMessage(user.phone_number,
             `*Account Locked*\n\nYour FIXAM admin account was locked for ${loginThrottle.LOCK_MINUTES} minutes `
             + `after ${loginThrottle.MAX_FAILURES} failed sign-in attempts. If this wasn't you, your password may `
             + `be known to someone else - change it once you're back in.`);
+    } catch (err) {
+        logger.logError('auth',
+            `Account ${user.phone_number} was locked but the alert could not be delivered`, err);
     }
 }
 
