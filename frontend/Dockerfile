@@ -11,6 +11,16 @@ RUN sed -i '$ i\    video/x-matroska mkv;' /etc/nginx/mime.types \
 COPY default.conf /etc/nginx/conf.d/default.conf
 COPY . /usr/share/nginx/html/
 
+# Per-deployment values cannot be baked into an image that is built once and
+# deployed anywhere, so the browser's js/config.js is written at container
+# start instead. nginx runs everything in /docker-entrypoint.d before it begins
+# serving. The COPY above landed the script in the web root along with the rest
+# of the directory; move it out rather than leave it served publicly.
+RUN mv /usr/share/nginx/html/docker-entrypoint.d/40-fixam-config.sh \
+       /docker-entrypoint.d/40-fixam-config.sh \
+ && chmod +x /docker-entrypoint.d/40-fixam-config.sh \
+ && rmdir /usr/share/nginx/html/docker-entrypoint.d
+
 # The build context is this whole directory, so the copy above also lands the
 # build files in the web root: /default.conf served the nginx configuration
 # itself -- internal hostnames, ports, the uploads alias -- to anyone who asked

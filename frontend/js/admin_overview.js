@@ -131,15 +131,7 @@ function renderHeatmap(issues) {
     if (!map) {
         map = L.map('map-heatmap').setView([8.417, -11.841], 7); 
         
-        const tileUrl = isDarkMode 
-            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-            : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-        
-        L.tileLayer(tileUrl, {
-            attribution: '&copy; OpenStreetMap &copy; CARTO',
-            subdomains: 'abcd',
-            maxZoom: 20
-        }).addTo(map);
+        FIXAM.basemapLayer({ dark: isDarkMode }).addTo(map);
 
         const HomeControl = L.Control.extend({
             options: { position: 'topleft' },

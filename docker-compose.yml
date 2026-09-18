@@ -306,6 +306,12 @@ services:
     environment:
       NGINX_HOST: localhost
       NGINX_PORT: "80"
+      # Basemap tiles. CARTO watermarks unauthenticated raster tiles, so their
+      # basemaps need a key -- free, 5M tiles a month, from
+      # https://dashboard.basemaps.carto.com/. Left unset the maps fall back to
+      # OpenStreetMap tiles, which need no key. The value reaches the browser,
+      # so it is public by design: do not put anything secret here.
+      CARTO_BASEMAP_KEY: ${CARTO_BASEMAP_KEY:-}
     volumes:
       - uploads-data:/data/uploads
     ports:

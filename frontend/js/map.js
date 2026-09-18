@@ -76,17 +76,10 @@ const API_BASE_URL = window.location.port === '3000'
     ? `http://${window.location.hostname}:5000/api`
     : '/api';
 
-// Add CARTO Tiles
+// Basemap tiles. Which provider, and whether a key is in play, is decided in
+// js/basemap.js -- see that file before changing anything here.
 const isDarkMode = document.body.classList.contains('dark-mode');
-const tileUrl = isDarkMode 
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-
-L.tileLayer(tileUrl, {
-    attribution: '&copy; OpenStreetMap &copy; CARTO',
-    subdomains: 'abcd',
-    maxZoom: 20
-}).addTo(map);
+FIXAM.basemapLayer({ dark: isDarkMode }).addTo(map);
 
 // Add Home Button
 L.Control.Home = L.Control.extend({
@@ -123,15 +116,7 @@ window.addEventListener('themeChanged', () => {
         }
     });
     
-    const newTileUrl = isDark 
-        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-        : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-    
-    L.tileLayer(newTileUrl, {
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-        subdomains: 'abcd',
-        maxZoom: 20
-    }).addTo(map);
+    FIXAM.basemapLayer({ dark: isDark }).addTo(map);
 });
 
 // Icons

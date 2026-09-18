@@ -685,9 +685,7 @@ async function openLocationPicker(issue) {
 
     if (!lpMap) {
         lpMap = L.map('lp-map');
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19,
-        }).addTo(lpMap);
+        FIXAM.basemapLayer({ maxZoom: 19 }).addTo(lpMap);
 
         lpMap.on('click', (e) => lpSetPoint(e.latlng.lat, e.latlng.lng));
 
